@@ -1,0 +1,24 @@
+name = "sfc-fiscal"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Serve os arquivos estáticos (public/) diretamente pelo Worker.
+# É o substituto oficial do Cloudflare Pages.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# KV onde ficam salvos: cadastro de empresas, checklist, parcelamentos e usuários.
+# Depois de rodar `wrangler kv namespace create SFC_KV`, cole o "id" retornado aqui.
+[[kv_namespaces]]
+binding = "SFC_KV"
+id = "COLE_AQUI_O_ID_DO_KV"
+
+# Necessário para o Worker abrir conexão TCP/TLS com o Gmail (envio de e-mail).
+# Ative em: Cloudflare Dashboard > Workers > seu worker > Settings > Bindings.
+# (Sem isso o /api/email vai falhar com erro de conexão.)
+# [[tcp_sockets]]  # habilitado automaticamente ao usar cloudflare:sockets no código
+
+[vars]
+APP_NOME = "Fiscal Mensal"
