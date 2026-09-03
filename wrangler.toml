@@ -13,7 +13,7 @@ binding = "ASSETS"
 # Depois de rodar `wrangler kv namespace create SFC_KV`, cole o "id" retornado aqui.
 [[kv_namespaces]]
 binding = "SFC_KV"
-id = "COLE_AQUI_O_ID_DO_KV"
+id = "dd5f87d9a1eb40648e6e9d4ea6937d5a"
 
 # Necessário para o Worker abrir conexão TCP/TLS com o Gmail (envio de e-mail).
 # Ative em: Cloudflare Dashboard > Workers > seu worker > Settings > Bindings.
