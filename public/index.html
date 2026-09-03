@@ -27,6 +27,9 @@
         <label id="campo-nome-setup" class="oculto">Seu nome
           <input type="text" id="login-nome" autocomplete="name" />
         </label>
+        <label id="campo-email-setup" class="oculto">Seu e-mail
+          <input type="email" id="login-email" autocomplete="email" />
+        </label>
         <div id="login-erro" class="mensagem-erro oculto"></div>
         <button type="submit" id="btn-login-submit">Entrar</button>
       </form>
@@ -54,6 +57,9 @@
         <button class="btn-ghost" data-aba="parcelamentos">Parcelamentos</button>
         <button class="btn-ghost" id="btn-usuarios">Usuários</button>
         <button class="btn-primario" id="btn-salvar">Salvar</button>
+        <button class="btn-secundario" id="btn-exportar-backup">Exportar Backup</button>
+        <button class="btn-secundario" id="btn-importar-backup">Importar Backup</button>
+        <input type="file" id="input-importar-backup" accept="application/json" class="oculto" />
         <button class="btn-perigo-outline" id="btn-nova-lista">Nova Lista</button>
         <button class="btn-ghost" id="btn-sair">Sair</button>
       </nav>
@@ -62,28 +68,32 @@
     <div id="status-salvar" class="status-salvar oculto"></div>
 
     <!-- -------- ABA: GRUPOS / EMPRESAS -------- -->
-    <main id="aba-grupos" class="conteudo">
-      <section class="painel-esquerdo">
-        <div class="painel-cabecalho">
-          <h2>Grupos e Empresas</h2>
-          <div class="painel-acoes">
-            <button class="btn-secundario" id="btn-novo-grupo">+ Grupo</button>
+    <main id="aba-grupos" class="conteudo conteudo-coluna">
+      <div id="dashboard" class="dashboard"></div>
+      <div class="duas-colunas">
+        <section class="painel-esquerdo">
+          <div class="painel-cabecalho">
+            <h2>Grupos e Empresas</h2>
+            <div class="painel-acoes">
+              <button class="btn-secundario" id="btn-novo-grupo">+ Grupo</button>
+            </div>
           </div>
-        </div>
-        <div id="lista-grupos" class="lista-grupos"></div>
-      </section>
+          <div id="lista-grupos" class="lista-grupos"></div>
+        </section>
 
-      <aside class="painel-direito">
-        <div class="painel-cabecalho">
-          <h2>Tarefas do Dia</h2>
-          <button class="btn-secundario" id="btn-nova-tarefa">+ Tarefa</button>
-        </div>
-        <div id="lista-checklist" class="lista-checklist"></div>
-      </aside>
+        <aside class="painel-direito">
+          <div class="painel-cabecalho">
+            <h2>Tarefas do Dia</h2>
+            <button class="btn-secundario" id="btn-nova-tarefa">+ Tarefa</button>
+          </div>
+          <div id="lista-checklist" class="lista-checklist"></div>
+        </aside>
+      </div>
     </main>
 
     <!-- -------- ABA: PARCELAMENTOS -------- -->
-    <main id="aba-parcelamentos" class="conteudo oculto">
+    <main id="aba-parcelamentos" class="conteudo conteudo-coluna oculto">
+      <div id="dashboard-parcelamentos" class="dashboard"></div>
       <section class="painel-esquerdo largura-total">
         <div class="painel-cabecalho">
           <h2>Parcelamentos</h2>
