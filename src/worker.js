@@ -15,6 +15,7 @@ async function enviarEmailConfirmacao(env, origin, destinatario, nome, token) {
       host: "smtp.gmail.com",
       port: 465,
       secure: true,
+      authType: "login",
       credentials: { username: env.GMAIL_USER, password: env.GMAIL_APP_PASSWORD },
     },
     {
@@ -323,6 +324,7 @@ export default {
               host: "smtp.gmail.com",
               port: 465,
               secure: true,
+              authType: "login",
               credentials: { username: env.GMAIL_USER, password: env.GMAIL_APP_PASSWORD },
             },
             {
