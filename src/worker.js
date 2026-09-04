@@ -135,12 +135,8 @@ export default {
     const { pathname } = url;
 
     try {
-      // ---------- SETUP: cria o primeiro usuário (só funciona se não houver nenhum) ----------
-      if (pathname === "/api/setup" && request.method === "POST") {
-        const usuarios = (await env.SFC_KV.get("users", "json")) || [];
-        if (usuarios.length > 0) {
-          return json({ erro: "Sistema já configurado. Peça a um administrador para criar seu login." }, 400);
-        }
+      // ---------- CADASTRO (disponível a qualquer momento, sempre com confirmação por e-mail) ----------
+      if (pathname === "/api/auth/cadastro" && request.method === "POST") {
         const { username, password, nome, email } = await request.json();
         if (!username || !password || password.length < 6) {
           return json({ erro: "Usuário e senha (mín. 6 caracteres) são obrigatórios." }, 400);
@@ -148,11 +144,13 @@ export default {
         if (!emailValido(email)) {
           return json({ erro: "Informe um e-mail válido." }, 400);
         }
+        const usuarios = (await env.SFC_KV.get("users", "json")) || [];
+        if (usuarios.some((u) => u.username === username)) {
+          return json({ erro: "Esse usuário já existe. Escolha outro nome de usuário." }, 400);
+        }
         const { hash, salt } = await hashSenha(password);
         usuarios.push({ username, nome: nome || username, email, hash, salt, confirmado: false });
         await env.SFC_KV.put("users", JSON.stringify(usuarios));
-        await env.SFC_KV.put("dados", JSON.stringify(estadoVazio()));
-        await env.SFC_KV.put("parcelamentos", JSON.stringify({ parcelamentos: [] }));
 
         const token = crypto.randomUUID();
         await env.SFC_KV.put(`confirm:${token}`, JSON.stringify({ username }), {
@@ -164,11 +162,6 @@ export default {
           return json({ ok: true, emailFalhou: true, erroEmail: err.message });
         }
         return json({ ok: true, emailFalhou: false });
-      }
-
-      if (pathname === "/api/setup/necessario" && request.method === "GET") {
-        const usuarios = (await env.SFC_KV.get("users", "json")) || [];
-        return json({ necessario: usuarios.length === 0 });
       }
 
       // ---------- LOGIN ----------

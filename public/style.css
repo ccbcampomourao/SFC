@@ -46,6 +46,9 @@ button { font-family: inherit; cursor: pointer; }
 .logo-marca.pequena { width: 42px; height: 42px; font-size: 15px; border-radius: 13px; margin: 0; }
 .logo-login h1 { font-size: 19px; margin: 0 0 4px; }
 .logo-login p { color: var(--texto-suave); margin: 0; font-size: 13px; }
+.tabs-login { display: flex; background: var(--cinza-bg); border-radius: 10px; padding: 4px; margin-bottom: 18px; gap: 4px; }
+.tab-login-btn { flex: 1; border: none; background: transparent; padding: 9px 0; border-radius: 8px; font-size: 13px; font-weight: 700; color: var(--texto-suave); cursor: pointer; }
+.tab-login-btn.ativa { background: #fff; color: var(--indigo); box-shadow: var(--sombra); }
 .form-login { display: flex; flex-direction: column; gap: 14px; }
 .form-login label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--texto-suave); font-weight: 600; }
 .form-login input { padding: 10px 12px; border: 1px solid var(--borda); border-radius: 10px; font-size: 14px; outline: none; }

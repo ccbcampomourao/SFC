@@ -35,18 +35,28 @@ function arquivoParaBase64(file) {
 // LOGIN / SETUP
 // ============================================================================
 async function iniciar() {
-  const { necessario } = await api("/api/setup/necessario");
-  if (necessario) {
-    $("#login-subtitulo").textContent = "Crie o primeiro acesso do sistema";
+  const { logado } = await api("/api/session");
+  if (logado) return mostrarApp();
+}
+
+function alternarModoLogin(modo) {
+  $("#form-login").dataset.modo = modo;
+  $$(".tab-login-btn").forEach((b) => b.classList.toggle("ativa", b.dataset.modo === modo));
+  $("#login-erro").classList.add("oculto");
+  $("#form-login").reset();
+  if (modo === "cadastro") {
+    $("#login-subtitulo").textContent = "Crie seu acesso ao sistema";
     $("#campo-nome-setup").classList.remove("oculto");
     $("#campo-email-setup").classList.remove("oculto");
     $("#btn-login-submit").textContent = "Criar conta";
-    $("#form-login").dataset.modo = "setup";
   } else {
-    const { logado } = await api("/api/session");
-    if (logado) return mostrarApp();
+    $("#login-subtitulo").textContent = "Entre com seu usuário e senha";
+    $("#campo-nome-setup").classList.add("oculto");
+    $("#campo-email-setup").classList.add("oculto");
+    $("#btn-login-submit").textContent = "Entrar";
   }
 }
+$$(".tab-login-btn").forEach((btn) => btn.addEventListener("click", () => alternarModoLogin(btn.dataset.modo)));
 
 $("#form-login").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -59,20 +69,15 @@ $("#form-login").addEventListener("submit", async (e) => {
   erroBox.classList.add("mensagem-erro");
   erroBox.classList.add("oculto");
   try {
-    if ($("#form-login").dataset.modo === "setup") {
-      const resp = await api("/api/setup", { method: "POST", body: JSON.stringify({ username: usuario, password: senha, nome, email }) });
+    if ($("#form-login").dataset.modo === "cadastro") {
+      const resp = await api("/api/auth/cadastro", { method: "POST", body: JSON.stringify({ username: usuario, password: senha, nome, email }) });
       erroBox.classList.remove("mensagem-erro");
       erroBox.classList.add("mensagem-sucesso");
       erroBox.textContent = resp.emailFalhou
         ? `Conta criada, mas não consegui enviar o e-mail de confirmação (${resp.erroEmail}). Avise o administrador para configurar o Gmail no servidor.`
         : `Conta criada! Enviamos um link de confirmação para ${email}. Abra seu e-mail (e o spam) e clique no link antes de entrar.`;
       erroBox.classList.remove("oculto");
-      $("#form-login").reset();
-      $("#form-login").dataset.modo = "login";
-      $("#campo-nome-setup").classList.add("oculto");
-      $("#campo-email-setup").classList.add("oculto");
-      $("#login-subtitulo").textContent = "Entre com seu usuário e senha";
-      $("#btn-login-submit").textContent = "Entrar";
+      alternarModoLogin("login");
       return;
     }
     await api("/api/auth/login", { method: "POST", body: JSON.stringify({ username: usuario, password: senha }) });
