@@ -142,7 +142,13 @@ function criarEmpresaCard(empresa, gi, ei) {
   header.className = "empresa-header";
   header.innerHTML = `
     <div class="empresa-nome-wrap">
-      ${empresa.anexos.length ? '<span class="selo-anexado">ANEXADO</span>' : ""}
+      <div class="selos-linha">
+        ${empresa.anexos.length ? '<span class="selo-anexado">ANEXADO</span>' : ""}
+        ${empresa.nfs ? '<span class="selo-tag">NFS</span>' : ""}
+        ${empresa.nfe ? '<span class="selo-tag">NFE</span>' : ""}
+        ${empresa.nfc ? '<span class="selo-tag">NFC</span>' : ""}
+        ${empresa.fechado ? '<span class="selo-tag selo-cadeado" title="Fechado">🔒</span>' : ""}
+      </div>
       <span class="empresa-nome">🏢 ${empresa.nome}</span>
     </div>
     ${botaoCopiaSe(empresa.cnpj, "CNPJ")}

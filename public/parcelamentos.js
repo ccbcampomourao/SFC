@@ -111,7 +111,9 @@ function criarParcelamentoCard(p, i) {
   header.className = "parcelamento-header";
   header.innerHTML = `
     <div class="empresa-nome-wrap">
-      ${p.anexos.length ? '<span class="selo-anexado">ANEXADO</span>' : ""}
+      <div class="selos-linha">
+        ${p.anexos.length ? '<span class="selo-anexado">ANEXADO</span>' : ""}
+      </div>
       <span class="empresa-nome">📄 ${escaparHtml(p.nome)}</span>
     </div>
     ${botaoCopiaSe(p.cnpj, "CNPJ")}
