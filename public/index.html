@@ -3,41 +3,53 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>SFC · Login</title>
+<title>FZCONT · Login</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
 
-  <div id="tela-login" class="tela-cheia">
-    <div class="card-login">
-      <div class="logo-login">
-        <div class="logo-marca">SFC</div>
-        <h1>Sistema Fiscal Contábil</h1>
-        <p id="login-subtitulo">Entre com seu usuário e senha</p>
+  <div id="tela-login" class="tela-login-split">
+    <aside class="painel-hero">
+      <div class="hero-topo">
+        <span class="hero-monograma">FZ</span>
       </div>
-
-      <div class="tabs-login">
-        <button type="button" class="tab-login-btn ativa" data-modo="login">Entrar</button>
-        <button type="button" class="tab-login-btn" data-modo="cadastro">Criar conta</button>
+      <div class="hero-meio">
+        <h1 class="hero-wordmark">FZCONT</h1>
+        <p class="hero-tagline">Controle fiscal e contábil de cada empresa, período a período.</p>
       </div>
+      <div class="hero-rodape">Acesso restrito à equipe</div>
+    </aside>
 
-      <form id="form-login" class="form-login" data-modo="login">
-        <label>Usuário
-          <input type="text" id="login-usuario" autocomplete="username" required />
-        </label>
-        <label>Senha
-          <input type="password" id="login-senha" autocomplete="current-password" required />
-        </label>
-        <label id="campo-nome-setup" class="oculto">Seu nome
-          <input type="text" id="login-nome" autocomplete="name" />
-        </label>
-        <label id="campo-email-setup" class="oculto">Seu e-mail
-          <input type="email" id="login-email" autocomplete="email" />
-        </label>
-        <div id="login-erro" class="mensagem-erro oculto"></div>
-        <button type="submit" id="btn-login-submit">Entrar</button>
-      </form>
-    </div>
+    <main class="painel-form">
+      <div class="card-login">
+        <p id="login-subtitulo" class="login-subtitulo">Entre com seu usuário e senha</p>
+
+        <div class="tabs-login">
+          <button type="button" class="tab-login-btn ativa" data-modo="login">Entrar</button>
+          <button type="button" class="tab-login-btn" data-modo="cadastro">Criar conta</button>
+        </div>
+
+        <form id="form-login" class="form-login" data-modo="login">
+          <label>Usuário
+            <input type="text" id="login-usuario" autocomplete="username" required />
+          </label>
+          <label>Senha
+            <input type="password" id="login-senha" autocomplete="current-password" required />
+          </label>
+          <label id="campo-nome-setup" class="oculto">Seu nome
+            <input type="text" id="login-nome" autocomplete="name" />
+          </label>
+          <label id="campo-email-setup" class="oculto">Seu e-mail
+            <input type="email" id="login-email" autocomplete="email" />
+          </label>
+          <div id="login-erro" class="mensagem-erro oculto"></div>
+          <button type="submit" id="btn-login-submit">Entrar</button>
+        </form>
+      </div>
+    </main>
   </div>
 
   <script src="/common.js"></script>

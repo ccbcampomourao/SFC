@@ -21,7 +21,7 @@ async function enviarEmailConfirmacao(env, origin, destinatario, nome, token) {
     {
       from: env.GMAIL_USER,
       to: destinatario,
-      subject: "Confirme seu acesso — Sistema Fiscal Contábil",
+      subject: "Confirme seu acesso — FZCONT",
       text:
         `Olá, ${nome}!\n\n` +
         `Para liberar seu acesso ao sistema, confirme seu e-mail clicando no link abaixo:\n\n${link}\n\n` +
