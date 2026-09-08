@@ -1,80 +1,73 @@
 # SFC — Sistema Fiscal Contábil (versão Web)
 
-Versão web do sistema, feita para rodar 100% no **Cloudflare Workers** (com Assets estáticos + KV),
-publicável direto do **GitHub**.
+Versão web do sistema, rodando 100% no **Cloudflare Workers**, com o armazenamento dividido em:
+
+- **KV `SFC_KV`** — usuários e sessões de login
+- **KV `KV_EMPRESAS`** — cadastro/status das empresas e parcelamentos + índice de períodos salvos
+- **KV `KV_COMENTARIOS`** — comentários e as tarefas do dia (checklist)
+- **R2 `sfc-anexos`** — os arquivos anexados de verdade (upload/download binário, sem base64)
+
+E a interface dividida em **páginas separadas**: `index.html` (login/cadastro), `empresas.html` (grupos, empresas, tarefas do dia) e `parcelamentos.html` — em vez de tudo numa página só.
 
 ## ⚠️ Antes de tudo: troque a senha do Gmail
 
-O código Java original tinha a senha de app do Gmail escrita diretamente no arquivo.
-Essa senha **precisa ser revogada agora**, mesmo que você não use mais o app antigo:
+O código Java original tinha a senha de app do Gmail escrita diretamente no arquivo. Revogue essa senha antiga em https://myaccount.google.com/apppasswords e gere uma nova (você vai usá-la no passo 3 abaixo).
 
-1. Acesse https://myaccount.google.com/apppasswords
-2. Revogue a senha de app antiga (a que aparecia no `MainController.java`)
-3. Gere uma **nova senha de app** — você vai usá-la no passo 4 abaixo (nunca vai ficar escrita em nenhum arquivo)
+## O que já funciona nesta versão
 
-## O que já funciona nesta versão (agora com paridade completa com o app Java)
-
-- Login multiusuário (funcionários), sessão por cookie
-- **Tela de login com duas abas**: "Entrar" e "Criar conta", separadas — qualquer pessoa com o link pode clicar em "Criar conta" a qualquer momento (não é mais só a primeira vez). Toda conta nova só consegue entrar depois de clicar no link de confirmação enviado por e-mail
-- Grupos e empresas em formato sanfona (clique para abrir/fechar), exatamente como no app original
-- **Status por empresa**: 3 botões independentes (OK / PENDENTE / ATENÇÃO) — clicar pinta a empresa inteira daquela cor, clicar de novo no mesmo desliga
-- Checkboxes reais de **NFS / NFE / NFC / FECHADO**
-- Botões de cópia rápida (CNPJ, CPF, IE, senha da Prefeitura, senha do Regularize) — clique copia pra área de transferência
-- Comentários com data/hora automática
-- **Anexos de verdade**: upload e download reais, guardados no Cloudflare KV (limite de ~18MB por arquivo)
+- **3 páginas separadas**: `/` (login/cadastro), `/empresas.html`, `/parcelamentos.html` — navegação por link de verdade, não por abas escondidas
+- Login multiusuário com **duas abas** (Entrar / Criar conta), sempre disponíveis
+- **Confirmação por e-mail** obrigatória para toda conta nova. Se o login falhar por conta não confirmada, aparece um aviso com **botão de reenvio** — e se a conta for antiga e não tiver e-mail cadastrado, é pedido um e-mail ali mesmo antes de reenviar
+- Grupos e empresas em formato sanfona, com status (OK/PENDENTE/ATENÇÃO), checkboxes NFS/NFE/NFC/FECHADO, botões de cópia rápida, comentários e anexos
+- **Anexos reais via Cloudflare R2** — upload e download binário direto, sem transformar em base64 pra guardar (arquivo até ~95MB)
+- Parcelamentos sincronizados automaticamente com as empresas (por CNPJ), com os 4 botões de alternância + status geral + comentários + anexos
 - Tarefas do dia (checklist) com comentários
-- **Parcelamentos**, sincronizados automaticamente com as empresas (por CNPJ), com os 4 botões de alternância (Vazio → Simples Receita → Simples PGFN → Previdência Receita → Previdência PGFN) + status geral (OK/PENDENTE/ATENÇÃO) + comentários + anexos
-- Dashboard com contagem de OK/ATENÇÃO/PENDENTE por grupo, igual ao app original
-- Botão **Salvar** (grava tudo no Cloudflare KV)
-- **Exportar Backup / Importar Backup**: baixa um `.json` autocontido (com os anexos embutidos) para arquivar um período inteiro, e permite restaurar esse período depois — substitui o backup em ZIP do app original
-- Botão **Nova Lista**: mantém nome + dados de acesso (CNPJ, senhas, IE, e-mail) de cada empresa, mas zera status, checkboxes, comentários e anexos (e apaga os anexos antigos do KV)
-- Envio de e-mail pelo Gmail, direto do Worker (usando `worker-mailer`, sem depender de Resend/SendGrid)
+- Dashboard com contagem de OK/ATENÇÃO/PENDENTE por grupo
+- Botão **Salvar**
+- **Salvar Período / Abrir Período**: dá um nome (ex: `07-2026`) e salva um retrato completo dos dados no próprio servidor; depois é só abrir a lista de períodos salvos e clicar em "Restaurar" pra trazer aqueles dados de volta como os dados atuais
+- **Exportar Backup / Importar Backup**: continua existindo como opção de arquivo `.json` pra guardar uma cópia fora do servidor
+- Botão **Nova Lista**: mantém nome + dados de acesso de cada empresa, zera status/checkboxes/comentários/anexos (os arquivos em si continuam no R2, caso algum período salvo ainda precise deles — apague pela lixeira se quiser remover de vez)
+- Envio de e-mail pelo Gmail, direto do Worker
 
-## O que fica para a próxima fase (avise quando quiser que eu monte)
+## Migração automática
 
-- Importação de planilha Excel para cadastro em massa (hoje você cadastra empresa por empresa, ou via "Importar Backup")
-- Importação/leitura de PDF fiscal (o parser de "Operações" com regex, e o gerador de PDF resumo)
-- Regras finas de permissão entre funcionários (hoje todo usuário logado pode tudo)
-
-## ⚠️ Cadastro aberto
-
-Como pedido, a aba "Criar conta" fica sempre disponível — qualquer pessoa com o link do sistema pode se cadastrar (mas só entra depois de confirmar o e-mail). Se algum dia quiser fechar isso (por exemplo, só administradores podendo criar login pelo botão "Usuários"), é só avisar que eu tiro a aba "Criar conta" da tela pública.
+Se você já estava usando a versão anterior (tudo num único KV, anexos em base64), não precisa fazer nada manual: na primeira vez que o app rodar depois desse upgrade, ele detecta o formato antigo e migra sozinho — copia os dados pros novos KVs, sobe os anexos pro R2 e limpa o formato antigo. Só não esqueça de criar os novos KVs e o bucket R2 (passo 1 abaixo) antes de publicar, senão a migração não tem onde gravar.
 
 ## Passo a passo para publicar
 
-### 1. Criar o namespace do KV
+### 1. Criar os KVs e o bucket R2
 ```bash
 npm install -g wrangler
 wrangler login
-wrangler kv namespace create SFC_KV
-```
-Copie o `id` que aparecer e cole em `wrangler.toml`, no lugar de `COLE_AQUI_O_ID_DO_KV`.
 
-### 2. Configurar o e-mail (Gmail) — obrigatório antes de criar o 1º usuário
+wrangler kv namespace create SFC_KV
+wrangler kv namespace create KV_EMPRESAS
+wrangler kv namespace create KV_COMENTARIOS
+wrangler r2 bucket create sfc-anexos
+```
+Copie os três `id` retornados e cole em `wrangler.toml`, cada um no lugar do respectivo `COLE_AQUI_O_ID_DO_...`.
+
+### 2. Instalar dependências
+```bash
+npm install
+```
+
+### 3. Configurar o e-mail (Gmail)
 ```bash
 wrangler secret put GMAIL_USER
-# digite: ferrarezicontabilidadegestao@gmail.com (ou o e-mail que preferir)
-
 wrangler secret put GMAIL_APP_PASSWORD
-# digite a senha de app NOVA que você gerou no passo "antes de tudo"
 ```
-Para testar **localmente** (`npm run dev`), crie um arquivo `.dev.vars` na raiz do projeto (ele já está no `.gitignore`, não vai pro GitHub):
+Para testar localmente com `npm run dev`, crie um `.dev.vars` (já está no `.gitignore`):
 ```
 GMAIL_USER=seuemail@gmail.com
 GMAIL_APP_PASSWORD=sua-senha-de-app
 ```
 
-### 3. Ativar Sockets TCP no Worker (necessário para o envio de e-mail)
-No painel da Cloudflare: **Workers & Pages > seu Worker > Settings > Bindings** — os sockets TCP
-via `cloudflare:sockets` já vêm habilitados por padrão em contas com Workers Paid. Se o envio de
-e-mail falhar com erro de conexão, confirme no dashboard se sua conta tem esse recurso disponível.
-
-### 4. Instalar dependências e testar localmente
+### 4. Publicar
 ```bash
-npm install
-npm run dev
+npx wrangler deploy
 ```
-Acesse `http://localhost:8787`, crie o primeiro usuário (tela de setup) e teste.
+Se preferir deploy automático via GitHub, veja a seção "Publicar no Cloudflare (via GitHub)" — mas em caso de instabilidade no build automático, `npx wrangler deploy` direto do terminal sempre funciona.
 
 ### 5. Subir para o GitHub
 ```bash
@@ -86,28 +79,26 @@ git remote add origin https://github.com/SEU_USUARIO/sfc-web.git
 git push -u origin main
 ```
 
-### 6. Publicar no Cloudflare (via GitHub)
-No painel da Cloudflare: **Workers & Pages > Create > Import from Git** e selecione o repositório.
-A Cloudflare vai detectar o `wrangler.toml` automaticamente. Configure:
-- **Build command:** `npm install`
-- **Deploy command:** `npx wrangler deploy`
-
-Depois disso, todo `git push` na branch `main` publica automaticamente uma nova versão.
-
-Ou, se preferir publicar direto da sua máquina sem integração automática:
-```bash
-npm run deploy
-```
-
 ## Estrutura do projeto
 ```
 sfc-web/
-├── wrangler.toml       # configuração do Worker (KV, assets, variáveis)
+├── wrangler.toml       # KVs, bucket R2, assets, variáveis
 ├── package.json
 ├── src/
-│   └── worker.js        # backend: login, dados, reset mensal, e-mail
+│   └── worker.js        # backend: login, dados, anexos (R2), períodos, e-mail
 └── public/
-    ├── index.html        # interface
-    ├── style.css         # visual (paleta índigo/violeta)
-    └── app.js             # lógica do front-end
+    ├── index.html        # página de login/cadastro
+    ├── empresas.html      # página de grupos/empresas + tarefas do dia
+    ├── parcelamentos.html # página de parcelamentos
+    ├── common.js          # utilitários e ações compartilhadas (salvar, período, backup, usuários)
+    ├── login.js            # lógica exclusiva da tela de login
+    ├── empresas.js          # lógica exclusiva da página de empresas
+    ├── parcelamentos.js      # lógica exclusiva da página de parcelamentos
+    └── style.css              # visual (paleta índigo/violeta)
 ```
+
+## Próxima fase (quando quiser)
+
+- Importação de planilha Excel para cadastro em massa
+- Importação/leitura de PDF fiscal (parser de "Operações" + gerador de PDF resumo)
+- Regras finas de permissão entre funcionários

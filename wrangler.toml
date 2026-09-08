@@ -9,11 +9,28 @@ compatibility_flags = ["nodejs_compat"]
 directory = "./public"
 binding = "ASSETS"
 
-# KV onde ficam salvos: cadastro de empresas, checklist, parcelamentos e usuários.
-# Depois de rodar `wrangler kv namespace create SFC_KV`, cole o "id" retornado aqui.
+# KV onde ficam os usuários e as sessões de login.
 [[kv_namespaces]]
 binding = "SFC_KV"
 id = "dd5f87d9a1eb40648e6e9d4ea6937d5a"
+
+# KV onde ficam os dados das empresas/parcelamentos (cadastro, status, checkboxes) + períodos salvos.
+# Rode `wrangler kv namespace create KV_EMPRESAS` e cole o id retornado.
+[[kv_namespaces]]
+binding = "KV_EMPRESAS"
+id = "5d4f7a475e5447cca04b1ec38fdae90a"
+
+# KV onde ficam os comentários (de empresas e parcelamentos) e as tarefas do dia (checklist).
+# Rode `wrangler kv namespace create KV_COMENTARIOS` e cole o id retornado.
+[[kv_namespaces]]
+binding = "KV_COMENTARIOS"
+id = "a1d1335bfedd4c87948d1ea4def28913"
+
+# Bucket R2 onde ficam os arquivos anexados de verdade (sem base64, upload/download binário).
+# Rode `wrangler r2 bucket create sfc-anexos` antes do primeiro deploy.
+[[r2_buckets]]
+binding = "ANEXOS_R2"
+bucket_name = "sfc-anexos"
 
 # Necessário para o Worker abrir conexão TCP/TLS com o Gmail (envio de e-mail).
 # Ative em: Cloudflare Dashboard > Workers > seu worker > Settings > Bindings.
