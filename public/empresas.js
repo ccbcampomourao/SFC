@@ -173,7 +173,7 @@ function criarEmpresaCard(empresa, gi, ei) {
     btn.addEventListener("click", (e) => { e.stopPropagation(); copiar(rotulo, mapa[rotulo]); });
   });
   const btnEmail = header.querySelector("[data-email]");
-  if (btnEmail) btnEmail.addEventListener("click", (e) => { e.stopPropagation(); enviarEmailPara(empresa.email, `Aviso - ${empresa.nome}`); });
+  if (btnEmail) btnEmail.addEventListener("click", (e) => { e.stopPropagation(); enviarEmailPara(empresa.email, `Aviso - ${empresa.nome}`, empresa.anexos); });
   header.querySelector("[data-excluir]").addEventListener("click", (e) => {
     e.stopPropagation();
     if (!confirm(`Excluir "${empresa.nome}"? Essa ação não pode ser desfeita.`)) return;

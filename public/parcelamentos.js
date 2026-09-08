@@ -136,7 +136,7 @@ function criarParcelamentoCard(p, i) {
     e.stopPropagation();
     const destinatario = prompt("E-mail de destino:", "");
     if (!destinatario) return;
-    enviarEmailPara(destinatario, `Parcelamento - ${p.nome}`);
+    enviarEmailPara(destinatario, `Parcelamento - ${p.nome}`, p.anexos);
   });
   header.querySelector("[data-excluir]").addEventListener("click", (e) => {
     e.stopPropagation();

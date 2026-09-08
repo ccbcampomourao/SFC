@@ -76,14 +76,15 @@ function baixarAnexo(a) {
   window.open(`/api/anexos/${a.id}`, "_blank");
 }
 
-async function enviarEmailPara(destinatario, assuntoPadrao) {
+async function enviarEmailPara(destinatario, assuntoPadrao, anexos = []) {
   if (!destinatario) return alert("Não há e-mail cadastrado.");
   const assunto = prompt("Assunto do e-mail:", assuntoPadrao);
   if (!assunto) return;
   const mensagem = prompt("Mensagem:", "");
+  const anexoIds = (anexos || []).map((a) => a.id).filter(Boolean);
   try {
-    await api("/api/email", { method: "POST", body: JSON.stringify({ destinatario, assunto, mensagem }) });
-    notificar("✅ E-mail enviado para " + destinatario);
+    const resp = await api("/api/email", { method: "POST", body: JSON.stringify({ destinatario, assunto, mensagem, anexoIds }) });
+    notificar(resp.anexados ? `✅ E-mail enviado para ${destinatario} (${resp.anexados} anexo(s))` : `✅ E-mail enviado para ${destinatario}`);
   } catch (err) {
     alert("Erro ao enviar: " + err.message);
   }

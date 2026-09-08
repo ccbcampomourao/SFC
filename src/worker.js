@@ -469,7 +469,7 @@ export default {
 
       // ---------- ENVIO DE E-MAIL (via Gmail, usando conexão TCP direta) ----------
       if (pathname === "/api/email" && request.method === "POST") {
-        const { destinatario, assunto, mensagem } = await request.json();
+        const { destinatario, assunto, mensagem, anexoIds } = await request.json();
         if (!destinatario || !assunto) {
           return json({ erro: "Destinatário e assunto são obrigatórios." }, 400);
         }
@@ -479,6 +479,24 @@ export default {
             500
           );
         }
+
+        const attachments = [];
+        let tamanhoTotal = 0;
+        for (const id of anexoIds || []) {
+          const obj = await env.ANEXOS_R2.get(`anexos/${id}`);
+          if (!obj) continue;
+          const bytes = await obj.arrayBuffer();
+          tamanhoTotal += bytes.byteLength;
+          if (tamanhoTotal > 20 * 1024 * 1024) {
+            return json({ erro: "Os anexos somados passam de 20MB — o Gmail não aceita e-mails tão grandes. Remova algum anexo antes de enviar." }, 400);
+          }
+          attachments.push({
+            filename: obj.customMetadata?.nome || id,
+            content: Buffer.from(bytes).toString("base64"),
+            mimeType: obj.httpMetadata?.contentType || "application/octet-stream",
+          });
+        }
+
         try {
           await WorkerMailer.send(
             {
@@ -493,9 +511,10 @@ export default {
               to: destinatario,
               subject: assunto,
               text: mensagem || "",
+              attachments: attachments.length ? attachments : undefined,
             }
           );
-          return json({ ok: true });
+          return json({ ok: true, anexados: attachments.length });
         } catch (err) {
           return json({ erro: "Falha ao enviar e-mail: " + err.message }, 500);
         }
