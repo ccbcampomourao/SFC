@@ -85,6 +85,9 @@ button { font-family: inherit; cursor: pointer; }
 .topo-busca input { width: 100%; padding: 9px 14px; border: 1px solid var(--borda); border-radius: 999px; font-size: 13px; outline: none; background: var(--cinza-bg); }
 .topo-busca input:focus { border-color: var(--indigo); background: #fff; }
 .topo-acoes { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+.link-nav { text-decoration: none; color: var(--texto-suave); font-size: 13px; font-weight: 700; padding: 9px 14px; border-radius: 10px; }
+.link-nav:hover { background: var(--cinza-bg); color: var(--texto); }
+.link-nav.ativo { background: var(--indigo-claro); color: var(--indigo-escuro); }
 
 .status-salvar { position: fixed; top: 64px; right: 24px; z-index: 50; background: var(--verde-bg); color: var(--verde); padding: 8px 16px; border-radius: 10px; font-size: 13px; font-weight: 700; box-shadow: var(--sombra); }
 

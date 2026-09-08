@@ -3,12 +3,11 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>SFC · Sistema Fiscal Contábil</title>
+<title>SFC · Login</title>
 <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
 
-  <!-- ===================== TELA DE LOGIN ===================== -->
   <div id="tela-login" class="tela-cheia">
     <div class="card-login">
       <div class="logo-login">
@@ -41,80 +40,7 @@
     </div>
   </div>
 
-  <!-- ===================== APP PRINCIPAL ===================== -->
-  <div id="app" class="tela-cheia oculto">
-
-    <header class="topo">
-      <div class="topo-esquerda">
-        <div class="logo-marca pequena">SFC</div>
-        <div>
-          <h1>Sistema Fiscal Contábil</h1>
-          <span id="usuario-logado" class="usuario-atual"></span>
-        </div>
-      </div>
-
-      <div class="topo-busca">
-        <input type="text" id="busca-empresa" placeholder="Buscar empresa..." />
-      </div>
-
-      <nav class="topo-acoes">
-        <button class="btn-ghost" data-aba="grupos">Empresas</button>
-        <button class="btn-ghost" data-aba="parcelamentos">Parcelamentos</button>
-        <button class="btn-ghost" id="btn-usuarios">Usuários</button>
-        <button class="btn-primario" id="btn-salvar">Salvar</button>
-        <button class="btn-secundario" id="btn-exportar-backup">Exportar Backup</button>
-        <button class="btn-secundario" id="btn-importar-backup">Importar Backup</button>
-        <input type="file" id="input-importar-backup" accept="application/json" class="oculto" />
-        <button class="btn-perigo-outline" id="btn-nova-lista">Nova Lista</button>
-        <button class="btn-ghost" id="btn-sair">Sair</button>
-      </nav>
-    </header>
-
-    <div id="status-salvar" class="status-salvar oculto"></div>
-
-    <!-- -------- ABA: GRUPOS / EMPRESAS -------- -->
-    <main id="aba-grupos" class="conteudo conteudo-coluna">
-      <div id="dashboard" class="dashboard"></div>
-      <div class="duas-colunas">
-        <section class="painel-esquerdo">
-          <div class="painel-cabecalho">
-            <h2>Grupos e Empresas</h2>
-            <div class="painel-acoes">
-              <button class="btn-secundario" id="btn-novo-grupo">+ Grupo</button>
-            </div>
-          </div>
-          <div id="lista-grupos" class="lista-grupos"></div>
-        </section>
-
-        <aside class="painel-direito">
-          <div class="painel-cabecalho">
-            <h2>Tarefas do Dia</h2>
-            <button class="btn-secundario" id="btn-nova-tarefa">+ Tarefa</button>
-          </div>
-          <div id="lista-checklist" class="lista-checklist"></div>
-        </aside>
-      </div>
-    </main>
-
-    <!-- -------- ABA: PARCELAMENTOS -------- -->
-    <main id="aba-parcelamentos" class="conteudo conteudo-coluna oculto">
-      <div id="dashboard-parcelamentos" class="dashboard"></div>
-      <section class="painel-esquerdo largura-total">
-        <div class="painel-cabecalho">
-          <h2>Parcelamentos</h2>
-          <button class="btn-secundario" id="btn-novo-parcelamento">+ Parcelamento</button>
-        </div>
-        <div id="lista-parcelamentos" class="grade-parcelamentos"></div>
-      </section>
-    </main>
-
-  </div>
-
-  <!-- ===================== MODAL GENÉRICO (empresa / parcelamento / usuários) ===================== -->
-  <div id="modal-fundo" class="modal-fundo oculto">
-    <div id="modal-conteudo" class="modal-conteudo"></div>
-  </div>
-
-  <script src="/app.js"></script>
+  <script src="/common.js"></script>
+  <script src="/login.js"></script>
 </body>
 </html>
