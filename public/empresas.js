@@ -173,7 +173,7 @@ function criarEmpresaCard(empresa, gi, ei) {
     btn.addEventListener("click", (e) => { e.stopPropagation(); copiar(rotulo, mapa[rotulo]); });
   });
   const btnEmail = header.querySelector("[data-email]");
-  if (btnEmail) btnEmail.addEventListener("click", (e) => { e.stopPropagation(); enviarEmailPara(empresa.email, `Aviso - ${empresa.nome}`, empresa.anexos); });
+  if (btnEmail) btnEmail.addEventListener("click", (e) => { e.stopPropagation(); enviarEmailEmpresaOriginal(empresa); });
   header.querySelector("[data-excluir]").addEventListener("click", (e) => {
     e.stopPropagation();
     if (!confirm(`Excluir "${empresa.nome}"? Essa ação não pode ser desfeita.`)) return;
@@ -342,11 +342,102 @@ function renderizarChecklist() {
   }));
 }
 
+// ---------------------------------------------------------------------------
+// E-MAIL (igual ao "enviarEmailComAnexos" do app original: assunto e corpo
+// automáticos com a competência do mês anterior, exige e-mail e anexo, e
+// marca a empresa como VERDE ao enviar com sucesso)
+// ---------------------------------------------------------------------------
+async function enviarEmailEmpresaOriginal(empresa) {
+  if (!empresa.email) {
+    notificar("Esta empresa não possui um e-mail cadastrado.");
+    return;
+  }
+  if (!empresa.anexos || empresa.anexos.length === 0) {
+    notificar("A empresa não possui arquivos anexados para enviar.");
+    return;
+  }
+
+  const hoje = new Date();
+  const mesAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+  const competencia = `${String(mesAnterior.getMonth() + 1).padStart(2, "0")}/${mesAnterior.getFullYear()}`;
+  const assunto = `Documentos Setor Fiscal - Competência ${competencia}`;
+  const mensagem = `Olá, tudo bem?\n\nSegue em anexo os documentos do setor Fiscal referente à competência ${competencia}.\n\nAtenciosamente,\nFZ CONT`;
+
+  notificar(`A enviar e-mail para ${empresa.nome}...`);
+  try {
+    await enviarEmailBruto({
+      destinatario: empresa.email,
+      assunto,
+      mensagem,
+      anexoIds: empresa.anexos.map((a) => a.id),
+    });
+    empresa.status = "VERDE";
+    renderizarGrupos($("#busca")?.value.toLowerCase() || "");
+    renderizarDashboard();
+    notificar(`✅ E-mail enviado com sucesso para ${empresa.nome}!`);
+  } catch (err) {
+    alert("Erro ao enviar e-mail: " + err.message);
+  }
+}
+
 $("#btn-nova-tarefa").addEventListener("click", () => {
   const texto = prompt("Descrição da tarefa:");
   if (!texto) return;
   ESTADO.checklist.push({ texto, concluido: false, comentarios: [] });
   renderizarChecklist();
+});
+
+// ---------------------------------------------------------------------------
+// IMPORTAR PDFs EM LOTE (igual ao "processarPdfDas" do app original):
+// lê o texto de cada PDF, acha o CNPJ, identifica a empresa correspondente,
+// anexa o arquivo e registra um comentário com competência/valor encontrados.
+// ---------------------------------------------------------------------------
+$("#btn-importar-pdfs")?.addEventListener("click", () => $("#input-importar-pdfs").click());
+$("#input-importar-pdfs")?.addEventListener("change", async (e) => {
+  const arquivos = [...e.target.files];
+  if (!arquivos.length) return;
+  notificar(`Analisando ${arquivos.length} PDF(s)...`);
+
+  let vinculados = 0, semCnpj = 0, semEmpresa = 0, comErro = 0;
+
+  for (const arquivo of arquivos) {
+    try {
+      const texto = await extrairTextoPdf(arquivo);
+      if (!texto.trim()) { comErro++; continue; }
+
+      const cnpjEncontrado = extrairCnpjDoTexto(texto);
+      if (!cnpjEncontrado) { semCnpj++; continue; }
+
+      const empresa = buscarEmpresaPorCnpj(cnpjEncontrado);
+      if (!empresa) { semEmpresa++; continue; }
+
+      empresa.anexos = empresa.anexos || [];
+      await anexarArquivoNaLista(empresa.anexos, arquivo);
+
+      const competencia = extrairCompetenciaDoTexto(texto);
+      const valor = extrairValorDoTexto(texto);
+      let comentario = "📄 Guia DAS Simples Nacional processada via PDF.";
+      if (competencia) comentario += `\nCompetência: ${competencia}`;
+      if (valor) comentario += `\nValor Total: R$ ${valor}`;
+      empresa.comentarios.push(`${comentario}\n${agora()}`);
+
+      vinculados++;
+    } catch (err) {
+      console.error("Erro ao processar PDF", arquivo.name, err);
+      comErro++;
+    }
+  }
+
+  renderizarGrupos($("#busca")?.value.toLowerCase() || "");
+  renderizarDashboard();
+
+  let msg = `✅ Lote processado: ${vinculados} arquivo(s) vinculado(s).`;
+  if (semCnpj) msg += ` ${semCnpj} sem CNPJ localizado.`;
+  if (semEmpresa) msg += ` ${semEmpresa} sem empresa cadastrada com esse CNPJ.`;
+  if (comErro) msg += ` ${comErro} com erro de leitura.`;
+  notificar(msg);
+  alert(msg + "\n\nLembre-se de clicar em Salvar para gravar os comentários e status.");
+  e.target.value = "";
 });
 
 $("#busca")?.addEventListener("input", (e) => renderizarGrupos(e.target.value.toLowerCase()));

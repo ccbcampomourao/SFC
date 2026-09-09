@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/style.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
 
@@ -33,6 +34,8 @@
         <button class="btn-primario" id="btn-salvar">Salvar</button>
         <button class="btn-secundario" id="btn-salvar-periodo">Salvar Período</button>
         <button class="btn-secundario" id="btn-abrir-periodo">Abrir Período</button>
+        <button class="btn-secundario" id="btn-importar-pdfs">Importar PDFs</button>
+        <input type="file" id="input-importar-pdfs" accept="application/pdf" multiple class="oculto" />
         <button class="btn-secundario" id="btn-exportar-backup">Exportar Backup</button>
         <button class="btn-secundario" id="btn-importar-backup">Importar Backup</button>
         <input type="file" id="input-importar-backup" accept="application/json" class="oculto" />

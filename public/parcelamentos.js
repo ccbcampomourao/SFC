@@ -12,8 +12,6 @@ function classeAlternancia(status) {
   const mapa = { "Simples Receita": "a-simples-receita", "Simples PGFN": "a-simples-pgfn", "Previdencia Receita": "a-previdencia-receita", "Previdencia PGFN": "a-previdencia-pgfn" };
   return mapa[status] || "";
 }
-function limparDigitos(s) { return (s || "").replace(/[^0-9]/g, ""); }
-
 function encontrarParcelamentoDe(empresa) {
   const cnpjLimpo = limparDigitos(empresa.cnpj);
   return ESTADO.parcelamentos.find((p) => {
@@ -64,6 +62,41 @@ function renderizarDashboardParcelamentos() {
       </div>
     </div>
   `;
+}
+
+// ---------------------------------------------------------------------------
+// E-MAIL (igual ao "enviarEmailExclusivoParcelamento" do app original: busca
+// o e-mail pela empresa cadastrada com o mesmo CNPJ, pede uma mensagem/nota
+// e manda um corpo HTML fixo com o nome do parcelamento no assunto)
+// ---------------------------------------------------------------------------
+async function enviarEmailParcelamentoOriginal(p) {
+  const empresa = buscarEmpresaPorCnpj(p.cnpj);
+  if (!empresa || !empresa.email) {
+    alert("Não foi possível enviar o e-mail.\nNenhuma empresa cadastrada em Empresas com este CNPJ ou o campo de e-mail está vazio!");
+    return;
+  }
+  const nota = prompt("Mensagem para o cliente:", "Olá, segue atualização sobre o andamento do seu Parcelamento.");
+  if (nota === null) return;
+
+  const assunto = `PARCELAMENTOS - ${p.nome}`;
+  const corpoHtml = `<h3>Parcelamentos</h3>${escaparHtml(p.nome)}<p>Prezado cliente<b></b>,</p><p>Segue em anexo as guias dos parcelamentos</p><br><p>Atenciosamente,<br>Departamento Fiscal e Contábil</p>`;
+
+  notificar(`A enviar e-mail para ${empresa.nome}...`);
+  try {
+    const resp = await enviarEmailBruto({
+      destinatario: empresa.email,
+      assunto,
+      mensagem: corpoHtml,
+      html: true,
+      anexoIds: (p.anexos || []).map((a) => a.id),
+    });
+    notificar(
+      `✅ E-mail de parcelamento enviado para ${empresa.email}` +
+        (resp.anexados ? ` (${resp.anexados} anexo(s))` : "")
+    );
+  } catch (err) {
+    alert("Falha ao enviar e-mail: " + err.message);
+  }
 }
 
 $("#btn-novo-parcelamento").addEventListener("click", () => {
@@ -134,9 +167,7 @@ function criarParcelamentoCard(p, i) {
   });
   header.querySelector("[data-email]").addEventListener("click", (e) => {
     e.stopPropagation();
-    const destinatario = prompt("E-mail de destino:", "");
-    if (!destinatario) return;
-    enviarEmailPara(destinatario, `Parcelamento - ${p.nome}`, p.anexos);
+    enviarEmailParcelamentoOriginal(p);
   });
   header.querySelector("[data-excluir]").addEventListener("click", (e) => {
     e.stopPropagation();
@@ -246,6 +277,57 @@ function criarParcelamentoCard(p, i) {
   }
   return wrap;
 }
+
+// ---------------------------------------------------------------------------
+// IMPORTAR PDFs EM LOTE (igual ao "processarPdfParcelamento" do app original)
+// ---------------------------------------------------------------------------
+$("#btn-importar-pdfs")?.addEventListener("click", () => $("#input-importar-pdfs").click());
+$("#input-importar-pdfs")?.addEventListener("change", async (e) => {
+  const arquivos = [...e.target.files];
+  if (!arquivos.length) return;
+  notificar(`Analisando ${arquivos.length} PDF(s)...`);
+
+  let vinculados = 0, semCnpj = 0, semParcelamento = 0, comErro = 0;
+
+  for (const arquivo of arquivos) {
+    try {
+      const texto = await extrairTextoPdf(arquivo);
+      if (!texto.trim()) { comErro++; continue; }
+
+      const cnpjEncontrado = extrairCnpjDoTexto(texto);
+      if (!cnpjEncontrado) { semCnpj++; continue; }
+
+      const parcelamento = buscarParcelamentoPorCnpj(cnpjEncontrado);
+      if (!parcelamento) { semParcelamento++; continue; }
+
+      parcelamento.anexos = parcelamento.anexos || [];
+      await anexarArquivoNaLista(parcelamento.anexos, arquivo);
+
+      const competencia = extrairCompetenciaDoTexto(texto);
+      const valor = extrairValorDoTexto(texto);
+      let comentario = "📄 Guia de Parcelamento processada via PDF.";
+      if (competencia) comentario += `\nCompetência: ${competencia}`;
+      if (valor) comentario += `\nValor Total: R$ ${valor}`;
+      parcelamento.comentarios.push(`${comentario}\n${agora()}`);
+
+      vinculados++;
+    } catch (err) {
+      console.error("Erro ao processar PDF", arquivo.name, err);
+      comErro++;
+    }
+  }
+
+  renderizarParcelamentos($("#busca")?.value.toLowerCase() || "");
+  renderizarDashboardParcelamentos();
+
+  let msg = `✅ Lote de Parcelamentos processado: ${vinculados} arquivo(s) vinculado(s).`;
+  if (semCnpj) msg += ` ${semCnpj} sem CNPJ localizado.`;
+  if (semParcelamento) msg += ` ${semParcelamento} sem parcelamento cadastrado com esse CNPJ.`;
+  if (comErro) msg += ` ${comErro} com erro de leitura.`;
+  notificar(msg);
+  alert(msg + "\n\nLembre-se de clicar em Salvar para gravar os comentários.");
+  e.target.value = "";
+});
 
 $("#busca")?.addEventListener("input", (e) => renderizarParcelamentos(e.target.value.toLowerCase()));
 

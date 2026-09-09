@@ -469,7 +469,7 @@ export default {
 
       // ---------- ENVIO DE E-MAIL (via Gmail, usando conexão TCP direta) ----------
       if (pathname === "/api/email" && request.method === "POST") {
-        const { destinatario, assunto, mensagem, anexoIds } = await request.json();
+        const { destinatario, assunto, mensagem, anexoIds, html, remetenteNome } = await request.json();
         if (!destinatario || !assunto) {
           return json({ erro: "Destinatário e assunto são obrigatórios." }, 400);
         }
@@ -507,10 +507,11 @@ export default {
               credentials: { username: env.GMAIL_USER, password: env.GMAIL_APP_PASSWORD },
             },
             {
-              from: env.GMAIL_USER,
+              from: { name: remetenteNome || "FZCONT", email: env.GMAIL_USER },
               to: destinatario,
               subject: assunto,
-              text: mensagem || "",
+              text: html ? undefined : mensagem || "",
+              html: html ? mensagem || "" : undefined,
               attachments: attachments.length ? attachments : undefined,
             }
           );

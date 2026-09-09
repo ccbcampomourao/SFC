@@ -72,22 +72,78 @@ function notificar(msg) {
   setTimeout(() => box.classList.add("oculto"), 2200);
 }
 
+function limparDigitos(s) { return (s || "").replace(/[^0-9]/g, ""); }
+
+function buscarEmpresaPorCnpj(cnpj) {
+  const alvo = limparDigitos(cnpj);
+  if (!alvo) return null;
+  for (const g of ESTADO.grupos) {
+    const emp = g.empresas.find((e) => limparDigitos(e.cnpj) === alvo);
+    if (emp) return emp;
+  }
+  return null;
+}
+
+function buscarParcelamentoPorCnpj(cnpj) {
+  const alvo = limparDigitos(cnpj);
+  if (!alvo) return null;
+  return ESTADO.parcelamentos.find((p) => limparDigitos(p.cnpj) === alvo) || null;
+}
+
+// ---------------------------------------------------------------------------
+// LEITURA DE PDF (pdf.js) — usada pela importação em lote de guias/DAS,
+// igual ao "processarPdfDas"/"processarPdfParcelamento" do app original.
+// ---------------------------------------------------------------------------
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+}
+
+async function extrairTextoPdf(arquivo) {
+  const buf = await arquivo.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let texto = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const pagina = await pdf.getPage(i);
+    const conteudo = await pagina.getTextContent();
+    texto += conteudo.items.map((it) => it.str).join(" ") + "\n";
+  }
+  return texto;
+}
+
+function extrairCnpjDoTexto(texto) {
+  const formatado = texto.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/);
+  if (formatado) return formatado[0];
+  const cru = texto.match(/\d{14}/);
+  return cru ? cru[0] : null;
+}
+
+function extrairCompetenciaDoTexto(texto) {
+  const m = texto.match(/(Janeiro|Fevereiro|Março|Abril|Maio|Junho|Julho|Agosto|Setembro|Outubro|Novembro|Dezembro)\/\d{4}/);
+  return m ? m[0] : "";
+}
+
+function extrairValorDoTexto(texto) {
+  const todos = texto.match(/\d{1,3}(\.\d{3})*,\d{2}/g);
+  return todos && todos.length ? todos[todos.length - 1] : "";
+}
+
+async function anexarArquivoNaLista(lista, arquivo) {
+  const dataB64 = await arquivoParaBase64(arquivo);
+  const resp = await api("/api/anexos", { method: "POST", body: JSON.stringify({ nome: arquivo.name, tipo: arquivo.type || "application/pdf", dataB64 }) });
+  const jaExiste = lista.some((a) => a.nome === resp.nome);
+  if (!jaExiste) lista.push({ id: resp.id, nome: resp.nome, tipo: resp.tipo });
+  return resp;
+}
+
 function baixarAnexo(a) {
   window.open(`/api/anexos/${a.id}`, "_blank");
 }
 
-async function enviarEmailPara(destinatario, assuntoPadrao, anexos = []) {
-  if (!destinatario) return alert("Não há e-mail cadastrado.");
-  const assunto = prompt("Assunto do e-mail:", assuntoPadrao);
-  if (!assunto) return;
-  const mensagem = prompt("Mensagem:", "");
-  const anexoIds = (anexos || []).map((a) => a.id).filter(Boolean);
-  try {
-    const resp = await api("/api/email", { method: "POST", body: JSON.stringify({ destinatario, assunto, mensagem, anexoIds }) });
-    notificar(resp.anexados ? `✅ E-mail enviado para ${destinatario} (${resp.anexados} anexo(s))` : `✅ E-mail enviado para ${destinatario}`);
-  } catch (err) {
-    alert("Erro ao enviar: " + err.message);
-  }
+async function enviarEmailBruto({ destinatario, assunto, mensagem, html = false, anexoIds = [], remetenteNome = "Bruno - Fiscal - FZ CONT" }) {
+  return api("/api/email", {
+    method: "POST",
+    body: JSON.stringify({ destinatario, assunto, mensagem, html, anexoIds, remetenteNome }),
+  });
 }
 
 // ============================================================================
