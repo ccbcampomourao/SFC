@@ -98,7 +98,18 @@ h1, h2, h3, h4 { font-family: "Sora", system-ui, sans-serif; font-weight: 700; m
   width: 260px; flex-shrink: 0; background: var(--ink-2); color: #dfe4f5;
   display: flex; flex-direction: column; padding: 22px 16px;
   min-height: 100vh; position: sticky; top: 0;
+  transition: width .18s ease, padding .18s ease;
+  overflow: hidden;
 }
+.app-sidebar.colapsada { width: 0; padding: 22px 0; }
+.app-sidebar.colapsada > * { opacity: 0; pointer-events: none; }
+
+.btn-toggle-sidebar {
+  background: #fff; border: 1.3px solid var(--line-strong); color: var(--ink);
+  width: 34px; height: 34px; border-radius: var(--raio-sm); font-size: 16px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;
+}
+.btn-toggle-sidebar:hover { border-color: var(--blue); color: var(--blue); }
 .app-sidebar-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; padding: 0 6px; }
 .app-sidebar-brand img { width: 34px; height: 34px; object-fit: contain; flex-shrink: 0; }
 .app-sidebar-brand h1 { font-size: 15px; color: #fff; margin: 0; }

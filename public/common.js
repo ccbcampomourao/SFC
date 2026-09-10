@@ -183,6 +183,24 @@ $("#btn-sair")?.addEventListener("click", async () => {
 });
 
 // ============================================================================
+// ABRIR/FECHAR A BARRA LATERAL (preferência salva no navegador, vale pras 3 páginas)
+// ============================================================================
+function inicializarBarraLateral() {
+  const barra = $("#barra-lateral");
+  const botao = $("#btn-toggle-sidebar");
+  if (!barra || !botao) return;
+
+  const fechada = localStorage.getItem("fzcont_sidebar_fechada") === "1";
+  barra.classList.toggle("colapsada", fechada);
+
+  botao.addEventListener("click", () => {
+    const agoraFechada = barra.classList.toggle("colapsada");
+    localStorage.setItem("fzcont_sidebar_fechada", agoraFechada ? "1" : "0");
+  });
+}
+inicializarBarraLateral();
+
+// ============================================================================
 // SALVAR / NOVA LISTA
 // ============================================================================
 $("#btn-salvar")?.addEventListener("click", salvar);
