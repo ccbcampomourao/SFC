@@ -259,14 +259,19 @@ function criarParcelamentoCard(p, i) {
     colAnexos.querySelector(".input-anexo").addEventListener("change", async (e) => {
       const arquivo = e.target.files[0];
       if (!arquivo) return;
+      if ((p.anexos || []).some((a) => a.nome === arquivo.name)) {
+        notificar(`"${arquivo.name}" já está anexado neste parcelamento.`);
+        e.target.value = "";
+        return;
+      }
       notificar("Enviando arquivo...");
       try {
-        const dataB64 = await arquivoParaBase64(arquivo);
-        const resp = await api("/api/anexos", { method: "POST", body: JSON.stringify({ nome: arquivo.name, tipo: arquivo.type, dataB64 }) });
-        p.anexos.push({ id: resp.id, nome: resp.nome, tipo: resp.tipo });
+        p.anexos = p.anexos || [];
+        await anexarArquivoNaLista(p.anexos, arquivo);
         notificar("Arquivo anexado!");
         renderizarParcelamentos($("#busca")?.value.toLowerCase() || "");
       } catch (err) { alert("Erro ao anexar: " + err.message); }
+      e.target.value = "";
     });
 
     duasColunas.appendChild(colComentarios);
@@ -287,7 +292,7 @@ $("#input-importar-pdfs")?.addEventListener("change", async (e) => {
   if (!arquivos.length) return;
   notificar(`Analisando ${arquivos.length} PDF(s)...`);
 
-  let vinculados = 0, semCnpj = 0, semParcelamento = 0, comErro = 0;
+  let vinculados = 0, jaExistiam = 0, semCnpj = 0, semParcelamento = 0, comErro = 0;
 
   for (const arquivo of arquivos) {
     try {
@@ -301,7 +306,8 @@ $("#input-importar-pdfs")?.addEventListener("change", async (e) => {
       if (!parcelamento) { semParcelamento++; continue; }
 
       parcelamento.anexos = parcelamento.anexos || [];
-      await anexarArquivoNaLista(parcelamento.anexos, arquivo);
+      const resp = await anexarArquivoNaLista(parcelamento.anexos, arquivo);
+      if (!resp) { jaExistiam++; continue; }
 
       const competencia = extrairCompetenciaDoTexto(texto);
       const valor = extrairValorDoTexto(texto);
@@ -321,6 +327,7 @@ $("#input-importar-pdfs")?.addEventListener("change", async (e) => {
   renderizarDashboardParcelamentos();
 
   let msg = `✅ Lote de Parcelamentos processado: ${vinculados} arquivo(s) vinculado(s).`;
+  if (jaExistiam) msg += ` ${jaExistiam} já estavam anexados (ignorados).`;
   if (semCnpj) msg += ` ${semCnpj} sem CNPJ localizado.`;
   if (semParcelamento) msg += ` ${semParcelamento} sem parcelamento cadastrado com esse CNPJ.`;
   if (comErro) msg += ` ${comErro} com erro de leitura.`;

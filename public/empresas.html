@@ -12,62 +12,75 @@
 </head>
 <body>
 
-  <div id="app" class="tela-cheia">
+  <div id="app" class="tela-cheia app-shell">
 
-    <header class="topo">
-      <div class="topo-esquerda">
-        <img class="logo-marca pequena" src="/img/logo-mark.png" alt="FZCONT" />
+    <aside class="app-sidebar">
+      <div class="app-sidebar-brand">
+        <img src="/img/logo-mark.png" alt="FZCONT" />
         <div>
           <h1>FZCONT</h1>
           <span id="usuario-logado" class="usuario-atual"></span>
         </div>
       </div>
 
-      <div class="topo-busca">
-        <input type="text" id="busca" placeholder="Buscar empresa..." />
-      </div>
-
-      <nav class="topo-acoes">
-        <a href="/empresas.html" class="link-nav ativo">Empresas</a>
-        <a href="/parcelamentos.html" class="link-nav">Parcelamentos</a>
-        <button class="btn-ghost" id="btn-usuarios">Usuários</button>
-        <button class="btn-primario" id="btn-salvar">Salvar</button>
-        <button class="btn-secundario" id="btn-salvar-periodo">Salvar Período</button>
-        <button class="btn-secundario" id="btn-abrir-periodo">Abrir Período</button>
-        <button class="btn-secundario" id="btn-importar-pdfs">Importar PDFs</button>
-        <input type="file" id="input-importar-pdfs" accept="application/pdf" multiple class="oculto" />
-        <button class="btn-secundario" id="btn-exportar-backup">Exportar Backup</button>
-        <button class="btn-secundario" id="btn-importar-backup">Importar Backup</button>
-        <input type="file" id="input-importar-backup" accept="application/json" class="oculto" />
-        <button class="btn-perigo-outline" id="btn-nova-lista">Nova Lista</button>
-        <button class="btn-ghost" id="btn-sair">Sair</button>
+      <nav class="app-nav">
+        <a href="/empresas.html" class="app-nav-link ativo">📁 Empresas</a>
+        <a href="/parcelamentos.html" class="app-nav-link">📄 Parcelamentos</a>
+        <a href="/situacao-fiscal.html" class="app-nav-link">🧾 Situação Fiscal</a>
       </nav>
-    </header>
 
-    <div id="status-salvar" class="status-salvar oculto"></div>
-
-    <main class="conteudo conteudo-coluna">
-      <div id="dashboard" class="dashboard"></div>
-      <div class="duas-colunas">
-        <section class="painel-esquerdo">
-          <div class="painel-cabecalho">
-            <h2>Grupos e Empresas</h2>
-            <div class="painel-acoes">
-              <button class="btn-secundario" id="btn-novo-grupo">+ Grupo</button>
-            </div>
-          </div>
-          <div id="lista-grupos" class="lista-grupos"></div>
-        </section>
-
-        <aside class="painel-direito">
-          <div class="painel-cabecalho">
-            <h2>Tarefas do Dia</h2>
-            <button class="btn-secundario" id="btn-nova-tarefa">+ Tarefa</button>
-          </div>
-          <div id="lista-checklist" class="lista-checklist"></div>
-        </aside>
+      <div class="app-sidebar-divider"></div>
+      <div class="app-sidebar-titulo">Ações</div>
+      <div class="app-sidebar-acoes">
+        <button class="btn-ghost-side" id="btn-usuarios">👤 Usuários</button>
+        <button class="btn-ghost-side" id="btn-salvar">💾 Salvar</button>
+        <button class="btn-ghost-side" id="btn-salvar-periodo">🗂️ Salvar Período</button>
+        <button class="btn-ghost-side" id="btn-abrir-periodo">📂 Abrir Período</button>
+        <button class="btn-ghost-side" id="btn-importar-pdfs">📥 Importar PDFs</button>
+        <input type="file" id="input-importar-pdfs" accept="application/pdf" multiple class="oculto" />
+        <button class="btn-ghost-side" id="btn-exportar-backup">⬇️ Exportar Backup</button>
+        <button class="btn-ghost-side" id="btn-importar-backup">⬆️ Importar Backup</button>
+        <input type="file" id="input-importar-backup" accept="application/json" class="oculto" />
+        <button class="btn-ghost-side btn-perigo-side" id="btn-nova-lista">🧹 Nova Lista</button>
       </div>
-    </main>
+
+      <div class="app-sidebar-footer">
+        <button class="btn-ghost-side" id="btn-sair">Sair</button>
+      </div>
+    </aside>
+
+    <div class="app-conteudo">
+      <div class="faixa-superior">
+        <div class="topo-busca">
+          <input type="text" id="busca" placeholder="Buscar empresa..." />
+        </div>
+      </div>
+
+      <div id="status-salvar" class="status-salvar oculto"></div>
+
+      <main class="conteudo conteudo-coluna">
+        <div id="dashboard" class="dashboard"></div>
+        <div class="duas-colunas">
+          <section class="painel-esquerdo">
+            <div class="painel-cabecalho">
+              <h2>Grupos e Empresas</h2>
+              <div class="painel-acoes">
+                <button class="btn-secundario" id="btn-novo-grupo">+ Grupo</button>
+              </div>
+            </div>
+            <div id="lista-grupos" class="lista-grupos"></div>
+          </section>
+
+          <aside class="painel-direito">
+            <div class="painel-cabecalho">
+              <h2>Tarefas do Dia</h2>
+              <button class="btn-secundario" id="btn-nova-tarefa">+ Tarefa</button>
+            </div>
+            <div id="lista-checklist" class="lista-checklist"></div>
+          </aside>
+        </div>
+      </main>
+    </div>
 
   </div>
 

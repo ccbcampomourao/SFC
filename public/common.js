@@ -128,10 +128,11 @@ function extrairValorDoTexto(texto) {
 }
 
 async function anexarArquivoNaLista(lista, arquivo) {
+  const jaExiste = lista.some((a) => a.nome === arquivo.name);
+  if (jaExiste) return null;
   const dataB64 = await arquivoParaBase64(arquivo);
   const resp = await api("/api/anexos", { method: "POST", body: JSON.stringify({ nome: arquivo.name, tipo: arquivo.type || "application/pdf", dataB64 }) });
-  const jaExiste = lista.some((a) => a.nome === resp.nome);
-  if (!jaExiste) lista.push({ id: resp.id, nome: resp.nome, tipo: resp.tipo });
+  lista.push({ id: resp.id, nome: resp.nome, tipo: resp.tipo });
   return resp;
 }
 

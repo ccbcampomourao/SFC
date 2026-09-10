@@ -288,16 +288,21 @@ function criarCorpoEmpresa(empresa, gi, ei) {
   colAnexos.querySelector(".input-anexo").addEventListener("change", async (e) => {
     const arquivo = e.target.files[0];
     if (!arquivo) return;
+    if ((empresa.anexos || []).some((a) => a.nome === arquivo.name)) {
+      notificar(`"${arquivo.name}" já está anexado nesta empresa.`);
+      e.target.value = "";
+      return;
+    }
     notificar("Enviando arquivo...");
     try {
-      const dataB64 = await arquivoParaBase64(arquivo);
-      const resp = await api("/api/anexos", { method: "POST", body: JSON.stringify({ nome: arquivo.name, tipo: arquivo.type, dataB64 }) });
-      empresa.anexos.push({ id: resp.id, nome: resp.nome, tipo: resp.tipo });
+      empresa.anexos = empresa.anexos || [];
+      await anexarArquivoNaLista(empresa.anexos, arquivo);
       notificar("Arquivo anexado!");
       renderizarGrupos($("#busca")?.value.toLowerCase() || "");
     } catch (err) {
       alert("Erro ao anexar: " + err.message);
     }
+    e.target.value = "";
   });
 
   duasColunas.appendChild(colComentarios);
@@ -398,7 +403,7 @@ $("#input-importar-pdfs")?.addEventListener("change", async (e) => {
   if (!arquivos.length) return;
   notificar(`Analisando ${arquivos.length} PDF(s)...`);
 
-  let vinculados = 0, semCnpj = 0, semEmpresa = 0, comErro = 0;
+  let vinculados = 0, jaExistiam = 0, semCnpj = 0, semEmpresa = 0, comErro = 0;
 
   for (const arquivo of arquivos) {
     try {
@@ -412,7 +417,8 @@ $("#input-importar-pdfs")?.addEventListener("change", async (e) => {
       if (!empresa) { semEmpresa++; continue; }
 
       empresa.anexos = empresa.anexos || [];
-      await anexarArquivoNaLista(empresa.anexos, arquivo);
+      const resp = await anexarArquivoNaLista(empresa.anexos, arquivo);
+      if (!resp) { jaExistiam++; continue; }
 
       const competencia = extrairCompetenciaDoTexto(texto);
       const valor = extrairValorDoTexto(texto);
@@ -432,6 +438,7 @@ $("#input-importar-pdfs")?.addEventListener("change", async (e) => {
   renderizarDashboard();
 
   let msg = `✅ Lote processado: ${vinculados} arquivo(s) vinculado(s).`;
+  if (jaExistiam) msg += ` ${jaExistiam} já estavam anexados (ignorados).`;
   if (semCnpj) msg += ` ${semCnpj} sem CNPJ localizado.`;
   if (semEmpresa) msg += ` ${semEmpresa} sem empresa cadastrada com esse CNPJ.`;
   if (comErro) msg += ` ${comErro} com erro de leitura.`;

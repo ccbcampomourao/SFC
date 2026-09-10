@@ -12,50 +12,63 @@
 </head>
 <body>
 
-  <div id="app" class="tela-cheia">
+  <div id="app" class="tela-cheia app-shell">
 
-    <header class="topo">
-      <div class="topo-esquerda">
-        <img class="logo-marca pequena" src="/img/logo-mark.png" alt="FZCONT" />
+    <aside class="app-sidebar">
+      <div class="app-sidebar-brand">
+        <img src="/img/logo-mark.png" alt="FZCONT" />
         <div>
           <h1>FZCONT</h1>
           <span id="usuario-logado" class="usuario-atual"></span>
         </div>
       </div>
 
-      <div class="topo-busca">
-        <input type="text" id="busca" placeholder="Buscar parcelamento..." />
+      <nav class="app-nav">
+        <a href="/empresas.html" class="app-nav-link">📁 Empresas</a>
+        <a href="/parcelamentos.html" class="app-nav-link ativo">📄 Parcelamentos</a>
+        <a href="/situacao-fiscal.html" class="app-nav-link">🧾 Situação Fiscal</a>
+      </nav>
+
+      <div class="app-sidebar-divider"></div>
+      <div class="app-sidebar-titulo">Ações</div>
+      <div class="app-sidebar-acoes">
+        <button class="btn-ghost-side" id="btn-usuarios">👤 Usuários</button>
+        <button class="btn-ghost-side" id="btn-salvar">💾 Salvar</button>
+        <button class="btn-ghost-side" id="btn-salvar-periodo">🗂️ Salvar Período</button>
+        <button class="btn-ghost-side" id="btn-abrir-periodo">📂 Abrir Período</button>
+        <button class="btn-ghost-side" id="btn-importar-pdfs">📥 Importar PDFs</button>
+        <input type="file" id="input-importar-pdfs" accept="application/pdf" multiple class="oculto" />
+        <button class="btn-ghost-side" id="btn-exportar-backup">⬇️ Exportar Backup</button>
+        <button class="btn-ghost-side" id="btn-importar-backup">⬆️ Importar Backup</button>
+        <input type="file" id="input-importar-backup" accept="application/json" class="oculto" />
+        <button class="btn-ghost-side btn-perigo-side" id="btn-nova-lista">🧹 Nova Lista</button>
       </div>
 
-      <nav class="topo-acoes">
-        <a href="/empresas.html" class="link-nav">Empresas</a>
-        <a href="/parcelamentos.html" class="link-nav ativo">Parcelamentos</a>
-        <button class="btn-ghost" id="btn-usuarios">Usuários</button>
-        <button class="btn-primario" id="btn-salvar">Salvar</button>
-        <button class="btn-secundario" id="btn-salvar-periodo">Salvar Período</button>
-        <button class="btn-secundario" id="btn-abrir-periodo">Abrir Período</button>
-        <button class="btn-secundario" id="btn-importar-pdfs">Importar PDFs</button>
-        <input type="file" id="input-importar-pdfs" accept="application/pdf" multiple class="oculto" />
-        <button class="btn-secundario" id="btn-exportar-backup">Exportar Backup</button>
-        <button class="btn-secundario" id="btn-importar-backup">Importar Backup</button>
-        <input type="file" id="input-importar-backup" accept="application/json" class="oculto" />
-        <button class="btn-perigo-outline" id="btn-nova-lista">Nova Lista</button>
-        <button class="btn-ghost" id="btn-sair">Sair</button>
-      </nav>
-    </header>
+      <div class="app-sidebar-footer">
+        <button class="btn-ghost-side" id="btn-sair">Sair</button>
+      </div>
+    </aside>
 
-    <div id="status-salvar" class="status-salvar oculto"></div>
-
-    <main class="conteudo conteudo-coluna">
-      <div id="dashboard-parcelamentos" class="dashboard"></div>
-      <section class="painel-esquerdo largura-total">
-        <div class="painel-cabecalho">
-          <h2>Parcelamentos</h2>
-          <button class="btn-secundario" id="btn-novo-parcelamento">+ Parcelamento</button>
+    <div class="app-conteudo">
+      <div class="faixa-superior">
+        <div class="topo-busca">
+          <input type="text" id="busca" placeholder="Buscar parcelamento..." />
         </div>
-        <div id="lista-parcelamentos" class="grade-parcelamentos"></div>
-      </section>
-    </main>
+      </div>
+
+      <div id="status-salvar" class="status-salvar oculto"></div>
+
+      <main class="conteudo conteudo-coluna">
+        <div id="dashboard-parcelamentos" class="dashboard"></div>
+        <section class="painel-esquerdo largura-total">
+          <div class="painel-cabecalho">
+            <h2>Parcelamentos</h2>
+            <button class="btn-secundario" id="btn-novo-parcelamento">+ Parcelamento</button>
+          </div>
+          <div id="lista-parcelamentos" class="grade-parcelamentos"></div>
+        </section>
+      </main>
+    </div>
 
   </div>
 

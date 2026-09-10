@@ -92,7 +92,52 @@ h1, h2, h3, h4 { font-family: "Sora", system-ui, sans-serif; font-weight: 700; m
 .btn-icone { background: transparent; border: none; cursor: pointer; padding: 4px; border-radius: 6px; color: var(--ink-soft); font-size: 15px; line-height: 1; }
 .btn-icone:hover { background: var(--vermelho-bg); color: var(--vermelho); }
 
-/* ---------- TOPO ---------- */
+/* ---------- BARRA LATERAL DO APP (navegação entre Empresas/Parcelamentos/Situação Fiscal) ---------- */
+.app-shell { display: flex; min-height: 100vh; }
+.app-sidebar {
+  width: 260px; flex-shrink: 0; background: var(--ink-2); color: #dfe4f5;
+  display: flex; flex-direction: column; padding: 22px 16px;
+  min-height: 100vh; position: sticky; top: 0;
+}
+.app-sidebar-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; padding: 0 6px; }
+.app-sidebar-brand img { width: 34px; height: 34px; object-fit: contain; flex-shrink: 0; }
+.app-sidebar-brand h1 { font-size: 15px; color: #fff; margin: 0; }
+.app-sidebar-brand .usuario-atual { font-size: 11px; color: #8b94b8; }
+
+.app-nav { display: flex; flex-direction: column; gap: 4px; margin-bottom: 18px; }
+.app-nav-link {
+  display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-radius: 10px;
+  color: #aab2d6; text-decoration: none; font-size: 13px; font-weight: 700;
+}
+.app-nav-link:hover { background: #1E2547; color: #fff; }
+.app-nav-link.ativo { background: var(--blue); color: #fff; }
+
+.app-sidebar-divider { height: 1px; background: #262d4d; margin: 6px 0 16px; }
+.app-sidebar-titulo { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: #6b76a0; margin: 0 0 8px 6px; font-weight: 700; }
+.app-sidebar-acoes { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+
+.btn-ghost-side {
+  width: 100%; background: transparent; border: 1px solid #313a63; color: #aab2d6;
+  padding: 9px 10px; border-radius: 9px; font-size: 12.5px; cursor: pointer; font-family: inherit;
+  text-align: left; font-weight: 600;
+}
+.btn-ghost-side:hover { background: #1E2547; color: #fff; border-color: var(--blue); }
+.btn-perigo-side { border-color: #5c2b2b; color: #e2a5a5; }
+.btn-perigo-side:hover { background: #3a1f1f; color: #fff; border-color: #7a3a3a; }
+
+.app-sidebar-footer { margin-top: auto; padding-top: 14px; border-top: 1px solid #262d4d; }
+.app-conteudo { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.faixa-superior {
+  display: flex; align-items: center; gap: 16px; padding: 14px 28px; background: var(--paper-panel);
+  border-bottom: 1.3px solid var(--line); position: sticky; top: 0; z-index: 20;
+}
+
+@media (max-width: 900px) {
+  .app-shell { flex-direction: column; }
+  .app-sidebar { width: 100%; min-height: auto; position: relative; top: auto; }
+}
+
+/* ---------- TOPO (mantido só como referência de estilo; não usado nas páginas com sidebar) ---------- */
 .topo { display: flex; align-items: center; gap: 16px; padding: 12px 28px; background: var(--paper-panel); border-bottom: 1.3px solid var(--line); position: sticky; top: 0; z-index: 20; flex-wrap: wrap; }
 .topo-esquerda { display: flex; align-items: center; gap: 12px; }
 img.logo-marca.pequena { width: 40px; height: 40px; object-fit: contain; }

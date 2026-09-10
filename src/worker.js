@@ -1,7 +1,7 @@
 import { WorkerMailer } from "worker-mailer";
 
 const SESSION_COOKIE = "sfc_session";
-const SESSION_TTL_SEGUNDOS = 60 * 60 * 24 * 7; // 7 dias
+const SESSION_TTL_SEGUNDOS = 60 * 60 * 24; // 1 dia
 const CONFIRMACAO_TTL_SEGUNDOS = 60 * 60 * 24; // 24h para confirmar o e-mail
 
 function emailValido(email) {
