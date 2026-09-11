@@ -94,8 +94,9 @@ function buscarParcelamentoPorCnpj(cnpj) {
 // LEITURA DE PDF (pdf.js) — usada pela importação em lote de guias/DAS,
 // igual ao "processarPdfDas"/"processarPdfParcelamento" do app original.
 // ---------------------------------------------------------------------------
-if (window.pdfjsLib) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+if (window.pdfjsLib && pdfjsLib.GlobalWorkerOptions) {
+  const versaoPdfJs = pdfjsLib.version || "3.11.174";
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${versaoPdfJs}/pdf.worker.min.js`;
 }
 
 async function extrairTextoPdf(arquivo) {
