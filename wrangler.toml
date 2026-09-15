@@ -36,7 +36,7 @@ bucket_name = "sfc-anexos"
 # Fica DESATIVADO até você configurar o certificado pela tela "IntegraContador" do app
 # (ela mesma te dá o CERTIFICATE_ID). Depois é só descomentar as 2 linhas abaixo,
 # colar o ID, salvar — o deploy automático cuida do resto.
-# [[mtls_certificates]]
+[[mtls_certificates]]
 binding = "SERPRO_CERT"
 certificate_id = "d95cf831-ca9d-433d-a075-2db5dcf5d328"
 
