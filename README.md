@@ -21,6 +21,8 @@ O código Java original tinha a senha de app do Gmail escrita diretamente no arq
 - Grupos e empresas em formato sanfona, com status (OK/PENDENTE/ATENÇÃO), checkboxes NFS/NFE/NFC/FECHADO, botões de cópia rápida, comentários e anexos
 - **Anexos reais via Cloudflare R2** — upload e download binário direto, sem transformar em base64 pra guardar (arquivo até ~95MB)
 - Parcelamentos sincronizados automaticamente com as empresas (por CNPJ), com os 4 botões de alternância + status geral + comentários + anexos
+- **Importar PDFs em lote**: seleciona vários PDFs de uma vez (guias DAS na página de Empresas, guias de parcelamento na página de Parcelamentos) — o sistema lê o texto de cada PDF no próprio navegador, acha o CNPJ, identifica automaticamente a empresa/parcelamento correspondente, anexa o arquivo e registra um comentário com a competência e o valor encontrados (igual ao "processarPdfDas"/"processarPdfParcelamento" do app original)
+- **Situação Fiscal (novo)**: página separada pra importar relatórios de situação fiscal do ECAC em PDF (vários de uma vez, até de empresas diferentes) e ver um raio-x organizado por categoria (Receita Federal, PGFN, parcelamentos, processos, declarações pendentes). É **só leitura local no navegador** — nada é enviado ou salvo no Cloudflare; ao recarregar a página, é preciso importar de novo
 - Tarefas do dia (checklist) com comentários
 - Dashboard com contagem de OK/ATENÇÃO/PENDENTE por grupo
 - Botão **Salvar**
@@ -90,12 +92,46 @@ sfc-web/
     ├── index.html        # página de login/cadastro
     ├── empresas.html      # página de grupos/empresas + tarefas do dia
     ├── parcelamentos.html # página de parcelamentos
+    ├── situacao-fiscal.html # importador de relatórios ECAC (só leitura local)
     ├── common.js          # utilitários e ações compartilhadas (salvar, período, backup, usuários)
     ├── login.js            # lógica exclusiva da tela de login
     ├── empresas.js          # lógica exclusiva da página de empresas
     ├── parcelamentos.js      # lógica exclusiva da página de parcelamentos
     └── style.css              # visual (paleta índigo/violeta)
 ```
+
+## IntegraContador (SERPRO) — Situação Fiscal e CND
+
+Página nova (`/integracontador.html`) pra baixar relatórios direto do SERPRO, escolhendo quais empresas usar (marcar/desmarcar todas ou uma a uma). Os arquivos baixam na sua máquina — nada fica salvo no Cloudflare.
+
+⚠️ **Duas ressalvas técnicas importantes:**
+- O contrato da **Situação Fiscal (SITFIS)** foi confirmado na documentação oficial do SERPRO — os endpoints e IDs de serviço usados no código são os reais.
+- O da **CND** eu só encontrei documentado o ambiente de **homologação**; inferi a URL de produção a partir do padrão do SERPRO. Se ao testar der erro 404/401 estranho na CND, me avisa que a gente ajusta a URL exata em `src/worker.js` (constante `CND_CONSULTA_URL`).
+
+### O que você precisa configurar
+
+**1. Certificado digital (e-CNPJ) — só pra Situação Fiscal**
+Não precisa de terminal: entre em `/integracontador.html`, clique em **"Configurar certificado (.pfx)"**, suba o arquivo e a senha (tudo é lido no seu navegador, o arquivo original nunca sai da sua máquina). O sistema te devolve um **ID de certificado**.
+
+Só falta um passo manual: abra o `wrangler.toml` no GitHub, descomente o bloco perto do final:
+```toml
+[[mtls_certificates]]
+binding = "SERPRO_CERT"
+certificate_id = "COLE_AQUI_O_CERTIFICATE_ID"
+```
+cole o ID ali no lugar, salve — o deploy automático cuida do resto.
+
+**2. Secrets no Cloudflare** (Settings → Variables and Secrets do seu Worker):
+
+| Secret | Pra que serve |
+|---|---|
+| `CF_API_TOKEN` | Token da Cloudflare com permissão "SSL and Certificates: Edit", usado só pra subir o certificado (criado em [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens)) |
+| `CF_ACCOUNT_ID` | Aparece na barra lateral direita do painel da Cloudflare, na página do seu domínio/conta |
+| `SERPRO_CONSUMER_KEY` / `SERPRO_CONSUMER_SECRET` | Credenciais do seu contrato do Integra Contador (Loja de Apps do SERPRO) |
+| `SERPRO_CONTRATANTE_CNPJ` | CNPJ do seu escritório contábil (o mesmo do certificado) |
+| `CND_CONSUMER_KEY` / `CND_CONSUMER_SECRET` | Credenciais do seu contrato do produto "Consulta CND" (separado do Integra Contador — não precisa de certificado) |
+
+A página `/integracontador.html` mostra em tempo real o que já está configurado (✅/⚠️) pra cada parte.
 
 ## Próxima fase (quando quiser)
 

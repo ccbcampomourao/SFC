@@ -275,6 +275,23 @@ img.logo-marca.pequena { width: 40px; height: 40px; object-fit: contain; }
 .modal-rodape { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 .aviso-fase2 { background: var(--amber-bg); color: var(--amber); font-size: 12px; padding: 9px 12px; border-radius: var(--raio-sm); margin-top: 8px; }
 
+/* ---------- INTEGRACONTADOR ---------- */
+.ic-status-box { display: flex; flex-direction: column; gap: 6px; }
+.ic-linha-status { font-size: 13px; color: var(--ink); }
+.ic-servicos { display: flex; gap: 10px; flex-wrap: wrap; }
+.ic-servico { padding: 10px 14px; font-size: 13px; }
+.ic-lista-empresas { display: flex; flex-direction: column; gap: 4px; max-height: 360px; overflow-y: auto; border: 1.3px solid var(--line); border-radius: var(--raio-sm); padding: 8px; }
+.ic-empresa-item { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 7px; font-size: 13px; cursor: pointer; }
+.ic-empresa-item:hover { background: var(--paper); }
+.ic-empresa-cnpj { margin-left: auto; font-size: 11px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.ic-resultados { display: flex; flex-direction: column; gap: 6px; }
+.ic-resultado-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border: 1.3px solid var(--line); border-radius: var(--raio-sm); font-size: 13px; }
+.ic-badge { font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 999px; flex-shrink: 0; }
+.ic-badge-aguardando { background: var(--paper); color: var(--ink-soft); }
+.ic-badge-baixando { background: var(--blue-soft); color: var(--blue); }
+.ic-badge-ok { background: var(--verde-bg); color: var(--verde); }
+.ic-badge-erro { background: var(--vermelho-bg); color: var(--vermelho); cursor: help; }
+
 @media (max-width: 900px) {
   .duas-colunas { grid-template-columns: 1fr; }
   .duas-colunas-detalhe { grid-template-columns: 1fr; }

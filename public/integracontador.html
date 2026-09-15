@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>FZCONT · Parcelamentos</title>
+<title>FZCONT · IntegraContador</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/style.css" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/forge/1.3.1/forge.min.js"></script>
 </head>
 <body>
 
@@ -25,24 +25,15 @@
 
       <nav class="app-nav">
         <a href="/empresas.html" class="app-nav-link">📁 Empresas</a>
-        <a href="/parcelamentos.html" class="app-nav-link ativo">📄 Parcelamentos</a>
+        <a href="/parcelamentos.html" class="app-nav-link">📄 Parcelamentos</a>
         <a href="/situacao-fiscal.html" class="app-nav-link">🧾 Situação Fiscal</a>
-        <a href="/integracontador.html" class="app-nav-link">🏛️ IntegraContador</a>
+        <a href="/integracontador.html" class="app-nav-link ativo">🏛️ IntegraContador</a>
       </nav>
 
       <div class="app-sidebar-divider"></div>
-      <div class="app-sidebar-titulo">Ações</div>
+      <div class="app-sidebar-titulo">Conta</div>
       <div class="app-sidebar-acoes">
         <button class="btn-ghost-side" id="btn-usuarios">👤 Usuários</button>
-        <button class="btn-ghost-side" id="btn-salvar">💾 Salvar</button>
-        <button class="btn-ghost-side" id="btn-salvar-periodo">🗂️ Salvar Período</button>
-        <button class="btn-ghost-side" id="btn-abrir-periodo">📂 Abrir Período</button>
-        <button class="btn-ghost-side" id="btn-importar-pdfs">📥 Importar PDFs</button>
-        <input type="file" id="input-importar-pdfs" accept="application/pdf" multiple class="oculto" />
-        <button class="btn-ghost-side" id="btn-exportar-backup">⬇️ Exportar Backup</button>
-        <button class="btn-ghost-side" id="btn-importar-backup">⬆️ Importar Backup</button>
-        <input type="file" id="input-importar-backup" accept="application/json" class="oculto" />
-        <button class="btn-ghost-side btn-perigo-side" id="btn-nova-lista">🧹 Nova Lista</button>
       </div>
 
       <div class="app-sidebar-footer">
@@ -53,22 +44,45 @@
     <div class="app-conteudo">
       <div class="faixa-superior">
         <button class="btn-toggle-sidebar" id="btn-toggle-sidebar" title="Abrir/fechar menu">☰</button>
-        <div class="topo-busca">
-          <input type="text" id="busca" placeholder="Buscar parcelamento..." />
+        <div>
+          <h2 style="font-size:15px;">IntegraContador (SERPRO)</h2>
+          <span class="usuario-atual">Busca relatórios direto no navegador, sem salvar no Cloudflare — os arquivos baixam na sua máquina.</span>
         </div>
       </div>
 
       <div id="status-salvar" class="status-salvar oculto"></div>
 
       <main class="conteudo conteudo-coluna">
-        <div id="dashboard-parcelamentos" class="dashboard"></div>
+
+        <section class="painel-esquerdo largura-total">
+          <div class="painel-cabecalho"><h2>Certificado Digital</h2></div>
+          <div id="certificado-status" class="ic-status-box">Carregando…</div>
+        </section>
+
+        <section class="painel-esquerdo largura-total">
+          <div class="painel-cabecalho"><h2>O que você quer baixar</h2></div>
+          <div class="ic-servicos">
+            <label class="chip-check ic-servico"><input type="checkbox" id="svc-sitfis" checked> Situação Fiscal (SITFIS)</label>
+            <label class="chip-check ic-servico"><input type="checkbox" id="svc-cnd" checked> Certidão Negativa de Débitos (CND)</label>
+          </div>
+        </section>
+
         <section class="painel-esquerdo largura-total">
           <div class="painel-cabecalho">
-            <h2>Parcelamentos</h2>
-            <button class="btn-secundario" id="btn-novo-parcelamento">+ Parcelamento</button>
+            <h2>Empresas</h2>
+            <div class="painel-acoes">
+              <button class="btn-secundario" id="btn-marcar-todas">Marcar todas</button>
+              <button class="btn-secundario" id="btn-desmarcar-todas">Desmarcar todas</button>
+            </div>
           </div>
-          <div id="lista-parcelamentos" class="grade-parcelamentos"></div>
+          <div id="lista-empresas-ic" class="ic-lista-empresas"></div>
         </section>
+
+        <section class="painel-esquerdo largura-total">
+          <button class="btn-primario" id="btn-baixar-selecionados" style="margin-bottom:14px;">⬇️ Baixar selecionados</button>
+          <div id="resultado-ic" class="ic-resultados"></div>
+        </section>
+
       </main>
     </div>
 
@@ -79,6 +93,6 @@
   </div>
 
   <script src="/common.js"></script>
-  <script src="/parcelamentos.js"></script>
+  <script src="/integracontador.js"></script>
 </body>
 </html>

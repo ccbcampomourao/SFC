@@ -12,25 +12,33 @@ binding = "ASSETS"
 # KV onde ficam os usuários e as sessões de login.
 [[kv_namespaces]]
 binding = "SFC_KV"
-id = "dd5f87d9a1eb40648e6e9d4ea6937d5a"
+id = "COLE_AQUI_O_ID_DO_KV"
 
 # KV onde ficam os dados das empresas/parcelamentos (cadastro, status, checkboxes) + períodos salvos.
 # Rode `wrangler kv namespace create KV_EMPRESAS` e cole o id retornado.
 [[kv_namespaces]]
 binding = "KV_EMPRESAS"
-id = "5d4f7a475e5447cca04b1ec38fdae90a"
+id = "COLE_AQUI_O_ID_DO_KV_EMPRESAS"
 
 # KV onde ficam os comentários (de empresas e parcelamentos) e as tarefas do dia (checklist).
 # Rode `wrangler kv namespace create KV_COMENTARIOS` e cole o id retornado.
 [[kv_namespaces]]
 binding = "KV_COMENTARIOS"
-id = "a1d1335bfedd4c87948d1ea4def28913"
+id = "COLE_AQUI_O_ID_DO_KV_COMENTARIOS"
 
 # Bucket R2 onde ficam os arquivos anexados de verdade (sem base64, upload/download binário).
 # Rode `wrangler r2 bucket create sfc-anexos` antes do primeiro deploy.
 [[r2_buckets]]
 binding = "ANEXOS_R2"
 bucket_name = "sfc-anexos"
+
+# Certificado digital (e-CNPJ) para falar com o SERPRO Integra Contador via mTLS.
+# Fica DESATIVADO até você configurar o certificado pela tela "IntegraContador" do app
+# (ela mesma te dá o CERTIFICATE_ID). Depois é só descomentar as 2 linhas abaixo,
+# colar o ID, salvar — o deploy automático cuida do resto.
+# [[mtls_certificates]]
+# binding = "SERPRO_CERT"
+# certificate_id = "COLE_AQUI_O_CERTIFICATE_ID"
 
 # Necessário para o Worker abrir conexão TCP/TLS com o Gmail (envio de e-mail).
 # Ative em: Cloudflare Dashboard > Workers > seu worker > Settings > Bindings.

@@ -199,6 +199,135 @@ async function migrarSeNecessario(env) {
 }
 
 // ---------------------------------------------------------------------------
+// INTEGRACONTADOR (SERPRO) — SITFIS via mTLS + CND (produto separado, sem certificado)
+// ---------------------------------------------------------------------------
+const SERPRO_SITFIS_AUTH_URL = "https://autenticacao.sapi.serpro.gov.br/authenticate";
+const SERPRO_SITFIS_BASE = "https://gateway.apiserpro.serpro.gov.br/integra-contador/v1";
+// Produto "Consulta CND" — separado do Integra Contador, não usa certificado digital.
+// Endpoint de PRODUÇÃO inferido a partir do de homologação documentado publicamente pelo
+// SERPRO; se retornar 404, ajuste CND_CONSULTA_URL abaixo com o endereço correto do seu contrato.
+const CND_TOKEN_URL = "https://apigateway.conectagov.estaleiro.serpro.gov.br/oauth2/jwt-token";
+const CND_CONSULTA_URL = "https://apigateway.conectagov.estaleiro.serpro.gov.br/api-cnd/v1/ConsultaCnd/certidao";
+
+function tipoPessoa(numero) {
+  return limparNumeroDoc(numero).length === 11 ? 1 : 2; // 1 = CPF, 2 = CNPJ
+}
+function limparNumeroDoc(s) {
+  return (s || "").replace(/[^0-9]/g, "");
+}
+
+async function obterTokenSitfis(env) {
+  if (!env.SERPRO_CERT) throw new Error("Certificado digital ainda não vinculado ao Worker (binding SERPRO_CERT ausente no wrangler.toml).");
+  if (!env.SERPRO_CONSUMER_KEY || !env.SERPRO_CONSUMER_SECRET) throw new Error("SERPRO_CONSUMER_KEY / SERPRO_CONSUMER_SECRET não configurados.");
+  const basic = Buffer.from(`${env.SERPRO_CONSUMER_KEY}:${env.SERPRO_CONSUMER_SECRET}`).toString("base64");
+  const resp = await env.SERPRO_CERT.fetch(SERPRO_SITFIS_AUTH_URL, {
+    method: "POST",
+    headers: { Authorization: `Basic ${basic}`, "Role-Type": "TERCEIROS" },
+  });
+  const texto = await resp.text();
+  if (!resp.ok) throw new Error(`Falha ao autenticar no SERPRO (SITFIS): ${resp.status} ${texto}`);
+  let dados;
+  try { dados = JSON.parse(texto); } catch { throw new Error("Resposta de autenticação do SERPRO não é JSON: " + texto.slice(0, 300)); }
+  if (!dados.access_token) throw new Error("SERPRO não retornou access_token: " + texto.slice(0, 300));
+  return dados;
+}
+
+async function chamarIntegraContador(env, token, caminho, corpo) {
+  const resp = await env.SERPRO_CERT.fetch(`${SERPRO_SITFIS_BASE}/${caminho}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token.access_token}`,
+      jwt_token: token.jwt_token || "",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(corpo),
+  });
+  const texto = await resp.text();
+  let json;
+  try { json = JSON.parse(texto); } catch { json = { status: resp.status, dados: texto }; }
+  return { httpStatus: resp.status, ...json };
+}
+
+async function buscarRelatorioSitfis(env, cnpjCliente) {
+  const token = await obterTokenSitfis(env);
+  const contratante = limparNumeroDoc(env.SERPRO_CONTRATANTE_CNPJ);
+  if (!contratante) throw new Error("SERPRO_CONTRATANTE_CNPJ não configurado (CNPJ do seu escritório contábil).");
+  const cnpj = limparNumeroDoc(cnpjCliente);
+
+  const envelope = (idServico, dadosStr, versao) => ({
+    contratante: { numero: contratante, tipo: 2 },
+    autorPedidoDados: { numero: contratante, tipo: 2 },
+    contribuinte: { numero: cnpj, tipo: tipoPessoa(cnpj) },
+    pedidoDados: { idSistema: "SITFIS", idServico, versaoSistema: versao, dados: dadosStr },
+  });
+
+  const protocoloResp = await chamarIntegraContador(env, token, "Apoiar", envelope("SOLICITARPROTOCOLO91", "", "2.0"));
+  if (protocoloResp.httpStatus >= 400) {
+    return { ok: false, erro: `Falha ao solicitar protocolo (${protocoloResp.httpStatus}): ${JSON.stringify(protocoloResp).slice(0, 400)}` };
+  }
+  let dadosProtocolo;
+  try { dadosProtocolo = typeof protocoloResp.dados === "string" ? JSON.parse(protocoloResp.dados) : protocoloResp.dados; } catch { dadosProtocolo = protocoloResp.dados; }
+  const protocolo = dadosProtocolo && (dadosProtocolo.protocoloRelatorio || dadosProtocolo.protocolo);
+  if (!protocolo) return { ok: false, erro: "SERPRO não retornou o protocolo do relatório: " + JSON.stringify(protocoloResp).slice(0, 400) };
+
+  for (let tentativa = 0; tentativa < 5; tentativa++) {
+    const emitirResp = await chamarIntegraContador(
+      env, token, "Emitir",
+      envelope("RELATORIOSITFIS92", JSON.stringify({ protocoloRelatorio: protocolo }), "2.0")
+    );
+    if (emitirResp.httpStatus === 202) {
+      let espera = 3000;
+      try {
+        const d = typeof emitirResp.dados === "string" ? JSON.parse(emitirResp.dados) : emitirResp.dados;
+        if (d && d.tempoEspera) espera = Math.min(d.tempoEspera, 6000);
+      } catch {}
+      await new Promise((r) => setTimeout(r, espera));
+      continue;
+    }
+    if (emitirResp.httpStatus >= 400) {
+      return { ok: false, erro: `Falha ao emitir relatório (${emitirResp.httpStatus}): ${JSON.stringify(emitirResp).slice(0, 400)}` };
+    }
+    let dadosFinal;
+    try { dadosFinal = typeof emitirResp.dados === "string" ? JSON.parse(emitirResp.dados) : emitirResp.dados; } catch { dadosFinal = emitirResp.dados; }
+    const pdfBase64 = dadosFinal && (dadosFinal.pdf || dadosFinal.relatorio || dadosFinal.arquivo);
+    if (!pdfBase64) return { ok: false, erro: "Relatório emitido, mas não achei o PDF na resposta: " + JSON.stringify(emitirResp).slice(0, 400) };
+    return { ok: true, pdfBase64, nomeArquivo: `SITFIS-${cnpj}.pdf` };
+  }
+  return { ok: false, processando: true, erro: "O SERPRO ainda está processando esse relatório. Tente novamente em alguns segundos." };
+}
+
+async function obterTokenCnd(env) {
+  if (!env.CND_CONSUMER_KEY || !env.CND_CONSUMER_SECRET) throw new Error("CND_CONSUMER_KEY / CND_CONSUMER_SECRET não configurados.");
+  const basic = Buffer.from(`${env.CND_CONSUMER_KEY}:${env.CND_CONSUMER_SECRET}`).toString("base64");
+  const resp = await fetch(CND_TOKEN_URL, {
+    method: "POST",
+    headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: "grant_type=client_credentials",
+  });
+  const texto = await resp.text();
+  if (!resp.ok) throw new Error(`Falha ao autenticar no SERPRO (CND): ${resp.status} ${texto}`);
+  let dados;
+  try { dados = JSON.parse(texto); } catch { throw new Error("Resposta de autenticação da CND não é JSON: " + texto.slice(0, 300)); }
+  if (!dados.access_token) throw new Error("SERPRO (CND) não retornou access_token: " + texto.slice(0, 300));
+  return dados.access_token;
+}
+
+async function buscarCnd(env, cnpjCliente) {
+  const token = await obterTokenCnd(env);
+  const numero = limparNumeroDoc(cnpjCliente);
+  const resp = await fetch(`${CND_CONSULTA_URL}?numeroInscricao=${numero}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const texto = await resp.text();
+  if (!resp.ok) return { ok: false, erro: `Falha ao consultar CND (${resp.status}): ${texto.slice(0, 400)}` };
+  let dados;
+  try { dados = JSON.parse(texto); } catch { dados = null; }
+  const pdfBase64 = dados && (dados.pdfCertidao || dados.arquivo || dados.pdf || dados.certidaoPdf);
+  if (!pdfBase64) return { ok: false, erro: "CND retornada, mas não achei o PDF na resposta: " + texto.slice(0, 400) };
+  return { ok: true, pdfBase64, nomeArquivo: `CND-${numero}.pdf` };
+}
+
+// ---------------------------------------------------------------------------
 // Handler principal
 // ---------------------------------------------------------------------------
 
@@ -380,6 +509,55 @@ export default {
         return json({ ok: true, emailFalhou: false });
       }
 
+      // ---------- INTEGRACONTADOR (SERPRO): status, certificado, SITFIS, CND ----------
+      if (pathname === "/api/integracontador/status" && request.method === "GET") {
+        return json({
+          certificadoConfigurado: !!env.SERPRO_CERT,
+          sitfisConfigurado: !!(env.SERPRO_CONSUMER_KEY && env.SERPRO_CONSUMER_SECRET && env.SERPRO_CONTRATANTE_CNPJ),
+          cndConfigurado: !!(env.CND_CONSUMER_KEY && env.CND_CONSUMER_SECRET),
+        });
+      }
+
+      if (pathname === "/api/integracontador/certificado" && request.method === "POST") {
+        const { certPem, keyPem, nome } = await request.json();
+        if (!certPem || !keyPem) return json({ erro: "Certificado ou chave privada ausente." }, 400);
+        if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) {
+          return json({ erro: "Configure os secrets CF_API_TOKEN e CF_ACCOUNT_ID antes de subir o certificado." }, 500);
+        }
+        const resp = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/mtls_certificates`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${env.CF_API_TOKEN}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ certificates: certPem, private_key: keyPem, name: nome || "serpro-integracontador", ca: false }),
+        });
+        const dados = await resp.json().catch(() => ({}));
+        if (!resp.ok || !dados.success) {
+          return json({ erro: "Cloudflare recusou o certificado: " + JSON.stringify(dados.errors || dados) }, 400);
+        }
+        return json({ ok: true, certificateId: dados.result.id });
+      }
+
+      if (pathname === "/api/integracontador/sitfis" && request.method === "POST") {
+        const { cnpj } = await request.json();
+        if (!cnpj) return json({ erro: "CNPJ é obrigatório." }, 400);
+        try {
+          const resultado = await buscarRelatorioSitfis(env, cnpj);
+          return json(resultado, resultado.ok ? 200 : resultado.processando ? 202 : 500);
+        } catch (err) {
+          return json({ ok: false, erro: err.message }, 500);
+        }
+      }
+
+      if (pathname === "/api/integracontador/cnd" && request.method === "POST") {
+        const { cnpj } = await request.json();
+        if (!cnpj) return json({ erro: "CNPJ é obrigatório." }, 400);
+        try {
+          const resultado = await buscarCnd(env, cnpj);
+          return json(resultado, resultado.ok ? 200 : 500);
+        } catch (err) {
+          return json({ ok: false, erro: err.message }, 500);
+        }
+      }
+
       // ---------- DADOS PRINCIPAIS (grupos/empresas/checklist/parcelamentos) ----------
       if (pathname === "/api/data" && request.method === "GET") {
         await migrarSeNecessario(env);
@@ -473,6 +651,19 @@ export default {
         if (!destinatario || !assunto) {
           return json({ erro: "Destinatário e assunto são obrigatórios." }, 400);
         }
+        // O campo de e-mail da empresa pode ter vários endereços ("a@x.com, b@y.com").
+        // O SMTP precisa recebê-los como lista, não como uma string única.
+        const listaDestinatarios = String(destinatario)
+          .split(/[,;\s]+/)
+          .map((e) => e.trim())
+          .filter(Boolean);
+        if (!listaDestinatarios.length) {
+          return json({ erro: "Nenhum e-mail válido informado." }, 400);
+        }
+        const invalidos = listaDestinatarios.filter((e) => !emailValido(e));
+        if (invalidos.length) {
+          return json({ erro: `E-mail(s) em formato inválido: ${invalidos.join(", ")}` }, 400);
+        }
         if (!env.GMAIL_USER || !env.GMAIL_APP_PASSWORD) {
           return json(
             { erro: "E-mail não configurado. Rode: wrangler secret put GMAIL_USER / GMAIL_APP_PASSWORD" },
@@ -508,7 +699,7 @@ export default {
             },
             {
               from: { name: remetenteNome || "FZCONT", email: env.GMAIL_USER },
-              to: destinatario,
+              to: listaDestinatarios,
               subject: assunto,
               text: html ? undefined : mensagem || "",
               html: html ? mensagem || "" : undefined,
