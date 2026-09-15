@@ -518,6 +518,40 @@ export default {
         });
       }
 
+      if (pathname === "/api/integracontador/testar-credenciais-cf" && request.method === "GET") {
+        if (!env.CF_API_TOKEN) return json({ ok: false, erro: "Secret CF_API_TOKEN não está configurado no Worker." });
+        if (!env.CF_ACCOUNT_ID) return json({ ok: false, erro: "Secret CF_ACCOUNT_ID não está configurado no Worker." });
+
+        // 1) O token em si é válido?
+        const verif = await fetch("https://api.cloudflare.com/client/v4/user/tokens/verify", {
+          headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
+        });
+        const verifJson = await verif.json().catch(() => ({}));
+        if (!verif.ok || !verifJson.success) {
+          return json({
+            ok: false,
+            erro: "O CF_API_TOKEN é inválido, expirou ou foi digitado errado (talvez com espaço sobrando). Gere um novo token e cadastre de novo.",
+            detalhe: JSON.stringify(verifJson.errors || verifJson).slice(0, 300),
+          });
+        }
+
+        // 2) O token enxerga essa conta e tem permissão de certificados?
+        const lista = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/mtls_certificates`, {
+          headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
+        });
+        const listaJson = await lista.json().catch(() => ({}));
+        if (!lista.ok || !listaJson.success) {
+          return json({
+            ok: false,
+            erro:
+              "O token é válido, mas não conseguiu acessar os certificados desta conta. Causas comuns: (a) falta a permissão 'Account → SSL and Certificates → Edit' no token, ou (b) o CF_ACCOUNT_ID não é o ID da conta correta.",
+            detalhe: JSON.stringify(listaJson.errors || listaJson).slice(0, 300),
+          });
+        }
+
+        return json({ ok: true, mensagem: "Token e Account ID estão corretos e com a permissão necessária. Pode subir o certificado." });
+      }
+
       if (pathname === "/api/integracontador/certificado" && request.method === "POST") {
         const { certPem, keyPem, nome } = await request.json();
         if (!certPem || !keyPem) return json({ erro: "Certificado ou chave privada ausente." }, 400);
@@ -531,6 +565,14 @@ export default {
         });
         const dados = await resp.json().catch(() => ({}));
         if (!resp.ok || !dados.success) {
+          const codigos = (dados.errors || []).map((e) => e.code);
+          if (codigos.includes(10000)) {
+            return json({
+              erro:
+                "A Cloudflare recusou por falta de autenticação (erro 10000). Isso é do CF_API_TOKEN / CF_ACCOUNT_ID, não do seu certificado. " +
+                "Clique em 'Testar credenciais Cloudflare' na página para descobrir qual dos dois está errado.",
+            }, 400);
+          }
           return json({ erro: "Cloudflare recusou o certificado: " + JSON.stringify(dados.errors || dados) }, 400);
         }
         return json({ ok: true, certificateId: dados.result.id });

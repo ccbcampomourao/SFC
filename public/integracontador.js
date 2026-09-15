@@ -21,8 +21,28 @@ async function carregarStatusIntegraContador() {
       <div class="ic-linha-status">${status.sitfisConfigurado ? "✅" : "⚠️"} Situação Fiscal (SITFIS): ${status.sitfisConfigurado ? "pronto" : "faltam credenciais (Consumer Key/Secret + CNPJ do escritório)"}</div>
       <div class="ic-linha-status">${status.cndConfigurado ? "✅" : "⚠️"} CND: ${status.cndConfigurado ? "pronto" : "faltam credenciais (Consumer Key/Secret)"}</div>
       <button class="btn-secundario" id="btn-config-certificado" style="margin-top:10px;align-self:flex-start;">🔐 Configurar certificado (.pfx)</button>
+      <button class="btn-secundario" id="btn-testar-cf" style="margin-top:6px;align-self:flex-start;">🧪 Testar credenciais Cloudflare</button>
+      <div id="teste-cf-resultado" class="oculto" style="margin-top:8px;white-space:pre-wrap;"></div>
     `;
     $("#btn-config-certificado").addEventListener("click", abrirModalCertificado);
+    $("#btn-testar-cf").addEventListener("click", async () => {
+      const cx = $("#teste-cf-resultado");
+      cx.className = "mensagem-sucesso";
+      cx.textContent = "Testando...";
+      try {
+        const r = await api("/api/integracontador/testar-credenciais-cf");
+        if (r.ok) {
+          cx.className = "mensagem-sucesso";
+          cx.textContent = "✅ " + r.mensagem;
+        } else {
+          cx.className = "mensagem-erro";
+          cx.textContent = "❌ " + r.erro + (r.detalhe ? "\n\nDetalhe técnico: " + r.detalhe : "");
+        }
+      } catch (err) {
+        cx.className = "mensagem-erro";
+        cx.textContent = "❌ " + err.message;
+      }
+    });
   } catch (err) {
     box.textContent = "Erro ao carregar status: " + err.message;
   }
