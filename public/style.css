@@ -285,12 +285,31 @@ img.logo-marca.pequena { width: 40px; height: 40px; object-fit: contain; }
 .ic-empresa-item:hover { background: var(--paper); }
 .ic-empresa-cnpj { margin-left: auto; font-size: 11px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 .ic-resultados { display: flex; flex-direction: column; gap: 6px; }
-.ic-resultado-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border: 1.3px solid var(--line); border-radius: var(--raio-sm); font-size: 13px; }
-.ic-badge { font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 999px; flex-shrink: 0; }
+.ic-resultado-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border: 1.3px solid var(--line); border-radius: var(--raio-sm); font-size: 13px; transition: border-color .2s ease, background-color .2s ease; }
+.ic-badge { font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 999px; flex-shrink: 0; transition: background-color .2s ease, color .2s ease; }
 .ic-badge-aguardando { background: var(--paper); color: var(--ink-soft); }
 .ic-badge-baixando { background: var(--blue-soft); color: var(--blue); }
 .ic-badge-ok { background: var(--verde-bg); color: var(--verde); }
 .ic-badge-erro { background: var(--vermelho-bg); color: var(--vermelho); cursor: help; }
+
+.ic-relatorios-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.ic-relatorio-card {
+  border: 1.3px solid var(--line); border-radius: var(--raio-sm); padding: 14px;
+  transition: box-shadow .2s ease, border-color .2s ease, opacity .25s ease, transform .25s ease;
+}
+.ic-relatorio-card:hover { box-shadow: var(--sombra); border-color: var(--line-strong); }
+.ic-relatorio-empresa { font-weight: 700; font-size: 13.5px; color: var(--ink); margin-bottom: 10px; display: block; }
+.ic-relatorio-linha { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 0; border-top: 1px dashed var(--line); }
+.ic-relatorio-linha:first-of-type { border-top: none; }
+.ic-relatorio-servico { font-size: 12.5px; color: var(--ink-soft); font-weight: 600; }
+.ic-relatorio-data { font-size: 11px; color: var(--ink-soft); }
+.ic-relatorio-acoes { display: flex; gap: 4px; }
+
+@keyframes ic-surgir {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.ic-surgir { animation: ic-surgir .25s ease both; }
 
 @media (max-width: 900px) {
   .duas-colunas { grid-template-columns: 1fr; }

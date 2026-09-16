@@ -345,6 +345,28 @@ const CATS = [
 ];
 
 /* ================= UPLOAD ================= */
+async function processarConteudoPdf(nomeArquivo, arrayBuffer) {
+  const typedarray = new Uint8Array(arrayBuffer);
+  const pdf = await pdfjsLib.getDocument(typedarray).promise;
+  let fullText = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const strings = content.items.map(item => item.str);
+    fullText += strings.join(" ") + "\n";
+  }
+  const {cnpj, nome} = extrairIdentificacao(fullText, nomeArquivo);
+  const chave = `${cnpj || 's/cnpj'} — ${nome}`;
+
+  if (empresasMap[chave]) {
+    empresasMap[chave].texto += "\n\n" + fullText;
+    empresasMap[chave].arquivos.push(nomeArquivo);
+  } else {
+    empresasMap[chave] = { texto: fullText, cnpj, nome, arquivos:[nomeArquivo] };
+  }
+  delete cacheAnalise[chave];
+}
+
 document.getElementById('pdf-upload').addEventListener('change', function (e) {
   const files = Array.from(e.target.files).filter(f => f.type === "application/pdf" || f.name.toLowerCase().endsWith('.pdf'));
   if (!files.length) return;
@@ -352,38 +374,55 @@ document.getElementById('pdf-upload').addEventListener('change', function (e) {
   files.forEach(file => {
     const reader = new FileReader();
     reader.onload = function () {
-      const typedarray = new Uint8Array(this.result);
-      pdfjsLib.getDocument(typedarray).promise.then(async function (pdf) {
-        let fullText = "";
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const content = await page.getTextContent();
-          const strings = content.items.map(item => item.str);
-          fullText += strings.join(" ") + "\n";
-        }
-        const {cnpj, nome} = extrairIdentificacao(fullText, file.name);
-        const chave = `${cnpj || 's/cnpj'} — ${nome}`;
-
-        if (empresasMap[chave]) {
-          empresasMap[chave].texto += "\n\n" + fullText;
-          empresasMap[chave].arquivos.push(file.name);
-        } else {
-          empresasMap[chave] = { texto: fullText, cnpj, nome, arquivos:[file.name] };
-        }
-        delete cacheAnalise[chave];
-        lidos++;
-        if (lidos === files.length) {
-          renderSidebar();
-          if (!empresaAtiva) renderOverview();
-        }
-      }).catch(err => {
-        lidos++;
-        console.error('Erro ao ler PDF', file.name, err);
-      });
+      processarConteudoPdf(file.name, this.result)
+        .catch(err => console.error('Erro ao ler PDF', file.name, err))
+        .finally(() => {
+          lidos++;
+          if (lidos === files.length) {
+            renderSidebar();
+            if (!empresaAtiva) renderOverview();
+          }
+        });
     };
     reader.readAsArrayBuffer(file);
   });
 });
+
+/* ============ IMPORTAÇÃO AUTOMÁTICA DO INTEGRACONTADOR ============ */
+// Busca os relatórios de Situação Fiscal já baixados/salvos pela página do
+// IntegraContador e já entra com eles analisados aqui, sem precisar subir
+// o PDF de novo à mão. Roda sozinho ao abrir a página.
+async function importarRelatoriosIntegraContador() {
+  const aviso = document.getElementById('empty-side-msg');
+  try {
+    const resp = await fetch('/api/integracontador/relatorios', { headers: { 'Content-Type': 'application/json' } });
+    if (!resp.ok) return;
+    const { relatorios } = await resp.json();
+    const cnpjsComSitfis = Object.keys(relatorios || {}).filter(c => relatorios[c].sitfis);
+    if (!cnpjsComSitfis.length) return;
+
+    if (aviso) aviso.textContent = 'Importando relatórios do IntegraContador...';
+
+    let importados = 0;
+    for (const cnpj of cnpjsComSitfis) {
+      try {
+        const arqResp = await fetch(`/api/integracontador/arquivo/sitfis/${cnpj}`);
+        if (!arqResp.ok) continue;
+        const buf = await arqResp.arrayBuffer();
+        await processarConteudoPdf(`SITFIS-${cnpj}.pdf`, buf);
+        importados++;
+      } catch (err) {
+        console.error('Erro ao importar relatório do IntegraContador', cnpj, err);
+      }
+    }
+    if (importados > 0) {
+      renderSidebar();
+      if (!empresaAtiva) renderOverview();
+    }
+  } catch (err) {
+    console.error('Erro ao buscar relatórios do IntegraContador', err);
+  }
+}
 
 function extrairIdentificacao(fullText, fallbackName) {
   const linhas = fullText.replace(/\s{2,}/g, '\n').split('\n');
@@ -1188,6 +1227,7 @@ function aplicarFiltros() {
 
 /* init */
 renderOverview();
+importarRelatoriosIntegraContador();
 </script>
 </body>
 </html>

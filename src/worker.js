@@ -296,6 +296,25 @@ async function buscarRelatorioSitfis(env, cnpjCliente) {
   return { ok: false, processando: true, erro: "O SERPRO ainda está processando esse relatório. Tente novamente em alguns segundos." };
 }
 
+// Área própria do IntegraContador (não mexe nos anexos da empresa): cada relatório usa uma
+// chave FIXA no R2 (empresa + serviço), então baixar de novo simplesmente sobrescreve o
+// arquivo anterior — sempre a versão mais recente disponível, sem acumular cópias.
+async function salvarRelatorioIntegraContador(env, { servico, cnpj, nomeEmpresa, bytesBase64 }) {
+  const cnpjLimpo = limparNumeroDoc(cnpj);
+  const chave = `integracontador/${servico}/${cnpjLimpo}.pdf`;
+  const bytes = Buffer.from(bytesBase64, "base64");
+  await env.ANEXOS_R2.put(chave, bytes, {
+    httpMetadata: { contentType: "application/pdf" },
+    customMetadata: { nome: nomeEmpresa || cnpjLimpo, cnpj: cnpjLimpo },
+  });
+
+  const indice = (await env.KV_EMPRESAS.get("integracontador_relatorios", "json")) || {};
+  indice[cnpjLimpo] = indice[cnpjLimpo] || {};
+  if (nomeEmpresa) indice[cnpjLimpo].nomeEmpresa = nomeEmpresa;
+  indice[cnpjLimpo][servico] = { atualizadoEm: new Date().toISOString() };
+  await env.KV_EMPRESAS.put("integracontador_relatorios", JSON.stringify(indice));
+}
+
 async function obterTokenCnd(env) {
   if (!env.CND_CONSUMER_KEY || !env.CND_CONSUMER_SECRET) throw new Error("CND_CONSUMER_KEY / CND_CONSUMER_SECRET não configurados.");
   const basic = Buffer.from(`${env.CND_CONSUMER_KEY}:${env.CND_CONSUMER_SECRET}`).toString("base64");
@@ -579,10 +598,13 @@ export default {
       }
 
       if (pathname === "/api/integracontador/sitfis" && request.method === "POST") {
-        const { cnpj } = await request.json();
+        const { cnpj, nomeEmpresa } = await request.json();
         if (!cnpj) return json({ erro: "CNPJ é obrigatório." }, 400);
         try {
           const resultado = await buscarRelatorioSitfis(env, cnpj);
+          if (resultado.ok) {
+            await salvarRelatorioIntegraContador(env, { servico: "sitfis", cnpj, nomeEmpresa, bytesBase64: resultado.pdfBase64 });
+          }
           return json(resultado, resultado.ok ? 200 : resultado.processando ? 202 : 500);
         } catch (err) {
           return json({ ok: false, erro: err.message }, 500);
@@ -590,14 +612,49 @@ export default {
       }
 
       if (pathname === "/api/integracontador/cnd" && request.method === "POST") {
-        const { cnpj } = await request.json();
+        const { cnpj, nomeEmpresa } = await request.json();
         if (!cnpj) return json({ erro: "CNPJ é obrigatório." }, 400);
         try {
           const resultado = await buscarCnd(env, cnpj);
+          if (resultado.ok) {
+            await salvarRelatorioIntegraContador(env, { servico: "cnd", cnpj, nomeEmpresa, bytesBase64: resultado.pdfBase64 });
+          }
           return json(resultado, resultado.ok ? 200 : 500);
         } catch (err) {
           return json({ ok: false, erro: err.message }, 500);
         }
+      }
+
+      if (pathname === "/api/integracontador/relatorios" && request.method === "GET") {
+        const indice = (await env.KV_EMPRESAS.get("integracontador_relatorios", "json")) || {};
+        return json({ relatorios: indice });
+      }
+
+      if (pathname.startsWith("/api/integracontador/arquivo/") && request.method === "GET") {
+        const partes = pathname.replace("/api/integracontador/arquivo/", "").split("/");
+        const servico = partes[0];
+        const cnpjLimpo = limparNumeroDoc(partes[1] || "");
+        const obj = await env.ANEXOS_R2.get(`integracontador/${servico}/${cnpjLimpo}.pdf`);
+        if (!obj) return json({ erro: "Esse relatório ainda não foi baixado pra essa empresa." }, 404);
+        const headers = new Headers();
+        obj.writeHttpMetadata(headers);
+        headers.set("etag", obj.httpEtag);
+        const nome = obj.customMetadata?.nome || cnpjLimpo;
+        headers.set("Content-Disposition", `attachment; filename="${encodeURIComponent(servico.toUpperCase())}-${encodeURIComponent(nome)}.pdf"`);
+        return new Response(obj.body, { headers });
+      }
+
+      if (pathname.startsWith("/api/integracontador/arquivo/") && request.method === "DELETE") {
+        const partes = pathname.replace("/api/integracontador/arquivo/", "").split("/");
+        const servico = partes[0];
+        const cnpjLimpo = limparNumeroDoc(partes[1] || "");
+        await env.ANEXOS_R2.delete(`integracontador/${servico}/${cnpjLimpo}.pdf`);
+        const indice = (await env.KV_EMPRESAS.get("integracontador_relatorios", "json")) || {};
+        if (indice[cnpjLimpo]) {
+          delete indice[cnpjLimpo][servico];
+          await env.KV_EMPRESAS.put("integracontador_relatorios", JSON.stringify(indice));
+        }
+        return json({ ok: true });
       }
 
       // ---------- DADOS PRINCIPAIS (grupos/empresas/checklist/parcelamentos) ----------

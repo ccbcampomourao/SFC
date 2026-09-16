@@ -6,6 +6,7 @@
 function renderizarPagina() {
   carregarStatusIntegraContador();
   renderizarListaEmpresasIC();
+  renderizarRelatoriosSalvos();
 }
 
 // ---------------------------------------------------------------------------
@@ -127,6 +128,85 @@ function abrirModalCertificado() {
 }
 
 // ---------------------------------------------------------------------------
+// RELATÓRIOS SALVOS (área própria do IntegraContador — sempre a versão mais
+// recente por empresa+serviço, sobrescrita automaticamente ao baixar de novo)
+// ---------------------------------------------------------------------------
+const ROTULO_SERVICO = { sitfis: "Situação Fiscal", cnd: "CND" };
+
+function formatarDataHora(iso) {
+  try {
+    return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
+async function renderizarRelatoriosSalvos() {
+  const cont = $("#lista-relatorios-salvos");
+  if (!cont) return;
+  let relatorios = {};
+  try {
+    ({ relatorios } = await api("/api/integracontador/relatorios"));
+  } catch (err) {
+    cont.innerHTML = `<p class="comentario-linha">Erro ao carregar: ${escaparHtml(err.message)}</p>`;
+    return;
+  }
+
+  const cnpjs = Object.keys(relatorios).filter((c) => relatorios[c].sitfis || relatorios[c].cnd);
+  cont.innerHTML = "";
+  if (cnpjs.length === 0) {
+    cont.innerHTML = '<p class="comentario-linha">Nenhum relatório baixado ainda. Selecione empresas e serviços acima e clique em "Baixar selecionados".</p>';
+    return;
+  }
+
+  cnpjs.forEach((cnpj) => {
+    const item = relatorios[cnpj];
+    const card = document.createElement("div");
+    card.className = "ic-relatorio-card ic-surgir";
+    const nomeEmpresa = item.nomeEmpresa || cnpj;
+
+    const linhaServico = (chave) => {
+      const info = item[chave];
+      if (!info) return "";
+      return `
+        <div class="ic-relatorio-linha">
+          <div>
+            <div class="ic-relatorio-servico">${ROTULO_SERVICO[chave]}</div>
+            <div class="ic-relatorio-data">Atualizado em ${formatarDataHora(info.atualizadoEm)}</div>
+          </div>
+          <div class="ic-relatorio-acoes">
+            <button type="button" class="btn-icone" data-baixar="${chave}" data-cnpj="${cnpj}" title="Baixar">⬇️</button>
+            <button type="button" class="btn-icone" data-apagar="${chave}" data-cnpj="${cnpj}" title="Apagar">🗑</button>
+          </div>
+        </div>
+      `;
+    };
+
+    card.innerHTML = `
+      <span class="ic-relatorio-empresa">🏢 ${escaparHtml(nomeEmpresa)}</span>
+      ${linhaServico("sitfis")}
+      ${linhaServico("cnd")}
+    `;
+    cont.appendChild(card);
+  });
+
+  cont.querySelectorAll("[data-baixar]").forEach((btn) => {
+    btn.addEventListener("click", () => window.open(`/api/integracontador/arquivo/${btn.dataset.baixar}/${btn.dataset.cnpj}`, "_blank"));
+  });
+  cont.querySelectorAll("[data-apagar]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Apagar esse relatório salvo?")) return;
+      try {
+        await api(`/api/integracontador/arquivo/${btn.dataset.apagar}/${btn.dataset.cnpj}`, { method: "DELETE" });
+        renderizarRelatoriosSalvos();
+      } catch (err) {
+        alert("Erro ao apagar: " + err.message);
+      }
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // SELEÇÃO DE EMPRESAS
 // ---------------------------------------------------------------------------
 function todasEmpresasComCnpj() {
@@ -189,7 +269,7 @@ $("#btn-baixar-selecionados")?.addEventListener("click", async () => {
     servicos.forEach((svc) => {
       const id = `${emp.cnpj}-${svc.chave}`;
       const linha = document.createElement("div");
-      linha.className = "ic-resultado-item";
+      linha.className = "ic-resultado-item ic-surgir";
       linha.innerHTML = `<span>${escaparHtml(emp.nome)} — ${svc.rotulo}</span><span class="ic-badge ic-badge-aguardando">Aguardando</span>`;
       cont.appendChild(linha);
       linhas[id] = linha;
@@ -203,7 +283,7 @@ $("#btn-baixar-selecionados")?.addEventListener("click", async () => {
       badge.textContent = "Baixando...";
       badge.className = "ic-badge ic-badge-baixando";
       try {
-        const resp = await api(svc.endpoint, { method: "POST", body: JSON.stringify({ cnpj: emp.cnpj }) });
+        const resp = await api(svc.endpoint, { method: "POST", body: JSON.stringify({ cnpj: emp.cnpj, nomeEmpresa: emp.nome }) });
         if (resp.ok && resp.pdfBase64) {
           baixarBase64ComoArquivo(resp.pdfBase64, resp.nomeArquivo || `${svc.rotulo}-${emp.cnpj}.pdf`);
           badge.textContent = "✅ Baixado";
@@ -220,6 +300,8 @@ $("#btn-baixar-selecionados")?.addEventListener("click", async () => {
       }
     }
   }
+
+  renderizarRelatoriosSalvos();
 });
 
 iniciarPagina();
