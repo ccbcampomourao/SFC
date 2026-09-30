@@ -232,6 +232,27 @@ async function obterTokenSitfis(env) {
   return dados;
 }
 
+// Reaproveita o token por alguns minutos (com margem de segurança) em vez de repetir o
+// handshake com o certificado a cada empresa consultada — é a parte mais lenta da requisição.
+async function obterTokenSitfisCacheado(env) {
+  try {
+    const cacheado = await env.SFC_KV.get("sitfis_token_cache", "json");
+    if (cacheado && cacheado.expiraEm > Date.now() + 5000) return cacheado.token;
+  } catch {}
+
+  const token = await obterTokenSitfis(env);
+  const segundos = Number(token.expires_in || token.expiresIn || 300);
+  const validoPor = Math.max(segundos - 30, 30); // margem de segurança de 30s
+  try {
+    await env.SFC_KV.put(
+      "sitfis_token_cache",
+      JSON.stringify({ token, expiraEm: Date.now() + validoPor * 1000 }),
+      { expirationTtl: validoPor }
+    );
+  } catch {}
+  return token;
+}
+
 async function chamarIntegraContador(env, token, caminho, corpo) {
   const resp = await env.SERPRO_CERT.fetch(`${SERPRO_SITFIS_BASE}/${caminho}`, {
     method: "POST",
@@ -249,7 +270,7 @@ async function chamarIntegraContador(env, token, caminho, corpo) {
 }
 
 async function buscarRelatorioSitfis(env, cnpjCliente) {
-  const token = await obterTokenSitfis(env);
+  const token = await obterTokenSitfisCacheado(env);
   const contratante = limparNumeroDoc(env.SERPRO_CONTRATANTE_CNPJ);
   if (!contratante) throw new Error("SERPRO_CONTRATANTE_CNPJ não configurado (CNPJ do seu escritório contábil).");
   const cnpj = limparNumeroDoc(cnpjCliente);
@@ -328,11 +349,30 @@ async function obterTokenCnd(env) {
   let dados;
   try { dados = JSON.parse(texto); } catch { throw new Error("Resposta de autenticação da CND não é JSON: " + texto.slice(0, 300)); }
   if (!dados.access_token) throw new Error("SERPRO (CND) não retornou access_token: " + texto.slice(0, 300));
+  return dados;
+}
+
+async function obterTokenCndCacheado(env) {
+  try {
+    const cacheado = await env.SFC_KV.get("cnd_token_cache", "json");
+    if (cacheado && cacheado.expiraEm > Date.now() + 5000) return cacheado.accessToken;
+  } catch {}
+
+  const dados = await obterTokenCnd(env);
+  const segundos = Number(dados.expires_in || dados.expiresIn || 300);
+  const validoPor = Math.max(segundos - 30, 30);
+  try {
+    await env.SFC_KV.put(
+      "cnd_token_cache",
+      JSON.stringify({ accessToken: dados.access_token, expiraEm: Date.now() + validoPor * 1000 }),
+      { expirationTtl: validoPor }
+    );
+  } catch {}
   return dados.access_token;
 }
 
 async function buscarCnd(env, cnpjCliente) {
-  const token = await obterTokenCnd(env);
+  const token = await obterTokenCndCacheado(env);
   const numero = limparNumeroDoc(cnpjCliente);
   const resp = await fetch(`${CND_CONSULTA_URL}?numeroInscricao=${numero}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -655,6 +695,27 @@ export default {
           await env.KV_EMPRESAS.put("integracontador_relatorios", JSON.stringify(indice));
         }
         return json({ ok: true });
+      }
+
+      // ---------- CONSULTA PÚBLICA DE CNPJ (Simples Nacional / MEI) — via BrasilAPI, sem certificado ----------
+      if (pathname === "/api/consulta-cnpj" && request.method === "GET") {
+        const cnpj = limparNumeroDoc(url.searchParams.get("cnpj") || "");
+        if (cnpj.length !== 14) return json({ erro: "CNPJ inválido." }, 400);
+        try {
+          const resp = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`);
+          const dados = await resp.json().catch(() => ({}));
+          if (!resp.ok) return json({ erro: dados.message || `Consulta falhou (${resp.status}).` }, resp.status);
+          return json({
+            razaoSocial: dados.razao_social,
+            situacaoCadastral: dados.descricao_situacao_cadastral,
+            optanteSimples: !!dados.opcao_pelo_simples,
+            dataOpcaoSimples: dados.data_opcao_pelo_simples || null,
+            optanteMei: !!dados.opcao_pelo_mei,
+            dataOpcaoMei: dados.data_opcao_pelo_mei || null,
+          });
+        } catch (err) {
+          return json({ erro: "Falha ao consultar: " + err.message }, 500);
+        }
       }
 
       // ---------- DADOS PRINCIPAIS (grupos/empresas/checklist/parcelamentos) ----------

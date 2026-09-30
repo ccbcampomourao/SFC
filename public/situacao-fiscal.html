@@ -345,7 +345,7 @@ const CATS = [
 ];
 
 /* ================= UPLOAD ================= */
-async function processarConteudoPdf(nomeArquivo, arrayBuffer) {
+async function processarConteudoPdf(nomeArquivo, arrayBuffer, origem) {
   const typedarray = new Uint8Array(arrayBuffer);
   const pdf = await pdfjsLib.getDocument(typedarray).promise;
   let fullText = "";
@@ -364,6 +364,7 @@ async function processarConteudoPdf(nomeArquivo, arrayBuffer) {
   } else {
     empresasMap[chave] = { texto: fullText, cnpj, nome, arquivos:[nomeArquivo] };
   }
+  if (origem) empresasMap[chave].origem = origem;
   delete cacheAnalise[chave];
 }
 
@@ -393,31 +394,27 @@ document.getElementById('pdf-upload').addEventListener('change', function (e) {
 // IntegraContador e já entra com eles analisados aqui, sem precisar subir
 // o PDF de novo à mão. Roda sozinho ao abrir a página.
 async function importarRelatoriosIntegraContador() {
-  const aviso = document.getElementById('empty-side-msg');
   try {
     const resp = await fetch('/api/integracontador/relatorios', { headers: { 'Content-Type': 'application/json' } });
     if (!resp.ok) return;
     const { relatorios } = await resp.json();
     const cnpjsComSitfis = Object.keys(relatorios || {}).filter(c => relatorios[c].sitfis);
-    if (!cnpjsComSitfis.length) return;
 
-    if (aviso) aviso.textContent = 'Importando relatórios do IntegraContador...';
+    // Remove as entradas trazidas do IntegraContador numa importação anterior antes de
+    // reimportar — senão o texto do relatório fica duplicado/concatenado a cada atualização.
+    Object.keys(empresasMap).forEach(chave => {
+      if (empresasMap[chave].origem === 'integracontador') delete empresasMap[chave];
+    });
 
-    let importados = 0;
     for (const cnpj of cnpjsComSitfis) {
       try {
         const arqResp = await fetch(`/api/integracontador/arquivo/sitfis/${cnpj}`);
         if (!arqResp.ok) continue;
         const buf = await arqResp.arrayBuffer();
-        await processarConteudoPdf(`SITFIS-${cnpj}.pdf`, buf);
-        importados++;
+        await processarConteudoPdf(`SITFIS-${cnpj}.pdf`, buf, 'integracontador');
       } catch (err) {
         console.error('Erro ao importar relatório do IntegraContador', cnpj, err);
       }
-    }
-    if (importados > 0) {
-      renderSidebar();
-      if (!empresaAtiva) renderOverview();
     }
   } catch (err) {
     console.error('Erro ao buscar relatórios do IntegraContador', err);
@@ -981,8 +978,9 @@ function renderSidebar() {
 }
 
 /* ================= RENDER: VISÃO GERAL ================= */
-document.getElementById('btn-overview').addEventListener('click', () => {
+document.getElementById('btn-overview').addEventListener('click', async () => {
   empresaAtiva = null;
+  await importarRelatoriosIntegraContador();
   renderSidebar();
   renderOverview();
 });
@@ -1226,8 +1224,37 @@ function aplicarFiltros() {
 }
 
 /* init */
-renderOverview();
-importarRelatoriosIntegraContador();
+function mostrarCarregandoInicial() {
+  document.getElementById('page-title').textContent = 'Carregando...';
+  document.getElementById('page-sub').textContent = 'Buscando os relatórios já baixados no IntegraContador...';
+  document.getElementById('search-box').style.display = 'none';
+  document.getElementById('content-root').innerHTML = `
+    <div class="placeholder">
+      <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#66708a" stroke-width="1.3">
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/>
+        <path d="M9 13h6M9 17h6M9 9h1"/>
+      </svg>
+      <h3>Carregando relatórios...</h3>
+      <p>Isso leva só alguns segundos.</p>
+    </div>`;
+}
+
+async function carregarTudoInicial() {
+  mostrarCarregandoInicial();
+  await importarRelatoriosIntegraContador();
+  renderSidebar();
+  if (!empresaAtiva) renderOverview();
+}
+carregarTudoInicial();
+
+// Confere sozinho a cada 2 minutos se apareceu relatório novo/atualizado no IntegraContador,
+// sem precisar clicar em nada. Se você estiver vendo o detalhe de uma empresa, só atualiza a
+// barra lateral (não te tira da tela que você está olhando).
+setInterval(async () => {
+  await importarRelatoriosIntegraContador();
+  renderSidebar();
+  if (!empresaAtiva) renderOverview();
+}, 120000);
 </script>
 </body>
 </html>

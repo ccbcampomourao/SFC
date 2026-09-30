@@ -239,6 +239,19 @@ function criarCorpoEmpresa(empresa, gi, ei) {
   });
   corpo.appendChild(camposWrap);
 
+  const acoesExtra = document.createElement("div");
+  acoesExtra.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;";
+  acoesExtra.innerHTML = `
+    <button type="button" class="btn-secundario btn-consultar-simples">🔎 Consultar Simples Nacional</button>
+    <button type="button" class="btn-secundario btn-importar-resumo">📄 Importar Resumo</button>
+    <input type="file" accept="application/pdf" class="input-resumo oculto">
+    <span class="ic-resultado-simples" style="font-size:12.5px;color:var(--ink-soft);"></span>
+  `;
+  acoesExtra.querySelector(".btn-consultar-simples").addEventListener("click", () => consultarSimplesNacional(empresa, acoesExtra.querySelector(".ic-resultado-simples")));
+  acoesExtra.querySelector(".btn-importar-resumo").addEventListener("click", () => acoesExtra.querySelector(".input-resumo").click());
+  acoesExtra.querySelector(".input-resumo").addEventListener("change", (e) => importarResumoPdf(empresa, e.target.files[0], e.target));
+  corpo.appendChild(acoesExtra);
+
   const duasColunas = document.createElement("div");
   duasColunas.className = "duas-colunas-detalhe";
 
@@ -310,6 +323,241 @@ function criarCorpoEmpresa(empresa, gi, ei) {
   corpo.appendChild(duasColunas);
 
   return corpo;
+}
+
+// ---------------------------------------------------------------------------
+// CONSULTAR SIMPLES NACIONAL (dados públicos da Receita, via BrasilAPI)
+// ---------------------------------------------------------------------------
+async function consultarSimplesNacional(empresa, elResultado) {
+  if (!empresa.cnpj) { elResultado.textContent = "Informe o CNPJ da empresa primeiro."; return; }
+  elResultado.textContent = "Consultando...";
+  try {
+    const r = await api(`/api/consulta-cnpj?cnpj=${encodeURIComponent(empresa.cnpj)}`);
+    const dataOpcao = r.dataOpcaoSimples ? ` desde ${new Date(r.dataOpcaoSimples).toLocaleDateString("pt-BR")}` : "";
+    const texto = r.optanteSimples ? `✅ Optante pelo Simples Nacional${dataOpcao}` : "❌ Não é optante pelo Simples Nacional";
+    elResultado.textContent = texto + (r.optanteMei ? " · também é MEI" : "");
+    empresa.comentarios = empresa.comentarios || [];
+    empresa.comentarios.push(`🔎 ${texto}\n${agora()}`);
+    renderizarGrupos($("#busca")?.value.toLowerCase() || "");
+  } catch (err) {
+    elResultado.textContent = "Erro: " + err.message;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// IMPORTAR RESUMO PDF (porta a funcionalidade original: lê o Resumo do PGDAS
+// e monta um Relatório Fiscal formatado, anexando na própria empresa)
+// ---------------------------------------------------------------------------
+function removerAcentosResumo(texto) {
+  return (texto || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function extrairValoresFaturamento(linha, label) {
+  const res = [label, "0,00", "0,00", "0,00"];
+  const valores = linha.match(/\d{1,3}(?:\.\d{3})*,\d{2}/g) || [];
+  const total = valores.length;
+  if (total >= 3) { res[1] = valores[total - 3]; res[2] = valores[total - 2]; res[3] = valores[total - 1]; }
+  else if (total === 2) { res[1] = valores[0]; res[3] = valores[1]; }
+  else if (total === 1) { res[3] = valores[0]; }
+  return res;
+}
+
+function identificarNaturezaResumo(linhaUpper) {
+  const temFatorR = linhaUpper.includes("FATOR R");
+  const mAnexo = linhaUpper.match(/ANEXO\s+(I|II|III|IV|V)\b/);
+  const anexo = mAnexo ? mAnexo[1] : null;
+  if (temFatorR) return anexo ? `Anexo ${anexo} (Fator R)` : "Fator R";
+  if (anexo) return `Anexo ${anexo}`;
+  if (linhaUpper.includes("INDUSTRIA")) return "Industria";
+  if (linhaUpper.includes("COMERCIO")) return "Comercio";
+  return "Natureza nao identificada";
+}
+
+function formatarMoedaBR(valor) {
+  return valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function processarTextoResumo(textoPdfOriginal) {
+  const textoNormalizado = removerAcentosResumo(textoPdfOriginal).replace(/"/g, "").replace(/\r/g, "");
+  const linhas = textoNormalizado.split("\n").map((l) => {
+    let s = l.replace(/\|/g, "").trim();
+    if (s.startsWith(",")) s = s.slice(1).trim();
+    return s;
+  });
+
+  let fat12Meses = ["DOS ULTIMOS 12 MESES", "0,00", "0,00", "0,00"];
+  let fatMesAtual = ["DO MES ATUAL", "0,00", "0,00", "0,00"];
+  let fatDoAno = ["DO ANO", "0,00", "0,00", "0,00"];
+  let inNat = false;
+  const operacoesLidas = [];
+
+  for (const l of linhas) {
+    if (!l) continue;
+    const lUpper = l.toUpperCase();
+
+    if (lUpper.includes("ULTIMO 12 MES") || lUpper.includes("ULTIMOS 12 MES")) { fat12Meses = extrairValoresFaturamento(l, "DOS ULTIMOS 12 MESES"); continue; }
+    if (lUpper.startsWith("DO MES ATUAL")) { fatMesAtual = extrairValoresFaturamento(l, "DO MES ATUAL"); continue; }
+    if (lUpper.startsWith("DO ANO")) { fatDoAno = extrairValoresFaturamento(l, "DO ANO"); continue; }
+    if (lUpper.includes("NATUREZA DA OPERACAO")) { inNat = true; continue; }
+
+    if (inNat) {
+      if (lUpper.startsWith("TOTAL:")) { inNat = false; continue; }
+      if (["CNPJ", "UF ORIGEM", "ANEXO", "RECEITA"].includes(lUpper) || lUpper.startsWith("ALIQ") || lUpper === "IMPOSTO") continue;
+
+      const op = { natureza: identificarNaturezaResumo(lUpper), cnpj: "-", uf: "-", receita: 0, imposto: 0, isDevolucao: lUpper.includes("DEVOLUCAO") };
+      const mCnpj = l.match(/\d{4}-\d{2}/);
+      if (mCnpj) op.cnpj = mCnpj[0];
+      const mUf = l.match(/\b([A-Z]{2})-([A-Za-zÀ-ú]+)\b/);
+      if (mUf) op.uf = mUf[0];
+      const vals = l.match(/\d{1,3}(?:\.\d{3})*,\d{2}/g) || [];
+      if (vals.length >= 2) {
+        op.receita = parseFloat(vals[0].replace(/\./g, "").replace(",", "."));
+        op.imposto = parseFloat(vals[vals.length - 1].replace(/\./g, "").replace(",", "."));
+      } else if (vals.length === 1) {
+        op.receita = parseFloat(vals[0].replace(/\./g, "").replace(",", "."));
+      }
+      operacoesLidas.push(op);
+    }
+  }
+
+  const consolidados = {};
+  for (const op of operacoesLidas) {
+    if (!consolidados[op.natureza]) consolidados[op.natureza] = { natureza: op.natureza, cnpj: op.cnpj, uf: op.uf, receita: 0, imposto: 0 };
+    const cons = consolidados[op.natureza];
+    if (op.isDevolucao) { cons.receita -= op.receita; cons.imposto -= op.imposto; }
+    else {
+      cons.receita += op.receita; cons.imposto += op.imposto;
+      if (cons.cnpj === "-" && op.cnpj !== "-") cons.cnpj = op.cnpj;
+      if (cons.uf === "-" && op.uf !== "-") cons.uf = op.uf;
+    }
+  }
+
+  let somaReceita = 0, somaImposto = 0;
+  const linhasNatureza = [];
+  Object.values(consolidados).forEach((cons) => {
+    if (cons.receita <= 0 && cons.imposto <= 0) return;
+    somaReceita += cons.receita; somaImposto += cons.imposto;
+    const aliq = cons.receita > 0 ? formatarMoedaBR((cons.imposto / cons.receita) * 100) + "%" : "-";
+    linhasNatureza.push([cons.natureza, cons.cnpj, cons.uf, formatarMoedaBR(cons.receita), aliq, formatarMoedaBR(cons.imposto)]);
+  });
+
+  let totalNatureza;
+  if (somaReceita > 0 || somaImposto > 0) {
+    const aliqTotal = somaReceita > 0 ? formatarMoedaBR((somaImposto / somaReceita) * 100) + "%" : "-";
+    totalNatureza = ["TOTAL", "-", "-", formatarMoedaBR(somaReceita), aliqTotal, formatarMoedaBR(somaImposto)];
+  } else {
+    totalNatureza = ["TOTAL", "-", "-", "0,00", "-", "0,00"];
+  }
+  if (linhasNatureza.length === 0) linhasNatureza.push(["Sem Movimentos Registrados", "-", "-", "0,00", "-", "0,00"]);
+
+  return { fat12Meses, fatMesAtual, fatDoAno, linhasNatureza, totalNatureza };
+}
+
+function gerarRelatorioFiscalPDF(nomeEmpresa, dados) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const corHeader = [35, 42, 74];
+  const corCinzaClaro = [240, 240, 240];
+  const corLinha = [220, 220, 220];
+  let y = 40;
+
+  doc.setFillColor(...corHeader);
+  doc.rect(30, y, 552, 35, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13);
+  doc.text("RELATÓRIO FISCAL — SIMPLES NACIONAL", 40, y + 16);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+  doc.text(removerAcentosResumo(nomeEmpresa).toUpperCase(), 40, y + 29);
+  y += 35 + 25;
+
+  doc.setTextColor(100, 100, 100);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+  doc.text("Resumo do faturamento e dos impostos apurados no PGDAS referente ao período informado pela Receita Federal.", 35, y);
+  y += 25;
+
+  doc.setTextColor(...corHeader);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11);
+  doc.text("1. FATURAMENTO", 35, y);
+  y += 15;
+
+  const colX1 = [35, 250, 390, 480];
+  doc.setFillColor(...corCinzaClaro); doc.rect(35, y - 10, 542, 14, "F");
+  doc.setTextColor(0, 0, 0); doc.setFont("helvetica", "bold"); doc.setFontSize(8);
+  ["PERÍODO", "MERCADO INTERNO", "MERCADO EXTERNO", "TOTAL (R$)"].forEach((t, i) => doc.text(t, colX1[i], y));
+  y += 16;
+
+  doc.setFont("helvetica", "normal");
+  const rotulosFat = ["Faturamento dos últimos 12 meses", "Faturamento do mês atual", "Faturamento acumulado no ano"];
+  [dados.fat12Meses, dados.fatMesAtual, dados.fatDoAno].forEach((linha, li) => {
+    doc.text(rotulosFat[li], colX1[0], y);
+    for (let i = 1; i < 4; i++) doc.text("R$ " + linha[i], colX1[i], y);
+    y += 15;
+    doc.setDrawColor(...corLinha); doc.setLineWidth(0.5); doc.line(35, y - 5, 577, y - 5);
+  });
+
+  y += 20;
+  doc.setTextColor(...corHeader);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11);
+  doc.text("2. NATUREZA DA OPERAÇÃO E IMPOSTOS", 35, y);
+  y += 15;
+
+  const colX2 = [35, 230, 290, 350, 430, 500];
+  doc.setFillColor(...corCinzaClaro); doc.rect(35, y - 10, 542, 14, "F");
+  doc.setTextColor(0, 0, 0); doc.setFont("helvetica", "bold"); doc.setFontSize(8);
+  ["NATUREZA / ANEXO", "CNPJ", "UF", "RECEITA (R$)", "ALÍQUOTA", "IMPOSTO (R$)"].forEach((t, i) => doc.text(t, colX2[i], y));
+  y += 16;
+
+  doc.setFont("helvetica", "normal");
+  dados.linhasNatureza.forEach((linha) => {
+    if (y > 750) { doc.addPage(); y = 50; doc.setFont("helvetica", "normal"); doc.setFontSize(8); }
+    linha.forEach((valor, i) => {
+      let v = String(valor);
+      if (i === 0 && v.length > 30) v = v.slice(0, 27) + "...";
+      if (i === 3 || i === 5) v = "R$ " + v;
+      doc.text(v, colX2[i], y);
+    });
+    y += 15;
+    doc.setDrawColor(...corLinha); doc.setLineWidth(0.5); doc.line(35, y - 5, 577, y - 5);
+  });
+
+  doc.setFillColor(245, 245, 245); doc.rect(35, y - 10, 542, 14, "F");
+  doc.setTextColor(0, 0, 0); doc.setFont("helvetica", "bold"); doc.setFontSize(8);
+  dados.totalNatureza.forEach((valor, i) => {
+    let v = String(valor);
+    if (i === 3 || i === 5) v = "R$ " + v;
+    doc.text(v, colX2[i], y);
+  });
+
+  return doc.output("blob");
+}
+
+async function importarResumoPdf(empresa, arquivo, inputEl) {
+  if (!arquivo) return;
+  notificar("Lendo o Resumo...");
+  try {
+    const textoPdf = await extrairTextoPdf(arquivo);
+    if (!textoPdf || !textoPdf.trim()) throw new Error("Não foi possível extrair texto desse PDF.");
+
+    const dados = processarTextoResumo(textoPdf);
+    notificar("Montando o Relatório Fiscal...");
+    const blob = gerarRelatorioFiscalPDF(empresa.nome, dados);
+
+    const nomeArquivo = `RelatorioFiscal_${empresa.nome.replace(/[^a-zA-Z0-9]+/g, "_")}_${Date.now()}.pdf`;
+    const arquivoGerado = new File([blob], nomeArquivo, { type: "application/pdf" });
+
+    empresa.anexos = empresa.anexos || [];
+    await anexarArquivoNaLista(empresa.anexos, arquivoGerado);
+
+    empresa.comentarios = empresa.comentarios || [];
+    empresa.comentarios.push(`📄 Extrato Profissional gerado em: ${agora()}`);
+
+    notificar("✅ Relatório Fiscal gerado e anexado!");
+    renderizarGrupos($("#busca")?.value.toLowerCase() || "");
+  } catch (err) {
+    alert("Erro ao gerar o Relatório Fiscal: " + err.message);
+  } finally {
+    if (inputEl) inputEl.value = "";
+  }
 }
 
 // ---------------------------------------------------------------------------

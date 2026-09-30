@@ -265,6 +265,7 @@ $("#btn-baixar-selecionados")?.addEventListener("click", async () => {
   const cont = $("#resultado-ic");
   cont.innerHTML = "";
   const linhas = {};
+  const tarefas = [];
   empresasSelecionadas.forEach((emp) => {
     servicos.forEach((svc) => {
       const id = `${emp.cnpj}-${svc.chave}`;
@@ -273,33 +274,43 @@ $("#btn-baixar-selecionados")?.addEventListener("click", async () => {
       linha.innerHTML = `<span>${escaparHtml(emp.nome)} — ${svc.rotulo}</span><span class="ic-badge ic-badge-aguardando">Aguardando</span>`;
       cont.appendChild(linha);
       linhas[id] = linha;
+      tarefas.push({ id, emp, svc });
     });
   });
 
-  for (const emp of empresasSelecionadas) {
-    for (const svc of servicos) {
-      const id = `${emp.cnpj}-${svc.chave}`;
-      const badge = linhas[id].querySelector(".ic-badge");
-      badge.textContent = "Baixando...";
-      badge.className = "ic-badge ic-badge-baixando";
-      try {
-        const resp = await api(svc.endpoint, { method: "POST", body: JSON.stringify({ cnpj: emp.cnpj, nomeEmpresa: emp.nome }) });
-        if (resp.ok && resp.pdfBase64) {
-          baixarBase64ComoArquivo(resp.pdfBase64, resp.nomeArquivo || `${svc.rotulo}-${emp.cnpj}.pdf`);
-          badge.textContent = "✅ Baixado";
-          badge.className = "ic-badge ic-badge-ok";
-        } else {
-          badge.textContent = "❌ Erro";
-          badge.className = "ic-badge ic-badge-erro";
-          badge.title = resp.erro || "Erro desconhecido";
-        }
-      } catch (err) {
+  // Processa em paralelo (algumas empresas ao mesmo tempo) em vez de uma por uma —
+  // o token de autenticação já fica em cache no servidor, então isso acelera bastante.
+  const LIMITE_PARALELO = 3;
+  async function processarTarefa({ id, emp, svc }) {
+    const badge = linhas[id].querySelector(".ic-badge");
+    badge.textContent = "Baixando...";
+    badge.className = "ic-badge ic-badge-baixando";
+    try {
+      const resp = await api(svc.endpoint, { method: "POST", body: JSON.stringify({ cnpj: emp.cnpj, nomeEmpresa: emp.nome }) });
+      if (resp.ok && resp.pdfBase64) {
+        baixarBase64ComoArquivo(resp.pdfBase64, resp.nomeArquivo || `${svc.rotulo}-${emp.cnpj}.pdf`);
+        badge.textContent = "✅ Baixado";
+        badge.className = "ic-badge ic-badge-ok";
+      } else {
         badge.textContent = "❌ Erro";
         badge.className = "ic-badge ic-badge-erro";
-        badge.title = err.message;
+        badge.title = resp.erro || "Erro desconhecido";
       }
+    } catch (err) {
+      badge.textContent = "❌ Erro";
+      badge.className = "ic-badge ic-badge-erro";
+      badge.title = err.message;
     }
   }
+
+  let proximoIndice = 0;
+  async function trabalhador() {
+    while (proximoIndice < tarefas.length) {
+      const minhaTarefa = tarefas[proximoIndice++];
+      await processarTarefa(minhaTarefa);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(LIMITE_PARALELO, tarefas.length) }, trabalhador));
 
   renderizarRelatoriosSalvos();
 });
