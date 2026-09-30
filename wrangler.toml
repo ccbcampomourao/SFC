@@ -4,7 +4,7 @@ compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
 
 # Serve os arquivos estáticos (public/) diretamente pelo Worker.
-# É o substituto oficial do Cloudflare Pages.
+# É o substituto oficial do Cloudflare Pagess.
 [assets]
 directory = "./public"
 binding = "ASSETS"
