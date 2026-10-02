@@ -208,8 +208,8 @@ function criarParcelamentoCard(p, i) {
     camposWrap.style.marginBottom = "14px";
     camposWrap.innerHTML = `
       <div class="campo-form"><label>Nome</label><input data-campo="nome" value="${escaparHtml(p.nome)}"></div>
-      <div class="campo-form"><label>CNPJ</label><input data-campo="cnpj" value="${p.cnpj || ""}"></div>
-      <div class="campo-form"><label>Senha do Regularize</label><input data-campo="senhaRegularize" value="${p.senhaRegularize || ""}"></div>
+      <div class="campo-form"><label>CNPJ</label><input data-campo="cnpj" value="${escaparHtml(p.cnpj || "")}"></div>
+      <div class="campo-form"><label>Senha do Regularize</label><input data-campo="senhaRegularize" value="${escaparHtml(p.senhaRegularize || "")}"></div>
     `;
     camposWrap.querySelectorAll("[data-campo]").forEach((inp) => inp.addEventListener("change", () => { p[inp.dataset.campo] = inp.value.trim(); renderizarParcelamentos($("#busca")?.value.toLowerCase() || ""); }));
     corpo.appendChild(camposWrap);

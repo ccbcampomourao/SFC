@@ -24,7 +24,7 @@ function renderizarDashboard() {
     const card = document.createElement("div");
     card.className = "dash-card";
     card.innerHTML = `
-      <div class="dash-nome">${g.nome}</div>
+      <div class="dash-nome">${escaparHtml(g.nome)}</div>
       <div class="dash-total">Total: ${g.empresas.length}</div>
       <div class="dash-contadores">
         <span class="ok">✓ ${verde}</span>
@@ -72,7 +72,7 @@ function renderizarGrupos(filtro = "") {
 
     const cabecalho = document.createElement("div");
     cabecalho.className = "grupo-cabecalho";
-    cabecalho.innerHTML = `<h3>📁 ${grupo.nome}</h3><span class="contagem">${grupo.empresas.length} empresa(s) ${aberto ? "▾" : "▸"}</span>`;
+    cabecalho.innerHTML = `<h3>📁 ${escaparHtml(grupo.nome)}</h3><span class="contagem">${grupo.empresas.length} empresa(s) ${aberto ? "▾" : "▸"}</span>`;
     cabecalho.addEventListener("click", () => {
       if (GRUPOS_ABERTOS.has(gi)) GRUPOS_ABERTOS.delete(gi);
       else GRUPOS_ABERTOS.add(gi);
@@ -149,7 +149,7 @@ function criarEmpresaCard(empresa, gi, ei) {
         ${empresa.nfc ? '<span class="selo-tag">NFC</span>' : ""}
         ${empresa.fechado ? '<span class="selo-tag selo-cadeado" title="Fechado">🔒</span>' : ""}
       </div>
-      <span class="empresa-nome">🏢 ${empresa.nome}</span>
+      <span class="empresa-nome">🏢 ${escaparHtml(empresa.nome)}</span>
     </div>
     ${botaoCopiaSe(empresa.cnpj, "CNPJ")}
     ${botaoCopiaSe(empresa.cpf, "CPF")}
@@ -223,13 +223,13 @@ function criarCorpoEmpresa(empresa, gi, ei) {
   camposWrap.className = "linha-dois-campos";
   camposWrap.style.marginBottom = "14px";
   camposWrap.innerHTML = `
-    <div class="campo-form"><label>Nome</label><input data-campo="nome" value="${empresa.nome}"></div>
-    <div class="campo-form"><label>CNPJ</label><input data-campo="cnpj" value="${empresa.cnpj || ""}"></div>
-    <div class="campo-form"><label>CPF</label><input data-campo="cpf" value="${empresa.cpf || ""}"></div>
-    <div class="campo-form"><label>E-mail</label><input data-campo="email" type="email" value="${empresa.email || ""}"></div>
-    <div class="campo-form"><label>Senha Prefeitura</label><input data-campo="senhaPrefeitura" value="${empresa.senhaPrefeitura || ""}"></div>
-    <div class="campo-form"><label>Senha Regularize</label><input data-campo="senhaRegularize" value="${empresa.senhaRegularize || ""}"></div>
-    <div class="campo-form"><label>Inscrição Estadual</label><input data-campo="inscricaoEstadual" value="${empresa.inscricaoEstadual || ""}"></div>
+    <div class="campo-form"><label>Nome</label><input data-campo="nome" value="${escaparHtml(empresa.nome)}"></div>
+    <div class="campo-form"><label>CNPJ</label><input data-campo="cnpj" value="${escaparHtml(empresa.cnpj || "")}"></div>
+    <div class="campo-form"><label>CPF</label><input data-campo="cpf" value="${escaparHtml(empresa.cpf || "")}"></div>
+    <div class="campo-form"><label>E-mail</label><input data-campo="email" type="email" value="${escaparHtml(empresa.email || "")}"></div>
+    <div class="campo-form"><label>Senha Prefeitura</label><input data-campo="senhaPrefeitura" value="${escaparHtml(empresa.senhaPrefeitura || "")}"></div>
+    <div class="campo-form"><label>Senha Regularize</label><input data-campo="senhaRegularize" value="${escaparHtml(empresa.senhaRegularize || "")}"></div>
+    <div class="campo-form"><label>Inscrição Estadual</label><input data-campo="inscricaoEstadual" value="${escaparHtml(empresa.inscricaoEstadual || "")}"></div>
   `;
   camposWrap.querySelectorAll("[data-campo]").forEach((inp) => {
     inp.addEventListener("change", () => {

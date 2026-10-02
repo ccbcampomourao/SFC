@@ -172,6 +172,7 @@ img.logo-marca.pequena { width: 40px; height: 40px; object-fit: contain; }
 .largura-total { width: 100%; }
 .painel-cabecalho { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .painel-cabecalho h2 { font-size: 16px; }
+.painel-acoes { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* ---------- DASHBOARD ---------- */
 .dashboard { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }

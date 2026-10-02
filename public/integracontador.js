@@ -227,9 +227,9 @@ function renderizarListaEmpresasIC() {
     const linha = document.createElement("label");
     linha.className = "ic-empresa-item";
     linha.innerHTML = `
-      <input type="checkbox" class="ic-empresa-check" data-cnpj="${e.cnpj}" checked>
+      <input type="checkbox" class="ic-empresa-check" data-cnpj="${escaparHtml(e.cnpj)}" checked>
       <span class="ic-empresa-nome">${escaparHtml(e.nome)}</span>
-      <span class="ic-empresa-cnpj">${e.cnpj}</span>
+      <span class="ic-empresa-cnpj">${escaparHtml(e.cnpj)}</span>
     `;
     cont.appendChild(linha);
   });

@@ -56,7 +56,7 @@ function contarStatus(lista, campoStatus) {
 
 function botaoCopiaSe(valor, rotulo, classeExtra = "") {
   if (!valor) return "";
-  return `<button type="button" class="chip-copia ${classeExtra}" data-copiar="${rotulo}" title="${rotulo}: ${valor}">${rotulo}</button>`;
+  return `<button type="button" class="chip-copia ${classeExtra}" data-copiar="${rotulo}" title="${escaparHtml(rotulo)}: ${escaparHtml(valor)}">${rotulo}</button>`;
 }
 
 function copiar(rotulo, texto) {
