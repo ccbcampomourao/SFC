@@ -4,8 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FZCONT · Situação Fiscal</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.12.313/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.12.313/pdf.min.js" defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 <style>
@@ -346,6 +347,7 @@ const CATS = [
 
 /* ================= UPLOAD ================= */
 async function processarConteudoPdf(nomeArquivo, arrayBuffer, origem) {
+  if (typeof garantirWorkerPdfJs === "function") garantirWorkerPdfJs();
   const typedarray = new Uint8Array(arrayBuffer);
   const pdf = await pdfjsLib.getDocument(typedarray).promise;
   let fullText = "";
@@ -366,6 +368,7 @@ async function processarConteudoPdf(nomeArquivo, arrayBuffer, origem) {
   }
   if (origem) empresasMap[chave].origem = origem;
   delete cacheAnalise[chave];
+  return chave;
 }
 
 document.getElementById('pdf-upload').addEventListener('change', function (e) {
@@ -389,35 +392,82 @@ document.getElementById('pdf-upload').addEventListener('change', function (e) {
   });
 });
 
-/* ============ IMPORTAÇÃO AUTOMÁTICA DO INTEGRACONTADOR ============ */
-// Busca os relatórios de Situação Fiscal já baixados/salvos pela página do
-// IntegraContador e já entra com eles analisados aqui, sem precisar subir
-// o PDF de novo à mão. Roda sozinho ao abrir a página.
-async function importarRelatoriosIntegraContador() {
+/* ============ IMPORTAÇÃO DO INTEGRACONTADOR, COM CACHE LOCAL ============ */
+// Guarda os relatórios já processados no navegador (localStorage), pra não precisar
+// baixar e reprocessar tudo de novo toda vez que a página abre. Ao voltar, os dados já
+// aparecem na hora. Só baixa/reprocessa de novo a empresa cuja data de atualização no
+// servidor for mais nova do que a que está guardada aqui — o resto fica como está.
+const CACHE_SITFIS_KEY = 'fzcont_sitfis_cache_v1';
+
+function carregarCacheSitfis() {
+  try {
+    const bruto = localStorage.getItem(CACHE_SITFIS_KEY);
+    return bruto ? JSON.parse(bruto) : {};
+  } catch {
+    return {};
+  }
+}
+
+function salvarCacheSitfis(cache) {
+  try {
+    localStorage.setItem(CACHE_SITFIS_KEY, JSON.stringify(cache));
+  } catch (err) {
+    console.warn('Não consegui salvar o cache local (talvez tenha ficado sem espaço):', err);
+  }
+}
+
+// Aplica tudo que já está em cache direto no empresasMap, instantâneo, sem rede.
+function restaurarDoCacheSitfis() {
+  const cache = carregarCacheSitfis();
+  Object.values(cache).forEach(item => {
+    empresasMap[item.chave] = { texto: item.texto, cnpj: item.cnpj, nome: item.nome, arquivos: item.arquivos, origem: 'integracontador' };
+  });
+  return Object.keys(cache).length > 0;
+}
+
+// Confere no servidor só a "ficha" leve (data de atualização de cada empresa) e baixa o
+// PDF de verdade apenas para quem mudou desde a última vez. Retorna true se algo mudou.
+async function atualizarRelatoriosIntegraContador() {
   try {
     const resp = await fetch('/api/integracontador/relatorios', { headers: { 'Content-Type': 'application/json' } });
-    if (!resp.ok) return;
+    if (!resp.ok) return false;
     const { relatorios } = await resp.json();
-    const cnpjsComSitfis = Object.keys(relatorios || {}).filter(c => relatorios[c].sitfis);
+    const cache = carregarCacheSitfis();
+    let mudou = false;
 
-    // Remove as entradas trazidas do IntegraContador numa importação anterior antes de
-    // reimportar — senão o texto do relatório fica duplicado/concatenado a cada atualização.
-    Object.keys(empresasMap).forEach(chave => {
-      if (empresasMap[chave].origem === 'integracontador') delete empresasMap[chave];
-    });
+    for (const cnpj of Object.keys(relatorios || {})) {
+      const info = relatorios[cnpj].sitfis;
+      if (!info) continue;
+      const cacheado = cache[cnpj];
+      if (cacheado && cacheado.atualizadoEm === info.atualizadoEm) continue; // já temos a versão mais recente
 
-    for (const cnpj of cnpjsComSitfis) {
       try {
         const arqResp = await fetch(`/api/integracontador/arquivo/sitfis/${cnpj}`);
         if (!arqResp.ok) continue;
         const buf = await arqResp.arrayBuffer();
-        await processarConteudoPdf(`SITFIS-${cnpj}.pdf`, buf, 'integracontador');
+
+        if (cacheado && empresasMap[cacheado.chave]) delete empresasMap[cacheado.chave]; // evita duplicar texto
+        const chave = await processarConteudoPdf(`SITFIS-${cnpj}.pdf`, buf, 'integracontador');
+
+        cache[cnpj] = {
+          chave,
+          texto: empresasMap[chave].texto,
+          cnpj: empresasMap[chave].cnpj,
+          nome: empresasMap[chave].nome,
+          arquivos: empresasMap[chave].arquivos,
+          atualizadoEm: info.atualizadoEm,
+        };
+        mudou = true;
       } catch (err) {
         console.error('Erro ao importar relatório do IntegraContador', cnpj, err);
       }
     }
+
+    if (mudou) salvarCacheSitfis(cache);
+    return mudou;
   } catch (err) {
     console.error('Erro ao buscar relatórios do IntegraContador', err);
+    return false;
   }
 }
 
@@ -980,9 +1030,10 @@ function renderSidebar() {
 /* ================= RENDER: VISÃO GERAL ================= */
 document.getElementById('btn-overview').addEventListener('click', async () => {
   empresaAtiva = null;
-  await importarRelatoriosIntegraContador();
   renderSidebar();
   renderOverview();
+  const mudou = await atualizarRelatoriosIntegraContador();
+  if (mudou) { renderSidebar(); renderOverview(); }
 });
 
 function renderOverview() {
@@ -1240,21 +1291,34 @@ function mostrarCarregandoInicial() {
 }
 
 async function carregarTudoInicial() {
-  mostrarCarregandoInicial();
-  await importarRelatoriosIntegraContador();
-  renderSidebar();
-  if (!empresaAtiva) renderOverview();
+  // 1) Mostra na hora o que já está guardado no navegador, sem esperar rede nenhuma.
+  const tinhaCache = restaurarDoCacheSitfis();
+  if (tinhaCache) {
+    renderSidebar();
+    if (!empresaAtiva) renderOverview();
+  } else {
+    mostrarCarregandoInicial();
+  }
+
+  // 2) Em segundo plano, confere no servidor só o que mudou (baixa e reprocessa só isso).
+  const mudou = await atualizarRelatoriosIntegraContador();
+  if (mudou || !tinhaCache) {
+    renderSidebar();
+    if (!empresaAtiva) renderOverview();
+  }
 }
 carregarTudoInicial();
 
-// Confere sozinho a cada 2 minutos se apareceu relatório novo/atualizado no IntegraContador,
-// sem precisar clicar em nada. Se você estiver vendo o detalhe de uma empresa, só atualiza a
-// barra lateral (não te tira da tela que você está olhando).
+// Confere sozinho de tempos em tempos se apareceu relatório novo/atualizado no
+// IntegraContador — mas como agora só baixa/reprocessa quem realmente mudou (compara pela
+// data de atualização), isso é bem leve e não fica reconsultando o Cloudflare à toa.
 setInterval(async () => {
-  await importarRelatoriosIntegraContador();
-  renderSidebar();
-  if (!empresaAtiva) renderOverview();
-}, 120000);
+  const mudou = await atualizarRelatoriosIntegraContador();
+  if (mudou) {
+    renderSidebar();
+    if (!empresaAtiva) renderOverview();
+  }
+}, 300000);
 </script>
 </body>
 </html>

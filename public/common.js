@@ -94,12 +94,17 @@ function buscarParcelamentoPorCnpj(cnpj) {
 // LEITURA DE PDF (pdf.js) — usada pela importação em lote de guias/DAS,
 // igual ao "processarPdfDas"/"processarPdfParcelamento" do app original.
 // ---------------------------------------------------------------------------
-if (window.pdfjsLib && pdfjsLib.GlobalWorkerOptions) {
-  const versaoPdfJs = pdfjsLib.version || "3.11.174";
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${versaoPdfJs}/pdf.worker.min.js`;
+// Configura o worker do pdf.js só na hora de usar (não no carregamento da página) — assim
+// funciona mesmo com os scripts carregando em paralelo (defer), sem travar a tela à toa.
+function garantirWorkerPdfJs() {
+  if (window.pdfjsLib && pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    const versaoPdfJs = pdfjsLib.version || "3.11.174";
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${versaoPdfJs}/pdf.worker.min.js`;
+  }
 }
 
 async function extrairTextoPdf(arquivo) {
+  garantirWorkerPdfJs();
   const buf = await arquivo.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
   let texto = "";
