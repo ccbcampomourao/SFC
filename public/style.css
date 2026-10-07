@@ -27,6 +27,38 @@
   font-family: "Inter", system-ui, -apple-system, sans-serif;
 }
 
+/* Transição suave entre páginas (nativa do navegador — Chrome/Edge já suportam,
+   nos demais simplesmente não faz nada, sem quebrar). */
+@view-transition {
+  navigation: auto;
+}
+
+@keyframes fz-surgir {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fz-aparecer {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fz-pulsar {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
+}
+.anim-surgir { animation: fz-surgir .28s cubic-bezier(.16,1,.3,1) both; }
+.anim-aparecer { animation: fz-aparecer .25s ease both; }
+.carregando-pulso { animation: fz-pulsar 1.3s ease-in-out infinite; }
+
+/* Quem pede menos movimento (acessibilidade) recebe tudo instantâneo, sem animação. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--paper); color: var(--ink); font-size: 14px; -webkit-font-smoothing: antialiased; }
 .oculto { display: none !important; }
@@ -34,7 +66,7 @@ button { font-family: inherit; cursor: pointer; }
 h1, h2, h3, h4 { font-family: "Sora", system-ui, sans-serif; font-weight: 700; margin: 0; color: var(--ink); letter-spacing: -0.01em; }
 
 /* ---------- TELA DE LOGIN (dividida: hero + formulário) ---------- */
-.tela-cheia { min-height: 100vh; }
+.tela-cheia { min-height: 100vh; animation: fz-aparecer .3s ease both; }
 .tela-login-split { min-height: 100vh; display: flex; }
 
 .painel-hero {
@@ -65,12 +97,12 @@ h1, h2, h3, h4 { font-family: "Sora", system-ui, sans-serif; font-weight: 700; m
 .login-subtitulo { color: var(--ink-soft); margin: 0 0 22px; font-size: 14px; }
 
 .tabs-login { display: flex; background: #fff; border: 1.3px solid var(--line); border-radius: 999px; padding: 4px; margin-bottom: 24px; gap: 4px; }
-.tab-login-btn { flex: 1; border: none; background: transparent; padding: 9px 0; border-radius: 999px; font-size: 13px; font-weight: 700; color: var(--ink-soft); cursor: pointer; }
+.tab-login-btn { flex: 1; border: none; background: transparent; padding: 9px 0; border-radius: 999px; font-size: 13px; font-weight: 700; color: var(--ink-soft); cursor: pointer; transition: background-color .18s ease, color .18s ease; }
 .tab-login-btn.ativa { background: var(--ink); color: #fff; }
 
 .form-login { display: flex; flex-direction: column; gap: 15px; }
 .form-login label { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--ink-soft); font-weight: 600; }
-.form-login input { padding: 11px 13px; border: 1.3px solid var(--line-strong); border-radius: var(--raio-sm); font-size: 14px; outline: none; background: #fff; }
+.form-login input { padding: 11px 13px; border: 1.3px solid var(--line-strong); border-radius: var(--raio-sm); font-size: 14px; outline: none; background: #fff; transition: border-color .15s ease, box-shadow .15s ease; }
 .form-login input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
 .mensagem-erro { background: var(--vermelho-bg); color: var(--vermelho); padding: 9px 12px; border-radius: var(--raio-sm); font-size: 13px; }
 .mensagem-sucesso { background: var(--verde-bg); color: var(--verde); padding: 10px 12px; border-radius: var(--raio-sm); font-size: 13px; line-height: 1.5; }
@@ -79,18 +111,22 @@ h1, h2, h3, h4 { font-family: "Sora", system-ui, sans-serif; font-weight: 700; m
 
 /* ---------- BOTÕES GERAIS ---------- */
 .btn-primario, .btn-secundario, .btn-ghost, .btn-perigo-outline {
-  border: none; border-radius: var(--raio-sm); padding: 9px 16px; font-size: 12.5px; font-weight: 700; transition: all .12s;
+  border: none; border-radius: var(--raio-sm); padding: 9px 16px; font-size: 12.5px; font-weight: 700;
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .12s ease, opacity .15s ease;
 }
 .btn-primario { background: var(--gradiente-marca); color: #fff; box-shadow: 0 3px 10px rgba(11,132,192,0.28); }
-.btn-primario:hover { opacity: .92; }
+.btn-primario:hover { opacity: .92; transform: translateY(-1px); box-shadow: 0 6px 16px rgba(11,132,192,0.34); }
+.btn-primario:active { transform: translateY(0); box-shadow: 0 2px 6px rgba(11,132,192,0.3); }
 .btn-secundario { background: #fff; color: var(--ink); border: 1.3px solid var(--line-strong) !important; }
-.btn-secundario:hover { border-color: var(--blue) !important; color: var(--blue); }
+.btn-secundario:hover { border-color: var(--blue) !important; color: var(--blue); transform: translateY(-1px); }
+.btn-secundario:active { transform: translateY(0); }
 .btn-ghost { background: transparent; color: var(--ink-soft); }
 .btn-ghost:hover { background: var(--blue-soft); color: var(--blue); }
 .btn-perigo-outline { background: #fff; color: var(--vermelho); border: 1.3px solid #F3C9CB !important; }
-.btn-perigo-outline:hover { background: var(--vermelho-bg); }
-.btn-icone { background: transparent; border: none; cursor: pointer; padding: 4px; border-radius: 6px; color: var(--ink-soft); font-size: 15px; line-height: 1; }
-.btn-icone:hover { background: var(--vermelho-bg); color: var(--vermelho); }
+.btn-perigo-outline:hover { background: var(--vermelho-bg); transform: translateY(-1px); }
+.btn-icone { background: transparent; border: none; cursor: pointer; padding: 4px; border-radius: 6px; color: var(--ink-soft); font-size: 15px; line-height: 1; transition: background-color .15s ease, color .15s ease, transform .12s ease; }
+.btn-icone:hover { background: var(--vermelho-bg); color: var(--vermelho); transform: scale(1.08); }
+.btn-icone:active { transform: scale(.95); }
 
 /* ---------- BARRA LATERAL DO APP (navegação entre Empresas/Parcelamentos/Situação Fiscal) ---------- */
 .app-shell { display: flex; min-height: 100vh; }
@@ -119,7 +155,9 @@ h1, h2, h3, h4 { font-family: "Sora", system-ui, sans-serif; font-weight: 700; m
 .app-nav-link {
   display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-radius: 10px;
   color: #aab2d6; text-decoration: none; font-size: 13px; font-weight: 700;
+  transition: background-color .15s ease, color .15s ease, transform .12s ease;
 }
+.app-nav-link:hover { transform: translateX(2px); }
 .app-nav-link:hover { background: #1E2547; color: #fff; }
 .app-nav-link.ativo { background: var(--blue); color: #fff; }
 
@@ -131,7 +169,9 @@ h1, h2, h3, h4 { font-family: "Sora", system-ui, sans-serif; font-weight: 700; m
   width: 100%; background: transparent; border: 1px solid #313a63; color: #aab2d6;
   padding: 9px 10px; border-radius: 9px; font-size: 12.5px; cursor: pointer; font-family: inherit;
   text-align: left; font-weight: 600;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease, transform .1s ease;
 }
+.btn-ghost-side:active { transform: scale(.98); }
 .btn-ghost-side:hover { background: #1E2547; color: #fff; border-color: var(--blue); }
 .btn-perigo-side { border-color: #5c2b2b; color: #e2a5a5; }
 .btn-perigo-side:hover { background: #3a1f1f; color: #fff; border-color: #7a3a3a; }
@@ -162,7 +202,8 @@ img.logo-marca.pequena { width: 40px; height: 40px; object-fit: contain; }
 .link-nav:hover { background: var(--paper); color: var(--ink); }
 .link-nav.ativo { background: var(--blue-soft); color: var(--blue); }
 
-.status-salvar { position: fixed; top: 68px; right: 26px; z-index: 50; background: var(--ink); color: #fff; padding: 9px 16px; border-radius: var(--raio-sm); font-size: 12.5px; font-weight: 600; box-shadow: var(--sombra-lg); }
+.status-salvar { position: fixed; top: 68px; right: 26px; z-index: 50; background: var(--ink); color: #fff; padding: 9px 16px; border-radius: var(--raio-sm); font-size: 12.5px; font-weight: 600; box-shadow: var(--sombra-lg); animation: fz-toast-entra .22s cubic-bezier(.16,1,.3,1) both; }
+@keyframes fz-toast-entra { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 
 /* ---------- LAYOUT ---------- */
 .conteudo { padding: 22px 28px 44px; max-width: 1480px; margin: 0 auto; }
@@ -189,19 +230,21 @@ img.logo-marca.pequena { width: 40px; height: 40px; object-fit: contain; }
 
 /* ---------- GRUPOS (sanfona) ---------- */
 .lista-grupos { display: flex; flex-direction: column; gap: 10px; }
-.grupo-card { border: 1.3px solid var(--line); border-radius: var(--raio); overflow: hidden; }
-.grupo-cabecalho { display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; background: var(--paper); cursor: pointer; }
+.grupo-card { border: 1.3px solid var(--line); border-radius: var(--raio); overflow: hidden; transition: box-shadow .2s ease, border-color .2s ease; }
+.grupo-card:hover { box-shadow: var(--sombra); }
+.grupo-cabecalho { display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; background: var(--paper); cursor: pointer; transition: background-color .15s ease; }
 .grupo-cabecalho h3 { margin: 0; font-size: 13.5px; font-weight: 700; font-family: "Inter", sans-serif; color: var(--ink); }
 .grupo-cabecalho .contagem { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; }
 .grupo-corpo { padding: 12px; display: flex; flex-direction: column; gap: 9px; background: #fff; }
 
 /* ---------- EMPRESA (sanfona interna) — régua colorida à esquerda ---------- */
-.empresa-card { border: 1.3px solid var(--line); border-left: 4px solid var(--line-strong); border-radius: var(--raio-sm); overflow: hidden; }
+.empresa-card { border: 1.3px solid var(--line); border-left: 4px solid var(--line-strong); border-radius: var(--raio-sm); overflow: hidden; transition: box-shadow .2s ease, border-color .2s ease; }
+.empresa-card:hover { box-shadow: var(--sombra); }
 .empresa-card.VERDE { border-left-color: var(--verde); }
 .empresa-card.VERMELHO { border-left-color: var(--vermelho); }
 .empresa-card.ATENCAO { border-left-color: var(--amber); }
 
-.empresa-header { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; flex-wrap: wrap; background: #fff; }
+.empresa-header { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; flex-wrap: wrap; background: #fff; transition: background-color .15s ease; }
 .empresa-header:hover { background: var(--paper); }
 
 .empresa-nome-wrap { display: flex; flex-direction: column; gap: 3px; margin-right: 6px; }
@@ -211,7 +254,8 @@ img.logo-marca.pequena { width: 40px; height: 40px; object-fit: contain; }
 .selo-cadeado { background: var(--ink); color: #fff; padding: 2px 5px; font-size: 10px; border-radius: 4px; }
 .empresa-nome { font-weight: 700; font-size: 14px; color: var(--ink); }
 
-.chip-copia { font-size: 10.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--paper); color: var(--ink-soft); border: 1px solid var(--line); cursor: pointer; }
+.chip-copia { font-size: 10.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--paper); color: var(--ink-soft); border: 1px solid var(--line); cursor: pointer; transition: border-color .15s ease, color .15s ease, transform .1s ease; }
+.chip-copia:active { transform: scale(.95); }
 .chip-copia:hover { border-color: var(--blue); color: var(--blue); }
 .chip-email { background: var(--blue-soft); color: var(--blue); border-color: transparent; }
 .chip-email:hover { background: #D6EDF9; }
@@ -219,7 +263,8 @@ img.logo-marca.pequena { width: 40px; height: 40px; object-fit: contain; }
 .empresa-corpo { padding: 15px; border-top: 1.3px solid var(--line); background: var(--paper); }
 
 .barra-opcoes { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; background: #fff; border: 1.3px solid var(--line); border-radius: var(--raio-sm); margin-bottom: 15px; }
-.pill-toggle { border-radius: 999px; padding: 5px 13px; font-size: 11px; font-weight: 700; cursor: pointer; border: 1.3px solid var(--line-strong); background: transparent; color: var(--ink-soft); }
+.pill-toggle { border-radius: 999px; padding: 5px 13px; font-size: 11px; font-weight: 700; cursor: pointer; border: 1.3px solid var(--line-strong); background: transparent; color: var(--ink-soft); transition: background-color .18s ease, border-color .18s ease, color .18s ease, transform .1s ease; }
+.pill-toggle:active { transform: scale(.94); }
 .pill-toggle.ok-off { border-color: #9FDABB; color: var(--verde); }
 .pill-toggle.ok-on { border-color: var(--verde); background: var(--verde); color: #fff; }
 .pill-toggle.erro-off { border-color: #F0B4B4; color: var(--vermelho); }
@@ -229,7 +274,7 @@ img.logo-marca.pequena { width: 40px; height: 40px; object-fit: contain; }
 
 .separador-v { width: 1.3px; height: 22px; background: var(--line-strong); }
 
-.chip-check { font-size: 11px; font-weight: 700; padding: 5px 11px; border-radius: 999px; cursor: pointer; border: 1.3px solid var(--line); background: transparent; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 5px; }
+.chip-check { font-size: 11px; font-weight: 700; padding: 5px 11px; border-radius: 999px; cursor: pointer; border: 1.3px solid var(--line); background: transparent; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 5px; transition: background-color .18s ease, border-color .18s ease, color .18s ease; }
 .chip-check.marcado { background: var(--verde-bg); color: var(--verde); border-color: #9FDABB; }
 .chip-check.fechado.marcado { background: var(--ink); color: #fff; border-color: var(--ink); }
 .chip-check input { accent-color: currentColor; }
@@ -240,7 +285,8 @@ img.logo-marca.pequena { width: 40px; height: 40px; object-fit: contain; }
 .comentario-texto { flex: 1; white-space: pre-wrap; color: var(--ink); }
 .anexo-link { flex: 1; color: var(--blue); text-decoration: underline; text-decoration-color: var(--blue-soft); cursor: pointer; word-break: break-all; background: none; border: none; text-align: left; font-size: 12.5px; padding: 0; font-family: inherit; }
 .form-inline { display: flex; gap: 6px; margin-top: 10px; }
-.form-inline input { flex: 1; border: 1.3px solid var(--line-strong); border-radius: var(--raio-sm); padding: 8px 10px; font-size: 12.5px; font-family: inherit; }
+.form-inline input { flex: 1; border: 1.3px solid var(--line-strong); border-radius: var(--raio-sm); padding: 8px 10px; font-size: 12.5px; font-family: inherit; transition: border-color .15s ease; }
+.form-inline input:focus { border-color: var(--blue); outline: none; }
 .rodape-empresa { display: flex; justify-content: flex-end; margin-top: 12px; }
 
 /* ---------- CHECKLIST ---------- */
@@ -256,21 +302,23 @@ img.logo-marca.pequena { width: 40px; height: 40px; object-fit: contain; }
 
 /* ---------- PARCELAMENTOS ---------- */
 .grade-parcelamentos { display: flex; flex-direction: column; gap: 10px; }
-.parcelamento-header { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; flex-wrap: wrap; background: #fff; }
+.parcelamento-header { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; flex-wrap: wrap; background: #fff; transition: background-color .15s ease; }
 .parcelamento-header:hover { background: var(--paper); }
-.alternancia-btn { border-radius: 999px; padding: 4px 13px; font-size: 11px; font-weight: 700; cursor: pointer; border: 1.3px solid var(--line-strong); background: transparent; color: var(--ink-soft); }
+.alternancia-btn { border-radius: 999px; padding: 4px 13px; font-size: 11px; font-weight: 700; cursor: pointer; border: 1.3px solid var(--line-strong); background: transparent; color: var(--ink-soft); transition: background-color .18s ease, border-color .18s ease, color .18s ease, transform .1s ease; }
+.alternancia-btn:active { transform: scale(.94); }
 .alternancia-btn.a-simples-receita { background: #E4EEF6; border-color: #A9C7DE; color: #2E5E82; }
 .alternancia-btn.a-simples-pgfn { background: var(--blue-soft); border-color: #9AD3EE; color: var(--blue); }
 .alternancia-btn.a-previdencia-receita { background: var(--amber-bg); border-color: #F0CE8F; color: var(--amber); }
 .alternancia-btn.a-previdencia-pgfn { background: #E9E7FB; border-color: #C7C0EF; color: #5B4FC4; }
 
 /* ---------- MODAL ---------- */
-.modal-fundo { position: fixed; inset: 0; background: rgba(23, 27, 51, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; backdrop-filter: blur(2px); }
-.modal-conteudo { background: var(--paper-panel); border-radius: 18px; padding: 26px; width: 100%; max-width: 520px; max-height: 88vh; overflow-y: auto; box-shadow: var(--sombra-lg); }
+.modal-fundo { position: fixed; inset: 0; background: rgba(23, 27, 51, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; backdrop-filter: blur(2px); animation: fz-aparecer .15s ease both; }
+.modal-conteudo { background: var(--paper-panel); border-radius: 18px; padding: 26px; width: 100%; max-width: 520px; max-height: 88vh; overflow-y: auto; box-shadow: var(--sombra-lg); animation: fz-modal-entra .22s cubic-bezier(.16,1,.3,1) both; }
+@keyframes fz-modal-entra { from { opacity: 0; transform: scale(.96) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 .modal-conteudo h2 { font-size: 18px; margin-bottom: 18px; }
 .campo-form { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
 .campo-form label { font-size: 11.5px; font-weight: 700; color: var(--ink-soft); }
-.campo-form input, .campo-form textarea, .campo-form select { padding: 9px 11px; border: 1.3px solid var(--line-strong); border-radius: var(--raio-sm); font-size: 13px; outline: none; font-family: inherit; }
+.campo-form input, .campo-form textarea, .campo-form select { padding: 9px 11px; border: 1.3px solid var(--line-strong); border-radius: var(--raio-sm); font-size: 13px; outline: none; font-family: inherit; transition: border-color .15s ease, box-shadow .15s ease; }
 .campo-form input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
 .linha-dois-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .modal-rodape { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }

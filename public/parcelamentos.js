@@ -180,7 +180,7 @@ function criarParcelamentoCard(p, i) {
 
   if (aberto) {
     const corpo = document.createElement("div");
-    corpo.className = "empresa-corpo";
+    corpo.className = "empresa-corpo anim-surgir";
 
     const barra = document.createElement("div");
     barra.className = "barra-opcoes";

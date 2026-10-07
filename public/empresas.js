@@ -82,7 +82,7 @@ function renderizarGrupos(filtro = "") {
 
     if (aberto) {
       const corpo = document.createElement("div");
-      corpo.className = "grupo-corpo";
+      corpo.className = "grupo-corpo anim-surgir";
 
       const btnAdd = document.createElement("button");
       btnAdd.className = "btn-secundario";
@@ -189,7 +189,7 @@ function criarEmpresaCard(empresa, gi, ei) {
 
 function criarCorpoEmpresa(empresa, gi, ei) {
   const corpo = document.createElement("div");
-  corpo.className = "empresa-corpo";
+  corpo.className = "empresa-corpo anim-surgir";
 
   const barra = document.createElement("div");
   barra.className = "barra-opcoes";
