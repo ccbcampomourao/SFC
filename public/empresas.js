@@ -3,6 +3,8 @@
 // ============================================================================
 let GRUPOS_ABERTOS = new Set();
 let EMPRESAS_ABERTAS = new Set();
+let GRUPOS_ANIMADOS = new Set(); // controla quem já tocou a animação de abrir, pra não repetir a cada re-render
+let EMPRESAS_ANIMADAS = new Set();
 
 function renderizarPagina() {
   renderizarDashboard();
@@ -74,7 +76,7 @@ function renderizarGrupos(filtro = "") {
     cabecalho.className = "grupo-cabecalho";
     cabecalho.innerHTML = `<h3>📁 ${escaparHtml(grupo.nome)}</h3><span class="contagem">${grupo.empresas.length} empresa(s) ${aberto ? "▾" : "▸"}</span>`;
     cabecalho.addEventListener("click", () => {
-      if (GRUPOS_ABERTOS.has(gi)) GRUPOS_ABERTOS.delete(gi);
+      if (GRUPOS_ABERTOS.has(gi)) { GRUPOS_ABERTOS.delete(gi); GRUPOS_ANIMADOS.delete(gi); }
       else GRUPOS_ABERTOS.add(gi);
       renderizarGrupos(filtro);
     });
@@ -82,7 +84,11 @@ function renderizarGrupos(filtro = "") {
 
     if (aberto) {
       const corpo = document.createElement("div");
-      corpo.className = "grupo-corpo anim-surgir";
+      corpo.className = "grupo-corpo";
+      if (!GRUPOS_ANIMADOS.has(gi)) {
+        corpo.classList.add("anim-surgir");
+        GRUPOS_ANIMADOS.add(gi);
+      }
 
       const btnAdd = document.createElement("button");
       btnAdd.className = "btn-secundario";
@@ -162,7 +168,7 @@ function criarEmpresaCard(empresa, gi, ei) {
   `;
   header.addEventListener("click", (e) => {
     if (e.target.closest("[data-copiar]") || e.target.closest("[data-email]") || e.target.closest("[data-excluir]")) return;
-    if (EMPRESAS_ABERTAS.has(chaveAberta)) EMPRESAS_ABERTAS.delete(chaveAberta);
+    if (EMPRESAS_ABERTAS.has(chaveAberta)) { EMPRESAS_ABERTAS.delete(chaveAberta); EMPRESAS_ANIMADAS.delete(chaveAberta); }
     else EMPRESAS_ABERTAS.add(chaveAberta);
     renderizarGrupos($("#busca")?.value.toLowerCase() || "");
   });
@@ -189,7 +195,12 @@ function criarEmpresaCard(empresa, gi, ei) {
 
 function criarCorpoEmpresa(empresa, gi, ei) {
   const corpo = document.createElement("div");
-  corpo.className = "empresa-corpo anim-surgir";
+  corpo.className = "empresa-corpo";
+  const chaveEmpresa = `${gi}:${ei}`;
+  if (!EMPRESAS_ANIMADAS.has(chaveEmpresa)) {
+    corpo.classList.add("anim-surgir");
+    EMPRESAS_ANIMADAS.add(chaveEmpresa);
+  }
 
   const barra = document.createElement("div");
   barra.className = "barra-opcoes";

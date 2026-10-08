@@ -2,6 +2,7 @@
 // parcelamentos.js — lógica da página de Parcelamentos (parcelamentos.html)
 // ============================================================================
 let PARCELAMENTOS_ABERTOS = new Set();
+let PARCELAMENTOS_ANIMADOS = new Set(); // controla quem já tocou a animação de abrir, pra não repetir a cada re-render
 const CICLO_ALTERNANCIA = ["VAZIO", "Simples Receita", "Simples PGFN", "Previdencia Receita", "Previdencia PGFN"];
 
 function proximoAlternancia(atual) {
@@ -157,7 +158,7 @@ function criarParcelamentoCard(p, i) {
   `;
   header.addEventListener("click", (e) => {
     if (e.target.closest("[data-copiar]") || e.target.closest("[data-email]") || e.target.closest("[data-excluir]")) return;
-    if (PARCELAMENTOS_ABERTOS.has(i)) PARCELAMENTOS_ABERTOS.delete(i); else PARCELAMENTOS_ABERTOS.add(i);
+    if (PARCELAMENTOS_ABERTOS.has(i)) { PARCELAMENTOS_ABERTOS.delete(i); PARCELAMENTOS_ANIMADOS.delete(i); } else PARCELAMENTOS_ABERTOS.add(i);
     renderizarParcelamentos($("#busca")?.value.toLowerCase() || "");
   });
   header.querySelectorAll("[data-copiar]").forEach((btn) => {
@@ -180,7 +181,11 @@ function criarParcelamentoCard(p, i) {
 
   if (aberto) {
     const corpo = document.createElement("div");
-    corpo.className = "empresa-corpo anim-surgir";
+    corpo.className = "empresa-corpo";
+    if (!PARCELAMENTOS_ANIMADOS.has(i)) {
+      corpo.classList.add("anim-surgir");
+      PARCELAMENTOS_ANIMADOS.add(i);
+    }
 
     const barra = document.createElement("div");
     barra.className = "barra-opcoes";

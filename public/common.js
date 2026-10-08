@@ -64,12 +64,14 @@ function copiar(rotulo, texto) {
   navigator.clipboard.writeText(texto).then(() => notificar(`${rotulo} copiado para a área de transferência`));
 }
 
+let _timerNotificacao = null;
 function notificar(msg) {
   const box = $("#status-salvar");
   if (!box) return;
   box.textContent = msg;
   box.classList.remove("oculto");
-  setTimeout(() => box.classList.add("oculto"), 2200);
+  clearTimeout(_timerNotificacao);
+  _timerNotificacao = setTimeout(() => box.classList.add("oculto"), 2200);
 }
 
 function limparDigitos(s) { return (s || "").replace(/[^0-9]/g, ""); }
@@ -212,15 +214,11 @@ inicializarBarraLateral();
 $("#btn-salvar")?.addEventListener("click", salvar);
 
 async function salvar() {
-  const box = $("#status-salvar");
   try {
     await api("/api/data", { method: "POST", body: JSON.stringify(ESTADO) });
-    box.textContent = "✓ Salvo com sucesso";
-    box.classList.remove("oculto");
-    setTimeout(() => box.classList.add("oculto"), 2200);
+    notificar("✓ Salvo com sucesso");
   } catch (err) {
-    box.textContent = "Erro ao salvar: " + err.message;
-    box.classList.remove("oculto");
+    notificar("Erro ao salvar: " + err.message);
   }
 }
 
