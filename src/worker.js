@@ -387,6 +387,117 @@ async function buscarCnd(env, cnpjCliente) {
 }
 
 // ---------------------------------------------------------------------------
+// CONSULTA PÚBLICA DE CNPJ (optante pelo Simples Nacional / MEI)
+// Fontes gratuitas são espelhos da base aberta da Receita (atualizada mensalmente) e limitam
+// as requisições (erro 429). Por isso: cache de 24h por CNPJ + fontes de reserva em cadeia.
+// ---------------------------------------------------------------------------
+const CNPJ_CACHE_TTL_SEGUNDOS = 60 * 60 * 24;
+
+// Valida os dígitos verificadores — evita gastar uma consulta (limitada) com CNPJ digitado errado.
+function cnpjValido(c) {
+  if (!/^\d{14}$/.test(c) || /^(\d)\1{13}$/.test(c)) return false;
+  const digito = (base) => {
+    let soma = 0;
+    let peso = base.length - 7;
+    for (let i = 0; i < base.length; i++) {
+      soma += Number(base[i]) * peso--;
+      if (peso < 2) peso = 9;
+    }
+    const resto = soma % 11;
+    return resto < 2 ? 0 : 11 - resto;
+  };
+  return digito(c.slice(0, 12)) === Number(c[12]) && digito(c.slice(0, 13)) === Number(c[13]);
+}
+
+// BrasilAPI e Minha Receita usam o mesmo esquema (a BrasilAPI é um proxy da Minha Receita).
+// IMPORTANTE: null = "sem registro na base pública", que NÃO é o mesmo que false.
+function normalizarMinhaReceita(dados, fonte) {
+  const tresEstados = (v) => (v === true || v === false ? v : null);
+  return {
+    fonte,
+    razaoSocial: dados.razao_social || null,
+    situacaoCadastral: dados.descricao_situacao_cadastral || null,
+    optanteSimples: tresEstados(dados.opcao_pelo_simples),
+    dataOpcaoSimples: dados.data_opcao_pelo_simples || null,
+    dataExclusaoSimples: dados.data_exclusao_do_simples || null,
+    optanteMei: tresEstados(dados.opcao_pelo_mei),
+    dataOpcaoMei: dados.data_opcao_pelo_mei || null,
+  };
+}
+
+// CNPJ.ws tem base independente (último recurso, limite baixo). Se o formato vier diferente do
+// esperado, devolve null e a cadeia segue — nunca afirma nada com base em campo que não reconhece.
+function normalizarCnpjWs(dados) {
+  const s = dados && dados.simples;
+  if (!s || typeof s !== "object") return null;
+  const simNao = (v) => (v === "Sim" || v === true ? true : v === "Não" || v === "Nao" || v === false ? false : null);
+  return {
+    fonte: "CNPJ.ws",
+    razaoSocial: dados.razao_social || null,
+    situacaoCadastral: (dados.estabelecimento && dados.estabelecimento.situacao_cadastral) || null,
+    optanteSimples: simNao(s.simples),
+    dataOpcaoSimples: s.data_opcao_simples || null,
+    dataExclusaoSimples: s.data_exclusao_simples || null,
+    optanteMei: simNao(s.mei),
+    dataOpcaoMei: s.data_opcao_mei || null,
+  };
+}
+
+const PROVEDORES_CNPJ = [
+  { url: (c) => `https://brasilapi.com.br/api/cnpj/v1/${c}`, normalizar: (d) => normalizarMinhaReceita(d, "BrasilAPI") },
+  { url: (c) => `https://minhareceita.org/${c}`, normalizar: (d) => normalizarMinhaReceita(d, "Minha Receita") },
+  { url: (c) => `https://publica.cnpj.ws/cnpj/${c}`, normalizar: normalizarCnpjWs },
+];
+
+async function consultarCnpjPublico(env, cnpj) {
+  const chaveCache = `cnpj_cache:${cnpj}`;
+  try {
+    const emCache = await env.KV_EMPRESAS.get(chaveCache, "json");
+    if (emCache) return { ok: true, ...emCache, doCache: true };
+  } catch {}
+
+  let viu429 = false;
+  let todos404 = true;
+  for (const provedor of PROVEDORES_CNPJ) {
+    try {
+      const resp = await fetch(provedor.url(cnpj), {
+        headers: { Accept: "application/json", "User-Agent": "FZCONT/1.0 (consulta de optante pelo Simples Nacional)" },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (resp.status === 404) continue;
+      todos404 = false;
+      if (resp.status === 429) { viu429 = true; continue; }
+      if (!resp.ok) continue;
+      const dados = await resp.json().catch(() => null);
+      const resultado = dados ? provedor.normalizar(dados) : null;
+      if (!resultado) continue;
+
+      resultado.consultadoEm = new Date().toISOString();
+      try {
+        await env.KV_EMPRESAS.put(chaveCache, JSON.stringify(resultado), { expirationTtl: CNPJ_CACHE_TTL_SEGUNDOS });
+      } catch {}
+      return { ok: true, ...resultado, doCache: false };
+    } catch {
+      todos404 = false; // timeout ou erro de rede: tenta a próxima fonte
+    }
+  }
+
+  if (viu429) {
+    return {
+      ok: false,
+      status: 429,
+      erro:
+        "As fontes públicas de CNPJ estão limitando as consultas agora (muitas requisições seguidas). " +
+        "Aguarde cerca de 1 minuto e tente de novo — consultas já feitas ficam guardadas por 24h e não contam.",
+    };
+  }
+  if (todos404) {
+    return { ok: false, status: 404, erro: "CNPJ não encontrado na base pública (pode ser muito recente ou estar incorreto)." };
+  }
+  return { ok: false, status: 502, erro: "Não consegui consultar as fontes públicas agora. Tente de novo em instantes." };
+}
+
+// ---------------------------------------------------------------------------
 // Handler principal
 // ---------------------------------------------------------------------------
 
@@ -697,25 +808,17 @@ export default {
         return json({ ok: true });
       }
 
-      // ---------- CONSULTA PÚBLICA DE CNPJ (Simples Nacional / MEI) — via BrasilAPI, sem certificado ----------
+      // ---------- CONSULTA PÚBLICA DE CNPJ (Simples Nacional / MEI) — sem certificado, com cache e fontes de reserva ----------
       if (pathname === "/api/consulta-cnpj" && request.method === "GET") {
         const cnpj = limparNumeroDoc(url.searchParams.get("cnpj") || "");
-        if (cnpj.length !== 14) return json({ erro: "CNPJ inválido." }, 400);
-        try {
-          const resp = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`);
-          const dados = await resp.json().catch(() => ({}));
-          if (!resp.ok) return json({ erro: dados.message || `Consulta falhou (${resp.status}).` }, resp.status);
-          return json({
-            razaoSocial: dados.razao_social,
-            situacaoCadastral: dados.descricao_situacao_cadastral,
-            optanteSimples: !!dados.opcao_pelo_simples,
-            dataOpcaoSimples: dados.data_opcao_pelo_simples || null,
-            optanteMei: !!dados.opcao_pelo_mei,
-            dataOpcaoMei: dados.data_opcao_pelo_mei || null,
-          });
-        } catch (err) {
-          return json({ erro: "Falha ao consultar: " + err.message }, 500);
+        if (cnpj.length !== 14) return json({ erro: "CNPJ inválido: precisa ter 14 dígitos." }, 400);
+        if (!cnpjValido(cnpj)) {
+          return json({ erro: "CNPJ inválido: os dígitos verificadores não conferem. Confira o cadastro da empresa." }, 400);
         }
+        const resultado = await consultarCnpjPublico(env, cnpj);
+        if (!resultado.ok) return json({ erro: resultado.erro }, resultado.status);
+        const { ok, status, ...dados } = resultado;
+        return json(dados);
       }
 
       // ---------- DADOS PRINCIPAIS (grupos/empresas/checklist/parcelamentos) ----------

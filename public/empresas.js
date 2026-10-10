@@ -339,19 +339,48 @@ function criarCorpoEmpresa(empresa, gi, ei) {
 // ---------------------------------------------------------------------------
 // CONSULTAR SIMPLES NACIONAL (dados públicos da Receita, via BrasilAPI)
 // ---------------------------------------------------------------------------
+const CONSULTANDO_SIMPLES = new Set(); // evita clique duplo gerando consultas repetidas (a fonte limita requisições)
+
+// "2018-01-01" → "01/01/2018". Feito na mão de propósito: new Date("2018-01-01") é interpretado
+// como meia-noite UTC e, no horário do Brasil, aparece como 31/12/2017 (um dia a menos).
+function formatarDataISO(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
+}
+
+function descreverSimples(r) {
+  let texto;
+  if (r.optanteSimples === true) {
+    texto = `✅ Optante pelo Simples Nacional${r.dataOpcaoSimples ? " desde " + formatarDataISO(r.dataOpcaoSimples) : ""}`;
+  } else if (r.optanteSimples === false) {
+    texto = "❌ Não é optante pelo Simples Nacional";
+    if (r.dataExclusaoSimples) texto += ` (excluída em ${formatarDataISO(r.dataExclusaoSimples)})`;
+  } else {
+    // A base pública não tem registro de opção — isso NÃO é a mesma coisa que "não optante".
+    texto = "⚠️ Sem registro de opção pelo Simples Nacional na base pública (provavelmente não optante — confirme no portal da Receita se for decisivo)";
+  }
+  if (r.optanteMei === true) texto += " · também é MEI";
+  return texto;
+}
+
 async function consultarSimplesNacional(empresa, elResultado) {
   if (!empresa.cnpj) { elResultado.textContent = "Informe o CNPJ da empresa primeiro."; return; }
+  if (CONSULTANDO_SIMPLES.has(empresa.cnpj)) return;
+  CONSULTANDO_SIMPLES.add(empresa.cnpj);
   elResultado.textContent = "Consultando...";
   try {
     const r = await api(`/api/consulta-cnpj?cnpj=${encodeURIComponent(empresa.cnpj)}`);
-    const dataOpcao = r.dataOpcaoSimples ? ` desde ${new Date(r.dataOpcaoSimples).toLocaleDateString("pt-BR")}` : "";
-    const texto = r.optanteSimples ? `✅ Optante pelo Simples Nacional${dataOpcao}` : "❌ Não é optante pelo Simples Nacional";
-    elResultado.textContent = texto + (r.optanteMei ? " · também é MEI" : "");
+    const texto = descreverSimples(r);
+    const origem = `Fonte: ${r.fonte} (base pública da Receita, atualizada mensalmente)` +
+      (r.doCache && r.consultadoEm ? ` · consulta de ${new Date(r.consultadoEm).toLocaleString("pt-BR")}` : "");
+    elResultado.textContent = `${texto} — ${origem}`;
     empresa.comentarios = empresa.comentarios || [];
-    empresa.comentarios.push(`🔎 ${texto}\n${agora()}`);
+    empresa.comentarios.push(`🔎 ${texto}\n${origem}\n${agora()}`);
     renderizarGrupos($("#busca")?.value.toLowerCase() || "");
   } catch (err) {
     elResultado.textContent = "Erro: " + err.message;
+  } finally {
+    CONSULTANDO_SIMPLES.delete(empresa.cnpj);
   }
 }
 

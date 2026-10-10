@@ -23,7 +23,12 @@ O código Java original tinha a senha de app do Gmail escrita diretamente no arq
 - Parcelamentos sincronizados automaticamente com as empresas (por CNPJ), com os 4 botões de alternância + status geral + comentários + anexos
 - **Importar PDFs em lote**: seleciona vários PDFs de uma vez (guias DAS na página de Empresas, guias de parcelamento na página de Parcelamentos) — o sistema lê o texto de cada PDF no próprio navegador, acha o CNPJ, identifica automaticamente a empresa/parcelamento correspondente, anexa o arquivo e registra um comentário com a competência e o valor encontrados (igual ao "processarPdfDas"/"processarPdfParcelamento" do app original)
 - **Situação Fiscal (novo)**: página separada pra importar relatórios de situação fiscal do ECAC em PDF (vários de uma vez, até de empresas diferentes) e ver um raio-x organizado por categoria (Receita Federal, PGFN, parcelamentos, processos, declarações pendentes). É **só leitura local no navegador** — nada é enviado ou salvo no Cloudflare; ao recarregar a página, é preciso importar de novo
-- **Consultar Simples Nacional**: botão em cada empresa que verifica se ela é optante pelo Simples Nacional (e/ou MEI) direto nos dados públicos da Receita Federal (via BrasilAPI) — não precisa de certificado nem contrato, é gratuito. O resultado fica registrado como comentário na empresa
+- **Consultar Simples Nacional**: botão em cada empresa que verifica se ela é optante pelo Simples Nacional (e/ou MEI) nos dados públicos da Receita — gratuito, sem certificado nem contrato. O resultado fica registrado como comentário na empresa (com a fonte e a data). Como funciona por baixo:
+  - Tenta **BrasilAPI → Minha Receita → CNPJ.ws**, nessa ordem; se uma limitar as requisições (erro 429) ou cair, passa pra próxima
+  - Cada consulta fica em **cache por 24h** no KV (não gasta o limite das fontes se você consultar a mesma empresa de novo)
+  - Valida os dígitos do CNPJ antes de consultar (CNPJ digitado errado não gasta consulta)
+  - Mostra **três** resultados: ✅ optante, ❌ não optante, ou ⚠️ "sem registro na base pública" (a base às vezes simplesmente não tem o registro — isso não é a mesma coisa que "não optante")
+  - ⚠️ É uma **base pública atualizada mensalmente**: uma opção feita há poucos dias pode ainda não aparecer. Para decisão fiscal crítica, confirme no portal do Simples Nacional
 - **Importar Resumo (Relatório Fiscal)**: igual ao app original — importa o PDF do "Resumo" do PGDAS, extrai faturamento e natureza das operações, e gera automaticamente um **Relatório Fiscal formatado e bonito** (cabeçalho, tabelas de faturamento e de natureza/impostos), anexando na própria empresa
 - Tarefas do dia (checklist) com comentários
 - Dashboard com contagem de OK/ATENÇÃO/PENDENTE por grupo
