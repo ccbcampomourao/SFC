@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>FZCONT · Parcelamentos</title>
+<link rel="icon" href="/img/logo-mark.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
@@ -12,71 +13,80 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
 </head>
 <body>
+  <script src="/icones.js"></script>
 
-  <div id="app" class="tela-cheia app-shell">
-
+  <div id="app" class="app-shell">
     <aside class="app-sidebar" id="barra-lateral">
-      <div class="app-sidebar-brand">
-        <img src="/img/logo-mark.png" alt="FZCONT" />
-        <div>
-          <h1>FZCONT</h1>
-          <span id="usuario-logado" class="usuario-atual"></span>
+      <div class="app-sidebar-inner">
+        <div class="app-sidebar-brand">
+          <img src="/img/logo-mark.png" alt="" width="36" height="36" />
+          <div><h1>FZCONT</h1><small>Sistema Fiscal Contábil</small></div>
         </div>
-      </div>
+        <nav class="app-nav" aria-label="Páginas">
+            <a href="/empresas.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-empresas"/></svg><span>Empresas</span></a>
+            <a href="/parcelamentos.html" class="app-nav-link ativo" aria-current="page"><svg class="ico " aria-hidden="true"><use href="#i-parcelamentos"/></svg><span>Parcelamentos</span></a>
+            <a href="/situacao-fiscal.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-situacao"/></svg><span>Situação Fiscal</span></a>
+            <a href="/integracontador.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-governo"/></svg><span>IntegraContador</span></a>
+        </nav>
 
-      <nav class="app-nav">
-        <a href="/empresas.html" class="app-nav-link">📁 Empresas</a>
-        <a href="/parcelamentos.html" class="app-nav-link ativo">📄 Parcelamentos</a>
-        <a href="/situacao-fiscal.html" class="app-nav-link">🧾 Situação Fiscal</a>
-        <a href="/integracontador.html" class="app-nav-link">🏛️ IntegraContador</a>
-      </nav>
-
-      <div class="app-sidebar-divider"></div>
-      <div class="app-sidebar-titulo">Ações</div>
-      <div class="app-sidebar-acoes">
-        <button class="btn-ghost-side" id="btn-usuarios">👤 Usuários</button>
-        <button class="btn-ghost-side" id="btn-salvar">💾 Salvar</button>
-        <button class="btn-ghost-side" id="btn-salvar-periodo">🗂️ Salvar Período</button>
-        <button class="btn-ghost-side" id="btn-abrir-periodo">📂 Abrir Período</button>
-        <button class="btn-ghost-side" id="btn-importar-pdfs">📥 Importar PDFs</button>
-        <input type="file" id="input-importar-pdfs" accept="application/pdf" multiple class="oculto" />
-        <button class="btn-ghost-side" id="btn-exportar-backup">⬇️ Exportar Backup</button>
-        <button class="btn-ghost-side" id="btn-importar-backup">⬆️ Importar Backup</button>
-        <input type="file" id="input-importar-backup" accept="application/json" class="oculto" />
-        <button class="btn-ghost-side btn-perigo-side" id="btn-nova-lista">🧹 Nova Lista</button>
-      </div>
-
-      <div class="app-sidebar-footer">
-        <button class="btn-ghost-side" id="btn-sair">Sair</button>
+          <div class="app-sidebar-titulo">Dados</div>
+          <div class="app-sidebar-acoes">
+            <button class="btn-ghost-side" id="btn-salvar-periodo"><svg class="ico " aria-hidden="true"><use href="#i-arquivo"/></svg><span>Salvar período</span></button>
+            <button class="btn-ghost-side" id="btn-abrir-periodo"><svg class="ico " aria-hidden="true"><use href="#i-pastaAberta"/></svg><span>Abrir período</span></button>
+            <button class="btn-ghost-side" id="btn-importar-pdfs"><svg class="ico " aria-hidden="true"><use href="#i-arquivos"/></svg><span>Importar PDFs em lote</span></button>
+            <input type="file" id="input-importar-pdfs" accept="application/pdf" multiple class="oculto" />
+            <div class="app-sidebar-sep"></div>
+            <button class="btn-ghost-side" id="btn-exportar-backup"><svg class="ico " aria-hidden="true"><use href="#i-baixar"/></svg><span>Exportar backup</span></button>
+            <button class="btn-ghost-side" id="btn-importar-backup"><svg class="ico " aria-hidden="true"><use href="#i-enviar"/></svg><span>Importar backup</span></button>
+            <input type="file" id="input-importar-backup" accept="application/json" class="oculto" />
+            <div class="app-sidebar-sep"></div>
+            <button class="btn-ghost-side" id="btn-usuarios"><svg class="ico " aria-hidden="true"><use href="#i-usuarios"/></svg><span>Usuários</span></button>
+            <button class="btn-ghost-side btn-perigo-side" id="btn-nova-lista"><svg class="ico " aria-hidden="true"><use href="#i-borracha"/></svg><span>Nova lista</span></button>
+          </div>
+        <div class="usuario-chip">
+          <span class="avatar-mini" id="usuario-avatar">·</span>
+          <span class="usuario-nome"><span id="usuario-logado">&nbsp;</span><small>Conectado</small></span>
+          <button class="btn-icone-side" id="btn-sair" title="Sair"><svg class="ico " aria-hidden="true"><use href="#i-sair"/></svg></button>
+        </div>
       </div>
     </aside>
 
     <div class="app-conteudo">
-      <div class="faixa-superior">
-        <button class="btn-toggle-sidebar" id="btn-toggle-sidebar" title="Abrir/fechar menu">☰</button>
-        <div class="topo-busca">
-          <input type="text" id="busca" placeholder="Buscar parcelamento..." />
+      <header class="faixa-superior">
+        <button class="btn-toggle-sidebar" id="btn-toggle-sidebar" title="Abrir/fechar menu" aria-label="Abrir/fechar menu"><svg class="ico " aria-hidden="true"><use href="#i-menu"/></svg></button>
+        <div class="faixa-titulo">
+          <h1>Parcelamentos</h1>
+          <span>Acompanhamento dos parcelamentos na Receita e na PGFN</span>
         </div>
-      </div>
-
-      <div id="status-salvar" class="status-salvar oculto"></div>
+        <div class="faixa-direita"><label class="campo-busca"><svg class="ico " aria-hidden="true"><use href="#i-busca"/></svg><input type="search" id="busca" placeholder="Buscar parcelamento ou CNPJ..." autocomplete="off" /><kbd>/</kbd></label><button class="btn-primario" id="btn-salvar" title="Salvar (Ctrl+S)"><svg class="ico " aria-hidden="true"><use href="#i-salvar"/></svg><span>Salvar</span></button></div>
+      </header>
 
       <main class="conteudo conteudo-coluna">
-        <div id="dashboard-parcelamentos" class="dashboard"></div>
+        <div id="dashboard-parcelamentos" class="dashboard">
+          <div class="kpi-card esqueleto esqueleto-kpi so-carregando"></div>
+          <div class="kpi-card esqueleto esqueleto-kpi so-carregando"></div>
+          <div class="kpi-card esqueleto esqueleto-kpi so-carregando"></div>
+          <div class="kpi-card esqueleto esqueleto-kpi so-carregando"></div>
+        </div>
         <section class="painel-esquerdo largura-total">
           <div class="painel-cabecalho">
-            <h2>Parcelamentos</h2>
-            <button class="btn-secundario" id="btn-novo-parcelamento">+ Parcelamento</button>
+            <h2><svg class="ico " aria-hidden="true"><use href="#i-parcelamentos"/></svg>Parcelamentos <span class="contador-pilula" id="contador-parcelamentos"></span></h2>
+            <button class="btn-secundario btn-sm" id="btn-novo-parcelamento"><svg class="ico " aria-hidden="true"><use href="#i-mais"/></svg>Parcelamento</button>
           </div>
-          <div id="lista-parcelamentos" class="grade-parcelamentos"></div>
+          <div id="lista-parcelamentos" class="grade-parcelamentos">
+            <div class="esqueleto esqueleto-linha so-carregando"></div>
+            <div class="esqueleto esqueleto-linha so-carregando"></div>
+            <div class="esqueleto esqueleto-linha so-carregando"></div>
+            <div class="esqueleto esqueleto-linha so-carregando"></div>
+            <div class="esqueleto esqueleto-linha so-carregando"></div>
+          </div>
         </section>
       </main>
     </div>
-
   </div>
 
   <div id="modal-fundo" class="modal-fundo oculto">
-    <div id="modal-conteudo" class="modal-conteudo"></div>
+    <div id="modal-conteudo" class="modal-conteudo" role="dialog" aria-modal="true"></div>
   </div>
 
   <script src="/common.js"></script>

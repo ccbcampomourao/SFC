@@ -3,7 +3,7 @@
 // ============================================================================
 async function iniciarLogin() {
   const sessao = await api("/api/session").catch(() => ({ logado: false }));
-  if (sessao.logado) location.href = "/empresas.html";
+  if (sessao.logado) location.replace("/empresas.html");
 }
 
 function alternarModoLogin(modo) {
@@ -12,21 +12,31 @@ function alternarModoLogin(modo) {
   $("#login-erro").classList.add("oculto");
   $("#form-login").reset();
   if (modo === "cadastro") {
-    $("#login-subtitulo").textContent = "Crie seu acesso ao sistema";
+    $("#login-titulo").textContent = "Criar conta";
+    $("#login-subtitulo").textContent = "Você vai receber um link de confirmação no e-mail";
     $("#campo-nome-setup").classList.remove("oculto");
     $("#campo-email-setup").classList.remove("oculto");
-    $("#btn-login-submit").textContent = "Criar conta";
+    $("#login-email").required = true;
+    $("#login-senha").autocomplete = "new-password";
+    $("#btn-login-submit").innerHTML = "<span>Criar conta</span>";
   } else {
+    $("#login-titulo").textContent = "Bem-vindo de volta";
     $("#login-subtitulo").textContent = "Entre com seu usuário e senha";
     $("#campo-nome-setup").classList.add("oculto");
     $("#campo-email-setup").classList.add("oculto");
-    $("#btn-login-submit").textContent = "Entrar";
+    $("#login-email").required = false;
+    $("#login-senha").autocomplete = "current-password";
+    $("#btn-login-submit").innerHTML = "<span>Entrar</span>";
   }
 }
 $$(".tab-login-btn").forEach((btn) => btn.addEventListener("click", () => alternarModoLogin(btn.dataset.modo)));
 
-$("#form-login").addEventListener("submit", async (e) => {
+$("#form-login").addEventListener("submit", (e) => {
   e.preventDefault();
+  comCarregando($("#btn-login-submit"), enviarFormularioLogin);
+});
+
+async function enviarFormularioLogin() {
   const usuario = $("#login-usuario").value.trim();
   const senha = $("#login-senha").value;
   const nome = $("#login-nome").value.trim();
@@ -48,7 +58,7 @@ $("#form-login").addEventListener("submit", async (e) => {
       return;
     }
     await api("/api/auth/login", { method: "POST", body: JSON.stringify({ username: usuario, password: senha }) });
-    location.href = "/empresas.html";
+    location.replace("/empresas.html");
   } catch (err) {
     if (err.naoConfirmado) {
       mostrarAvisoNaoConfirmado(usuario, err.temEmail);
@@ -57,14 +67,14 @@ $("#form-login").addEventListener("submit", async (e) => {
     erroBox.textContent = err.message;
     erroBox.classList.remove("oculto");
   }
-});
+}
 
 function mostrarAvisoNaoConfirmado(usuario, temEmail) {
   const erroBox = $("#login-erro");
   erroBox.classList.remove("mensagem-erro");
   erroBox.classList.add("mensagem-sucesso");
   erroBox.innerHTML = temEmail
-    ? `Essa conta ainda não foi confirmada. Confira seu e-mail (e o spam) ou <button type="button" id="btn-reenviar-conf" class="chip-copia" style="margin-top:6px">Reenviar link de confirmação</button>`
+    ? `Essa conta ainda não foi confirmada. Confira seu e-mail (e o spam) ou <button type="button" id="btn-reenviar-conf" class="btn-secundario btn-sm" style="margin-top:8px">Reenviar link de confirmação</button>`
     : `Essa conta não tem e-mail cadastrado ainda. Informe um e-mail para receber o link:
        <div class="form-inline" style="margin-top:8px">
          <input type="email" id="reenvio-email" placeholder="seu@email.com">
@@ -72,7 +82,7 @@ function mostrarAvisoNaoConfirmado(usuario, temEmail) {
        </div>`;
   erroBox.classList.remove("oculto");
 
-  $("#btn-reenviar-conf").addEventListener("click", async () => {
+  $("#btn-reenviar-conf").addEventListener("click", (ev) => comCarregando(ev.currentTarget, async () => {
     const email = temEmail ? undefined : $("#reenvio-email").value.trim();
     if (!temEmail && !email) return;
     try {
@@ -83,7 +93,7 @@ function mostrarAvisoNaoConfirmado(usuario, temEmail) {
     } catch (err) {
       erroBox.textContent = err.message;
     }
-  });
+  }));
 }
 
 iniciarLogin();

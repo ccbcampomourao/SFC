@@ -1,15 +1,25 @@
 // ============================================================================
-// empresas.js — lógica da página de Grupos/Empresas + Tarefas do Dia (empresas.html)
+// empresas.js — página de Grupos/Empresas + Tarefas do Dia (empresas.html)
+//
+// Desempenho: a lista é desenhada UMA vez; depois, cada ação atualiza só o pedaço
+// que mudou (o cartão da empresa, o cabeçalho do grupo, o painel de números).
+// Antes, qualquer clique apagava e redesenhava todas as empresas — era isso que
+// causava os travamentos e o "pisca-pisca".
 // ============================================================================
-let GRUPOS_ABERTOS = new Set();
-let EMPRESAS_ABERTAS = new Set();
-let GRUPOS_ANIMADOS = new Set(); // controla quem já tocou a animação de abrir, pra não repetir a cada re-render
-let EMPRESAS_ANIMADAS = new Set();
+const GRUPOS_ABERTOS = new Set();   // objetos de grupo abertos
+const EMPRESAS_ABERTAS = new Set(); // ids de empresas abertas
+const EL_GRUPO = new Map();         // grupo -> elemento do cartão
+const EL_EMPRESA = new Map();       // id da empresa -> elemento do cartão
+let filtroAtual = "";
 
 function renderizarPagina() {
   renderizarDashboard();
-  renderizarGrupos($("#busca")?.value.toLowerCase() || "");
+  renderizarGrupos();
   renderizarChecklist();
+}
+
+function grupoDaEmpresa(empresa) {
+  return ESTADO.grupos.find((g) => g.empresas.includes(empresa));
 }
 
 // ---------------------------------------------------------------------------
@@ -17,376 +27,649 @@ function renderizarPagina() {
 // ---------------------------------------------------------------------------
 function renderizarDashboard() {
   const cont = $("#dashboard");
-  cont.innerHTML = "";
-  let totalGlobal = 0;
-
-  ESTADO.grupos.forEach((g) => {
-    totalGlobal += g.empresas.length;
+  let total = 0, tv = 0, ta = 0, te = 0;
+  const cards = ESTADO.grupos.map((g) => {
     const { verde, vermelho, atencao } = contarStatus(g.empresas, "status");
-    const card = document.createElement("div");
-    card.className = "dash-card";
-    card.innerHTML = `
-      <div class="dash-nome">${escaparHtml(g.nome)}</div>
-      <div class="dash-total">Total: ${g.empresas.length}</div>
-      <div class="dash-contadores">
-        <span class="ok">✓ ${verde}</span>
-        <span class="atencao">! ${atencao}</span>
-        <span class="erro">✕ ${vermelho}</span>
-      </div>
-    `;
-    cont.appendChild(card);
+    total += g.empresas.length; tv += verde; ta += atencao; te += vermelho;
+    return htmlKpi({ nome: g.nome, total: g.empresas.length, verde, atencao, vermelho, iconeNome: "pasta" });
   });
-
-  const cardTotal = document.createElement("div");
-  cardTotal.className = "dash-card total";
-  cardTotal.innerHTML = `
-    <div class="dash-nome">GERAL</div>
-    <div class="dash-total-num">${totalGlobal}</div>
-  `;
-  cont.insertBefore(cardTotal, cont.children[Math.floor(cont.children.length / 2)] || null);
+  const geral = htmlKpi({ nome: "Geral", total, verde: tv, atencao: ta, vermelho: te, destaque: true, iconeNome: "grafico" });
+  cont.innerHTML = geral + cards.join("");
 }
 
 // ---------------------------------------------------------------------------
-// GRUPOS / EMPRESAS
+// GRUPOS
 // ---------------------------------------------------------------------------
-$("#btn-novo-grupo").addEventListener("click", () => {
-  const nome = prompt("Nome do novo grupo:");
-  if (!nome) return;
-  ESTADO.grupos.push({ nome, empresas: [] });
+$("#btn-novo-grupo").addEventListener("click", async () => {
+  const nome = await perguntar("Novo grupo", { placeholder: "Ex.: Simples Nacional", textoOk: "Criar grupo" });
+  if (!nome || !nome.trim()) return;
+  const grupo = { nome: nome.trim(), empresas: [] };
+  ESTADO.grupos.push(grupo);
+  GRUPOS_ABERTOS.add(grupo);
+  marcarAlterado();
   renderizarGrupos();
   renderizarDashboard();
 });
 
-function renderizarGrupos(filtro = "") {
-  const cont = $("#lista-grupos");
-  cont.innerHTML = "";
+$("#btn-expandir-todos")?.addEventListener("click", (e) => {
+  const todosAbertos = ESTADO.grupos.every((g) => GRUPOS_ABERTOS.has(g));
+  ESTADO.grupos.forEach((g) => (todosAbertos ? GRUPOS_ABERTOS.delete(g) : GRUPOS_ABERTOS.add(g)));
+  e.currentTarget.innerHTML = todosAbertos ? `${icone("setaBaixo")}Abrir todos` : `${icone("seta")}Fechar todos`;
+  renderizarGrupos();
+});
 
-  ESTADO.grupos.forEach((grupo, gi) => {
-    const empresasFiltradas = grupo.empresas.filter(
-      (e) => e.nome.toLowerCase().includes(filtro) || (e.cnpj || "").includes(filtro)
-    );
-    if (filtro && empresasFiltradas.length === 0) return;
-
-    const aberto = GRUPOS_ABERTOS.has(gi) || !!filtro;
-
-    const card = document.createElement("div");
-    card.className = "grupo-card";
-
-    const cabecalho = document.createElement("div");
-    cabecalho.className = "grupo-cabecalho";
-    cabecalho.innerHTML = `<h3>📁 ${escaparHtml(grupo.nome)}</h3><span class="contagem">${grupo.empresas.length} empresa(s) ${aberto ? "▾" : "▸"}</span>`;
-    cabecalho.addEventListener("click", () => {
-      if (GRUPOS_ABERTOS.has(gi)) { GRUPOS_ABERTOS.delete(gi); GRUPOS_ANIMADOS.delete(gi); }
-      else GRUPOS_ABERTOS.add(gi);
-      renderizarGrupos(filtro);
-    });
-    card.appendChild(cabecalho);
-
-    if (aberto) {
-      const corpo = document.createElement("div");
-      corpo.className = "grupo-corpo";
-      if (!GRUPOS_ANIMADOS.has(gi)) {
-        corpo.classList.add("anim-surgir");
-        GRUPOS_ANIMADOS.add(gi);
-      }
-
-      const btnAdd = document.createElement("button");
-      btnAdd.className = "btn-secundario";
-      btnAdd.textContent = "+ Empresa";
-      btnAdd.style.alignSelf = "flex-start";
-      btnAdd.addEventListener("click", () => abrirFormNovaEmpresa(gi));
-      corpo.appendChild(btnAdd);
-
-      empresasFiltradas.forEach((empresa) => {
-        const ei = grupo.empresas.indexOf(empresa);
-        corpo.appendChild(criarEmpresaCard(empresa, gi, ei));
-      });
-
-      card.appendChild(corpo);
-    }
-    cont.appendChild(card);
-  });
+function empresaPassaFiltro(e) {
+  if (!filtroAtual) return true;
+  const f = filtroAtual;
+  return (e.nome || "").toLowerCase().includes(f) || (e.cnpj || "").includes(f) || limparDigitos(e.cnpj).includes(limparDigitos(f) || "\u0000");
 }
 
-function abrirFormNovaEmpresa(gi) {
-  const html = `
+function renderizarGrupos() {
+  const cont = $("#lista-grupos");
+  EL_GRUPO.clear();
+  EL_EMPRESA.clear();
+  const frag = document.createDocumentFragment();
+  ESTADO.grupos.forEach((grupo) => {
+    const card = criarGrupoCard(grupo);
+    if (card) frag.appendChild(card);
+  });
+  cont.replaceChildren(frag);
+  if (!cont.children.length) {
+    cont.innerHTML = filtroAtual
+      ? `<div class="vazio">${icone("busca", "ico-xl")}<strong>Nada encontrado</strong><p>Nenhuma empresa com “${escaparHtml(filtroAtual)}” no nome ou CNPJ.</p></div>`
+      : `<div class="vazio">${icone("camadas", "ico-xl")}<strong>Nenhum grupo ainda</strong><p>Crie um grupo (ex.: Simples Nacional, Lucro Presumido) e adicione as empresas dentro dele.</p></div>`;
+  }
+}
+
+function htmlCabecalhoGrupo(grupo, aberto) {
+  const { verde, vermelho, atencao } = contarStatus(grupo.empresas, "status");
+  return `
+    ${icone("seta", "chevron")}
+    ${icone(aberto ? "pastaAberta" : "pasta", "ico-pasta")}
+    <h3>${escaparHtml(grupo.nome)}</h3>
+    <span class="mini-status">
+      ${verde ? `<span class="ok" title="OK">${verde}</span>` : ""}
+      ${atencao ? `<span class="atencao" title="Atenção">${atencao}</span>` : ""}
+      ${vermelho ? `<span class="erro" title="Pendente">${vermelho}</span>` : ""}
+    </span>
+    <span class="contador-pilula">${grupo.empresas.length}</span>`;
+}
+
+function criarGrupoCard(grupo) {
+  const visiveis = grupo.empresas.filter(empresaPassaFiltro);
+  if (filtroAtual && visiveis.length === 0) return null;
+  const aberto = GRUPOS_ABERTOS.has(grupo) || !!filtroAtual;
+
+  const card = document.createElement("div");
+  card.className = "grupo-card" + (aberto ? " aberto" : "");
+  const cab = document.createElement("div");
+  cab.className = "grupo-cabecalho";
+  cab.setAttribute("role", "button");
+  cab.tabIndex = 0;
+  cab.setAttribute("aria-expanded", aberto);
+  cab.innerHTML = htmlCabecalhoGrupo(grupo, aberto);
+  const alternar = () => alternarGrupo(grupo);
+  cab.addEventListener("click", alternar);
+  cab.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); alternar(); } });
+  card.appendChild(cab);
+  if (aberto) card.appendChild(criarCorpoGrupo(grupo, visiveis, false));
+  EL_GRUPO.set(grupo, card);
+  return card;
+}
+
+function criarCorpoGrupo(grupo, visiveis, animar) {
+  const corpo = document.createElement("div");
+  corpo.className = "grupo-corpo" + (animar ? " anim-surgir" : "");
+  const acoes = document.createElement("div");
+  acoes.className = "grupo-acoes";
+  acoes.innerHTML = `
+    <button type="button" class="btn-secundario btn-sm" data-acao="add">${icone("mais")}Empresa</button>
+    <span class="painel-acoes">
+      <button type="button" class="btn-ghost btn-sm" data-acao="renomear" title="Renomear grupo">${icone("documento")}Renomear</button>
+      <button type="button" class="btn-ghost btn-sm" data-acao="excluir" title="Excluir grupo">${icone("lixeira")}Excluir grupo</button>
+    </span>`;
+  acoes.addEventListener("click", (e) => {
+    const acao = e.target.closest("[data-acao]")?.dataset.acao;
+    if (acao === "add") abrirFormNovaEmpresa(grupo);
+    else if (acao === "renomear") renomearGrupo(grupo);
+    else if (acao === "excluir") excluirGrupo(grupo);
+  });
+  corpo.appendChild(acoes);
+  const lista = document.createElement("div");
+  lista.className = "lista-empresas";
+  visiveis.forEach((empresa) => lista.appendChild(criarEmpresaCard(empresa)));
+  if (!visiveis.length) lista.innerHTML = '<p class="vazio-mini">Nenhuma empresa neste grupo ainda.</p>';
+  corpo.appendChild(lista);
+  return corpo;
+}
+
+function alternarGrupo(grupo) {
+  const card = EL_GRUPO.get(grupo);
+  if (!card) return;
+  const abrir = !card.classList.contains("aberto");
+  if (abrir) GRUPOS_ABERTOS.add(grupo); else GRUPOS_ABERTOS.delete(grupo);
+  card.classList.toggle("aberto", abrir);
+  const cab = card.querySelector(".grupo-cabecalho");
+  cab.setAttribute("aria-expanded", abrir);
+  cab.innerHTML = htmlCabecalhoGrupo(grupo, abrir);
+  const corpoAtual = card.querySelector(".grupo-corpo");
+  if (abrir && !corpoAtual) card.appendChild(criarCorpoGrupo(grupo, grupo.empresas.filter(empresaPassaFiltro), true));
+  if (!abrir && corpoAtual) {
+    corpoAtual.querySelectorAll(".empresa-card").forEach((el) => EL_EMPRESA.delete(el.dataset.id));
+    corpoAtual.remove();
+  }
+}
+
+function atualizarCabecalhoGrupo(grupo) {
+  const card = EL_GRUPO.get(grupo);
+  if (card) card.querySelector(".grupo-cabecalho").innerHTML = htmlCabecalhoGrupo(grupo, card.classList.contains("aberto"));
+}
+
+function redesenharGrupo(grupo) {
+  const antigo = EL_GRUPO.get(grupo);
+  const novo = criarGrupoCard(grupo);
+  if (antigo && novo) antigo.replaceWith(novo);
+  else renderizarGrupos();
+}
+
+async function renomearGrupo(grupo) {
+  const nome = await perguntar("Renomear grupo", { valor: grupo.nome, textoOk: "Renomear" });
+  if (!nome || !nome.trim() || nome.trim() === grupo.nome) return;
+  grupo.nome = nome.trim();
+  marcarAlterado();
+  atualizarCabecalhoGrupo(grupo);
+  renderizarDashboard();
+}
+
+async function excluirGrupo(grupo) {
+  const qtd = grupo.empresas.length;
+  const ok = await confirmar(
+    qtd ? `O grupo "${grupo.nome}" e as ${qtd} empresa(s) dentro dele serão removidos da lista.` : `O grupo "${grupo.nome}" será removido.`,
+    { titulo: "Excluir grupo?", textoOk: "Excluir", perigo: true }
+  );
+  if (!ok) return;
+  ESTADO.grupos.splice(ESTADO.grupos.indexOf(grupo), 1);
+  GRUPOS_ABERTOS.delete(grupo);
+  marcarAlterado();
+  renderizarGrupos();
+  renderizarDashboard();
+}
+
+function abrirFormNovaEmpresa(grupo) {
+  abrirModal(`
     <h2>Nova empresa</h2>
-    <div class="campo-form"><label>CNPJ (apenas números)</label><input id="ne-cnpj"></div>
-    <div class="campo-form"><label>Nome (opcional)</label><input id="ne-nome"></div>
-    <div class="modal-rodape">
-      <button class="btn-ghost" id="ne-cancelar">Cancelar</button>
-      <button class="btn-primario" id="ne-salvar">Adicionar</button>
-    </div>
-  `;
-  abrirModal(html);
+    <p class="modal-sub">Grupo: <b>${escaparHtml(grupo.nome)}</b>. Os demais dados podem ser preenchidos depois, abrindo a empresa.</p>
+    <form id="form-nova-empresa">
+      <div class="campo-form"><label>CNPJ</label><input id="ne-cnpj" inputmode="numeric" placeholder="00.000.000/0000-00"></div>
+      <div class="campo-form"><label>Nome</label><input id="ne-nome" placeholder="Razão social ou apelido"></div>
+      <div id="ne-erro" class="mensagem-erro oculto"></div>
+      <div class="modal-rodape">
+        <button type="button" class="btn-ghost" id="ne-cancelar">Cancelar</button>
+        <button type="submit" class="btn-primario">${icone("mais")}Adicionar</button>
+      </div>
+    </form>`);
   $("#ne-cancelar").addEventListener("click", fecharModal);
-  $("#ne-salvar").addEventListener("click", () => {
+  $("#form-nova-empresa").addEventListener("submit", (e) => {
+    e.preventDefault();
     const cnpj = $("#ne-cnpj").value.trim();
     const nome = $("#ne-nome").value.trim();
-    if (!cnpj && !nome) return alert("Informe ao menos o CNPJ ou o nome.");
-    ESTADO.grupos[gi].empresas.push({
+    const erro = $("#ne-erro");
+    if (!cnpj && !nome) { erro.textContent = "Informe ao menos o CNPJ ou o nome."; erro.classList.remove("oculto"); return; }
+    if (cnpj && buscarEmpresaPorCnpj(cnpj)) { erro.textContent = "Já existe uma empresa com esse CNPJ."; erro.classList.remove("oculto"); return; }
+    const empresa = {
       id: crypto.randomUUID(),
       nome: nome || "Empresa sem nome",
       status: "SEM", nfs: false, nfe: false, nfc: false, fechado: false,
       cnpj, cpf: "", senhaPrefeitura: "", senhaRegularize: "", inscricaoEstadual: "", email: "",
       comentarios: [], anexos: [],
-    });
+    };
+    grupo.empresas.push(empresa);
     fecharModal();
-    GRUPOS_ABERTOS.add(gi);
-    renderizarGrupos();
+    GRUPOS_ABERTOS.add(grupo);
+    EMPRESAS_ABERTAS.add(empresa.id);
+    marcarAlterado();
+    redesenharGrupo(grupo);
     renderizarDashboard();
+    requestAnimationFrame(() => EL_EMPRESA.get(empresa.id)?.scrollIntoView({ block: "center", behavior: "smooth" }));
   });
 }
 
-function criarEmpresaCard(empresa, gi, ei) {
+// ---------------------------------------------------------------------------
+// CARTÃO DA EMPRESA
+// ---------------------------------------------------------------------------
+function htmlSelosEmpresa(empresa) {
+  return [
+    empresa.anexos.length ? `<span class="selo selo-anexado" title="${empresa.anexos.length} documento(s)">${icone("clipe")}ANEXADO${empresa.anexos.length > 1 ? " · " + empresa.anexos.length : ""}</span>` : "",
+    empresa.nfs ? '<span class="selo selo-tag">NFS</span>' : "",
+    empresa.nfe ? '<span class="selo selo-tag">NFE</span>' : "",
+    empresa.nfc ? '<span class="selo selo-tag">NFC</span>' : "",
+    empresa.fechado ? `<span class="selo selo-cadeado" title="Fechado">${icone("cadeado")}</span>` : "",
+  ].join("");
+}
+
+function htmlCabecalhoEmpresa(empresa) {
+  return `
+    <div class="empresa-nome-wrap">
+      <span class="empresa-nome">${icone("seta", "chevron")}<span class="texto">${escaparHtml(empresa.nome)}</span></span>
+      <div class="selos-linha">${htmlSelosEmpresa(empresa)}</div>
+    </div>
+    <div class="chips-acesso">
+      ${botaoCopiaSe(empresa.cnpj, "CNPJ")}
+      ${botaoCopiaSe(empresa.cpf, "CPF")}
+      ${botaoCopiaSe(empresa.inscricaoEstadual, "IE")}
+      ${botaoCopiaSe(empresa.senhaPrefeitura, "Prefeitura")}
+      ${botaoCopiaSe(empresa.senhaRegularize, "Regularize")}
+      ${empresa.email ? `<button type="button" class="chip-copia chip-email" data-email title="Enviar documentos para ${escaparHtml(empresa.email)}">${icone("email")}Enviar e-mail</button>` : ""}
+    </div>
+    <button type="button" class="btn-icone" data-excluir title="Excluir empresa">${icone("lixeira")}</button>`;
+}
+
+function criarEmpresaCard(empresa) {
+  const aberto = EMPRESAS_ABERTAS.has(empresa.id);
   const wrap = document.createElement("div");
-  wrap.className = `empresa-card ${classeStatus(empresa.status)}`;
-  const chaveAberta = `${gi}:${ei}`;
-  const aberto = EMPRESAS_ABERTAS.has(chaveAberta);
+  wrap.className = `empresa-card ${classeStatus(empresa.status)}${aberto ? " aberto" : ""}`;
+  wrap.dataset.id = empresa.id;
 
   const header = document.createElement("div");
   header.className = "empresa-header";
-  header.innerHTML = `
-    <div class="empresa-nome-wrap">
-      <div class="selos-linha">
-        ${empresa.anexos.length ? '<span class="selo-anexado">ANEXADO</span>' : ""}
-        ${empresa.nfs ? '<span class="selo-tag">NFS</span>' : ""}
-        ${empresa.nfe ? '<span class="selo-tag">NFE</span>' : ""}
-        ${empresa.nfc ? '<span class="selo-tag">NFC</span>' : ""}
-        ${empresa.fechado ? '<span class="selo-tag selo-cadeado" title="Fechado">🔒</span>' : ""}
-      </div>
-      <span class="empresa-nome">🏢 ${escaparHtml(empresa.nome)}</span>
-    </div>
-    ${botaoCopiaSe(empresa.cnpj, "CNPJ")}
-    ${botaoCopiaSe(empresa.cpf, "CPF")}
-    ${botaoCopiaSe(empresa.inscricaoEstadual, "IE")}
-    ${botaoCopiaSe(empresa.senhaPrefeitura, "Prefeitura")}
-    ${botaoCopiaSe(empresa.senhaRegularize, "Regularize")}
-    ${empresa.email ? `<button type="button" class="chip-copia chip-email" data-email="1">Enviar E-mail</button>` : ""}
-    <span style="flex:1"></span>
-    <button type="button" class="btn-icone" data-excluir="1" title="Excluir empresa">🗑</button>
-  `;
+  header.setAttribute("role", "button");
+  header.tabIndex = 0;
+  header.setAttribute("aria-expanded", aberto);
+  header.innerHTML = htmlCabecalhoEmpresa(empresa);
+  // Um único listener por cabeçalho (delegação) — sobrevive às atualizações do innerHTML.
   header.addEventListener("click", (e) => {
-    if (e.target.closest("[data-copiar]") || e.target.closest("[data-email]") || e.target.closest("[data-excluir]")) return;
-    if (EMPRESAS_ABERTAS.has(chaveAberta)) { EMPRESAS_ABERTAS.delete(chaveAberta); EMPRESAS_ANIMADAS.delete(chaveAberta); }
-    else EMPRESAS_ABERTAS.add(chaveAberta);
-    renderizarGrupos($("#busca")?.value.toLowerCase() || "");
+    const copia = e.target.closest("[data-copiar]");
+    if (copia) {
+      const mapa = { CNPJ: empresa.cnpj, CPF: empresa.cpf, IE: empresa.inscricaoEstadual, Prefeitura: empresa.senhaPrefeitura, Regularize: empresa.senhaRegularize };
+      return copiar(copia.dataset.copiar, mapa[copia.dataset.copiar]);
+    }
+    if (e.target.closest("[data-email]")) return enviarEmailEmpresaOriginal(empresa, e.target.closest("[data-email]"));
+    if (e.target.closest("[data-excluir]")) return excluirEmpresa(empresa);
+    alternarEmpresa(empresa);
   });
-
-  header.querySelectorAll("[data-copiar]").forEach((btn) => {
-    const rotulo = btn.dataset.copiar;
-    const mapa = { CNPJ: empresa.cnpj, CPF: empresa.cpf, IE: empresa.inscricaoEstadual, Prefeitura: empresa.senhaPrefeitura, Regularize: empresa.senhaRegularize };
-    btn.addEventListener("click", (e) => { e.stopPropagation(); copiar(rotulo, mapa[rotulo]); });
+  header.addEventListener("keydown", (e) => {
+    if ((e.key === "Enter" || e.key === " ") && e.target === header) { e.preventDefault(); alternarEmpresa(empresa); }
   });
-  const btnEmail = header.querySelector("[data-email]");
-  if (btnEmail) btnEmail.addEventListener("click", (e) => { e.stopPropagation(); enviarEmailEmpresaOriginal(empresa); });
-  header.querySelector("[data-excluir]").addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (!confirm(`Excluir "${empresa.nome}"? Essa ação não pode ser desfeita.`)) return;
-    ESTADO.grupos[gi].empresas.splice(ei, 1);
-    renderizarGrupos($("#busca")?.value.toLowerCase() || "");
-    renderizarDashboard();
-  });
-
   wrap.appendChild(header);
-  if (aberto) wrap.appendChild(criarCorpoEmpresa(empresa, gi, ei));
+  if (aberto) wrap.appendChild(criarCorpoEmpresa(empresa));
+  EL_EMPRESA.set(empresa.id, wrap);
   return wrap;
 }
 
-function criarCorpoEmpresa(empresa, gi, ei) {
+function alternarEmpresa(empresa) {
+  const wrap = EL_EMPRESA.get(empresa.id);
+  if (!wrap) return;
+  const abrir = !wrap.classList.contains("aberto");
+  if (abrir) EMPRESAS_ABERTAS.add(empresa.id); else EMPRESAS_ABERTAS.delete(empresa.id);
+  wrap.classList.toggle("aberto", abrir);
+  wrap.querySelector(".empresa-header").setAttribute("aria-expanded", abrir);
+  const corpo = wrap.querySelector(".empresa-corpo");
+  if (abrir && !corpo) wrap.appendChild(criarCorpoEmpresa(empresa));
+  if (!abrir && corpo) corpo.remove();
+}
+
+// Atualiza o cabeçalho (nome, selos, chips) e a cor de status — sem mexer no corpo aberto.
+function atualizarEmpresa(empresa) {
+  const wrap = EL_EMPRESA.get(empresa.id);
+  if (!wrap) return;
+  wrap.className = `empresa-card ${classeStatus(empresa.status)}${wrap.classList.contains("aberto") ? " aberto" : ""}`;
+  wrap.querySelector(".empresa-header").innerHTML = htmlCabecalhoEmpresa(empresa);
+}
+
+function mudouStatus(empresa) {
+  atualizarEmpresa(empresa);
+  const wrap = EL_EMPRESA.get(empresa.id);
+  const barra = wrap && wrap.querySelector(".barra-opcoes");
+  if (barra) atualizarBotoesStatus(barra, empresa.status);
+  const grupo = grupoDaEmpresa(empresa);
+  if (grupo) atualizarCabecalhoGrupo(grupo);
+  renderizarDashboard();
+  marcarAlterado();
+}
+
+async function excluirEmpresa(empresa) {
+  const ok = await confirmar(`"${empresa.nome}" será removida da lista. Essa ação não pode ser desfeita depois de salvar.`, { titulo: "Excluir empresa?", textoOk: "Excluir", perigo: true });
+  if (!ok) return;
+  const grupo = grupoDaEmpresa(empresa);
+  if (!grupo) return;
+  grupo.empresas.splice(grupo.empresas.indexOf(empresa), 1);
+  EMPRESAS_ABERTAS.delete(empresa.id);
+  const wrap = EL_EMPRESA.get(empresa.id);
+  EL_EMPRESA.delete(empresa.id);
+  if (wrap) wrap.remove();
+  atualizarCabecalhoGrupo(grupo);
+  renderizarDashboard();
+  marcarAlterado();
+  notificar(`"${empresa.nome}" excluída — clique em Salvar para confirmar`, "info");
+}
+
+const CAMPOS_EMPRESA = [
+  ["nome", "Nome"], ["cnpj", "CNPJ"], ["cpf", "CPF"], ["email", "E-mail", "email"],
+  ["senhaPrefeitura", "Senha Prefeitura"], ["senhaRegularize", "Senha Regularize"], ["inscricaoEstadual", "Inscrição Estadual"],
+];
+
+function criarCorpoEmpresa(empresa) {
   const corpo = document.createElement("div");
   corpo.className = "empresa-corpo";
-  const chaveEmpresa = `${gi}:${ei}`;
-  if (!EMPRESAS_ANIMADAS.has(chaveEmpresa)) {
-    corpo.classList.add("anim-surgir");
-    EMPRESAS_ANIMADAS.add(chaveEmpresa);
-  }
 
+  // Status + checkboxes
   const barra = document.createElement("div");
   barra.className = "barra-opcoes";
-  barra.innerHTML = `
-    <button type="button" class="pill-toggle ${empresa.status === "VERDE" ? "ok-on" : "ok-off"}" data-status="VERDE">✓ OK</button>
-    <button type="button" class="pill-toggle ${empresa.status === "VERMELHO" ? "erro-on" : "erro-off"}" data-status="VERMELHO">✕ PENDENTE</button>
-    <button type="button" class="pill-toggle ${empresa.status === "ATENÇÃO" ? "atencao-on" : "atencao-off"}" data-status="ATENÇÃO">! ATENÇÃO</button>
-    <span class="separador-v"></span>
-    <label class="chip-check ${empresa.nfs ? "marcado" : ""}"><input type="checkbox" data-cb="nfs" ${empresa.nfs ? "checked" : ""}> NFS</label>
-    <label class="chip-check ${empresa.nfe ? "marcado" : ""}"><input type="checkbox" data-cb="nfe" ${empresa.nfe ? "checked" : ""}> NFE</label>
-    <label class="chip-check ${empresa.nfc ? "marcado" : ""}"><input type="checkbox" data-cb="nfc" ${empresa.nfc ? "checked" : ""}> NFC</label>
-    <label class="chip-check fechado ${empresa.fechado ? "marcado" : ""}"><input type="checkbox" data-cb="fechado" ${empresa.fechado ? "checked" : ""}> 🔒 FECHADO</label>
-  `;
-  barra.querySelectorAll("[data-status]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const novo = btn.dataset.status;
-      empresa.status = empresa.status === novo ? "SEM" : novo;
-      renderizarGrupos($("#busca")?.value.toLowerCase() || "");
-      renderizarDashboard();
-    });
+  const chk = (campo, rotulo, extra = "") =>
+    `<label class="chip-check ${extra}"><input type="checkbox" data-cb="${campo}" ${empresa[campo] ? "checked" : ""}><span class="caixa">${icone("check")}</span>${rotulo}</label>`;
+  barra.innerHTML = `${htmlBotoesStatus(empresa.status)}<span class="separador-v"></span>${chk("nfs", "NFS")}${chk("nfe", "NFE")}${chk("nfc", "NFC")}${chk("fechado", `${icone("cadeado", "ico-sm")}Fechado`, "fechado")}`;
+  barra.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-status]");
+    if (!btn) return;
+    empresa.status = empresa.status === btn.dataset.status ? "SEM" : btn.dataset.status;
+    mudouStatus(empresa);
   });
-  barra.querySelectorAll("[data-cb]").forEach((chk) => {
-    chk.addEventListener("change", () => {
-      empresa[chk.dataset.cb] = chk.checked;
-      renderizarGrupos($("#busca")?.value.toLowerCase() || "");
-    });
+  barra.addEventListener("change", (e) => {
+    const cb = e.target.closest("[data-cb]");
+    if (!cb) return;
+    empresa[cb.dataset.cb] = cb.checked;
+    atualizarEmpresa(empresa);
+    marcarAlterado();
   });
   corpo.appendChild(barra);
 
-  const camposWrap = document.createElement("div");
-  camposWrap.className = "linha-dois-campos";
-  camposWrap.style.marginBottom = "14px";
-  camposWrap.innerHTML = `
-    <div class="campo-form"><label>Nome</label><input data-campo="nome" value="${escaparHtml(empresa.nome)}"></div>
-    <div class="campo-form"><label>CNPJ</label><input data-campo="cnpj" value="${escaparHtml(empresa.cnpj || "")}"></div>
-    <div class="campo-form"><label>CPF</label><input data-campo="cpf" value="${escaparHtml(empresa.cpf || "")}"></div>
-    <div class="campo-form"><label>E-mail</label><input data-campo="email" type="email" value="${escaparHtml(empresa.email || "")}"></div>
-    <div class="campo-form"><label>Senha Prefeitura</label><input data-campo="senhaPrefeitura" value="${escaparHtml(empresa.senhaPrefeitura || "")}"></div>
-    <div class="campo-form"><label>Senha Regularize</label><input data-campo="senhaRegularize" value="${escaparHtml(empresa.senhaRegularize || "")}"></div>
-    <div class="campo-form"><label>Inscrição Estadual</label><input data-campo="inscricaoEstadual" value="${escaparHtml(empresa.inscricaoEstadual || "")}"></div>
-  `;
-  camposWrap.querySelectorAll("[data-campo]").forEach((inp) => {
-    inp.addEventListener("change", () => {
-      empresa[inp.dataset.campo] = inp.value.trim();
-      renderizarGrupos($("#busca")?.value.toLowerCase() || "");
-    });
+  // Dados de acesso
+  const campos = document.createElement("div");
+  campos.className = "grade-campos";
+  campos.innerHTML = CAMPOS_EMPRESA.map(([campo, rotulo, tipo]) =>
+    `<div class="campo-form"><label>${rotulo}</label><input data-campo="${campo}" ${tipo ? `type="${tipo}"` : ""} value="${escaparHtml(empresa[campo] || "")}" autocomplete="off" spellcheck="false"></div>`
+  ).join("");
+  campos.addEventListener("change", (e) => {
+    const inp = e.target.closest("[data-campo]");
+    if (!inp) return;
+    const valor = inp.value.trim();
+    if (inp.dataset.campo === "nome" && !valor) { inp.value = empresa.nome; return; }
+    empresa[inp.dataset.campo] = valor;
+    atualizarEmpresa(empresa); // só o cabeçalho — o foco continua no próximo campo
+    marcarAlterado();
+    inp.classList.add("salvo");
+    setTimeout(() => inp.classList.remove("salvo"), 700);
   });
-  corpo.appendChild(camposWrap);
+  corpo.appendChild(campos);
 
+  // Ações extras
   const acoesExtra = document.createElement("div");
-  acoesExtra.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;";
+  acoesExtra.className = "acoes-extra";
   acoesExtra.innerHTML = `
-    <button type="button" class="btn-secundario btn-consultar-simples">🔎 Consultar Simples Nacional</button>
-    <button type="button" class="btn-secundario btn-importar-resumo">📄 Importar Resumo</button>
+    <button type="button" class="btn-secundario btn-sm btn-consultar-simples">${icone("busca")}Consultar Simples Nacional</button>
+    <button type="button" class="btn-secundario btn-sm btn-consultar-exclusao">${icone("proibido")}Consultar exclusão</button>
+    <button type="button" class="btn-secundario btn-sm btn-importar-resumo">${icone("documento")}Importar Resumo (PGDAS)</button>
     <input type="file" accept="application/pdf" class="input-resumo oculto">
-    <span class="ic-resultado-simples" style="font-size:12.5px;color:var(--ink-soft);"></span>
-  `;
-  acoesExtra.querySelector(".btn-consultar-simples").addEventListener("click", () => consultarSimplesNacional(empresa, acoesExtra.querySelector(".ic-resultado-simples")));
-  acoesExtra.querySelector(".btn-importar-resumo").addEventListener("click", () => acoesExtra.querySelector(".input-resumo").click());
-  acoesExtra.querySelector(".input-resumo").addEventListener("change", (e) => importarResumoPdf(empresa, e.target.files[0], e.target));
+    <span class="resultado-simples"></span>`;
+  const colComentarios = montarColunaComentarios(empresa);
+  const colAnexos = montarColunaAnexos(empresa, { aoMudar: () => atualizarEmpresa(empresa), nomeAlvo: "desta empresa" });
+  const btnSimples = acoesExtra.querySelector(".btn-consultar-simples");
+  btnSimples.addEventListener("click", () =>
+    comCarregando(btnSimples, () => consultarSimplesNacional(empresa, acoesExtra.querySelector(".resultado-simples"), colComentarios)));
+  const btnExclusao = acoesExtra.querySelector(".btn-consultar-exclusao");
+  btnExclusao.addEventListener("click", () =>
+    comCarregando(btnExclusao, () => consultarSimplesNacional(empresa, acoesExtra.querySelector(".resultado-simples"), colComentarios, "exclusao")));
+  const btnResumo = acoesExtra.querySelector(".btn-importar-resumo");
+  const inputResumo = acoesExtra.querySelector(".input-resumo");
+  btnResumo.addEventListener("click", () => inputResumo.click());
+  inputResumo.addEventListener("change", (e) =>
+    comCarregando(btnResumo, () => importarResumoPdf(empresa, e.target.files[0], e.target, { colComentarios, colAnexos })));
   corpo.appendChild(acoesExtra);
 
-  const duasColunas = document.createElement("div");
-  duasColunas.className = "duas-colunas-detalhe";
-
-  const colComentarios = document.createElement("div");
-  colComentarios.className = "coluna-detalhe";
-  colComentarios.innerHTML = `<h4>Comentários</h4><div class="lista-comentarios"></div>
-    <div class="form-inline"><input placeholder="Escrever comentário..." class="input-comentario"><button type="button" class="btn-secundario btn-add-comentario">Adicionar</button></div>`;
-  const listaC = colComentarios.querySelector(".lista-comentarios");
-  if (empresa.comentarios.length === 0) listaC.innerHTML = '<p class="comentario-linha">Nenhum comentário ainda.</p>';
-  empresa.comentarios.forEach((c, ci) => {
-    const item = document.createElement("div");
-    item.className = "comentario-item";
-    item.innerHTML = `<span class="comentario-texto">• ${escaparHtml(c)}</span><button type="button" class="btn-icone">🗑</button>`;
-    item.querySelector("button").addEventListener("click", () => {
-      empresa.comentarios.splice(ci, 1);
-      renderizarGrupos($("#busca")?.value.toLowerCase() || "");
-    });
-    listaC.appendChild(item);
-  });
-  const addComentario = () => {
-    const inp = colComentarios.querySelector(".input-comentario");
-    if (!inp.value.trim()) return;
-    empresa.comentarios.push(`${inp.value.trim()}\n${agora()}`);
-    renderizarGrupos($("#busca")?.value.toLowerCase() || "");
-  };
-  colComentarios.querySelector(".btn-add-comentario").addEventListener("click", addComentario);
-  colComentarios.querySelector(".input-comentario").addEventListener("keydown", (e) => { if (e.key === "Enter") addComentario(); });
-
-  const colAnexos = document.createElement("div");
-  colAnexos.className = "coluna-detalhe";
-  colAnexos.innerHTML = `<h4>Documentos</h4><div class="lista-anexos"></div>
-    <div class="form-inline"><input type="file" class="input-anexo"></div>`;
-  const listaA = colAnexos.querySelector(".lista-anexos");
-  if (empresa.anexos.length === 0) listaA.innerHTML = '<p class="comentario-linha">Nenhum documento anexado.</p>';
-  empresa.anexos.forEach((a, ai) => {
-    const item = document.createElement("div");
-    item.className = "anexo-item";
-    item.innerHTML = `<button type="button" class="anexo-link">📄 ${escaparHtml(a.nome)}</button><button type="button" class="btn-icone">🗑</button>`;
-    item.querySelector(".anexo-link").addEventListener("click", () => baixarAnexo(a));
-    item.querySelectorAll(".btn-icone")[0].addEventListener("click", async () => {
-      try { await api(`/api/anexos/${a.id}`, { method: "DELETE" }); } catch (e) {}
-      empresa.anexos.splice(ai, 1);
-      renderizarGrupos($("#busca")?.value.toLowerCase() || "");
-    });
-    listaA.appendChild(item);
-  });
-  colAnexos.querySelector(".input-anexo").addEventListener("change", async (e) => {
-    const arquivo = e.target.files[0];
-    if (!arquivo) return;
-    if ((empresa.anexos || []).some((a) => a.nome === arquivo.name)) {
-      notificar(`"${arquivo.name}" já está anexado nesta empresa.`);
-      e.target.value = "";
-      return;
-    }
-    notificar("Enviando arquivo...");
-    try {
-      empresa.anexos = empresa.anexos || [];
-      await anexarArquivoNaLista(empresa.anexos, arquivo);
-      notificar("Arquivo anexado!");
-      renderizarGrupos($("#busca")?.value.toLowerCase() || "");
-    } catch (err) {
-      alert("Erro ao anexar: " + err.message);
-    }
-    e.target.value = "";
-  });
-
-  duasColunas.appendChild(colComentarios);
-  duasColunas.appendChild(colAnexos);
-  corpo.appendChild(duasColunas);
-
+  const duas = document.createElement("div");
+  duas.className = "duas-colunas-detalhe";
+  duas.append(colComentarios, colAnexos);
+  corpo.appendChild(duas);
   return corpo;
 }
 
 // ---------------------------------------------------------------------------
-// CONSULTAR SIMPLES NACIONAL (dados públicos da Receita, via BrasilAPI)
+// CONSULTAR SIMPLES NACIONAL (dados públicos da Receita, via BrasilAPI e reservas)
 // ---------------------------------------------------------------------------
-const CONSULTANDO_SIMPLES = new Set(); // evita clique duplo gerando consultas repetidas (a fonte limita requisições)
+const CONSULTANDO_SIMPLES = new Set(); // evita consultas repetidas (a fonte limita requisições)
 
 // "2018-01-01" → "01/01/2018". Feito na mão de propósito: new Date("2018-01-01") é interpretado
 // como meia-noite UTC e, no horário do Brasil, aparece como 31/12/2017 (um dia a menos).
+// Aceita também datas que já vierem como "01/01/2018".
 function formatarDataISO(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
-  return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  const br = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(iso || "");
+  return br ? br[0] : "";
+}
+
+// Data da base pública → Date no horário local (meia-noite), para comparar com "hoje".
+function dataLocal(valor) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(valor || "") || null;
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  const br = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(valor || "");
+  return br ? new Date(+br[3], +br[2] - 1, +br[1]) : null;
+}
+
+function hojeMeiaNoite() {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
 function descreverSimples(r) {
-  let texto;
+  let texto, tipo;
   if (r.optanteSimples === true) {
-    texto = `✅ Optante pelo Simples Nacional${r.dataOpcaoSimples ? " desde " + formatarDataISO(r.dataOpcaoSimples) : ""}`;
+    texto = `Optante pelo Simples Nacional${r.dataOpcaoSimples ? " desde " + formatarDataISO(r.dataOpcaoSimples) : ""}`;
+    tipo = "ok";
+    const ex = dataLocal(r.dataExclusaoSimples);
+    if (ex && ex > hojeMeiaNoite()) { texto += ` — com exclusão marcada para ${formatarDataISO(r.dataExclusaoSimples)}`; tipo = "erro"; }
   } else if (r.optanteSimples === false) {
-    texto = "❌ Não é optante pelo Simples Nacional";
+    texto = "Não é optante pelo Simples Nacional";
     if (r.dataExclusaoSimples) texto += ` (excluída em ${formatarDataISO(r.dataExclusaoSimples)})`;
+    tipo = "erro";
   } else {
     // A base pública não tem registro de opção — isso NÃO é a mesma coisa que "não optante".
-    texto = "⚠️ Sem registro de opção pelo Simples Nacional na base pública (provavelmente não optante — confirme no portal da Receita se for decisivo)";
+    texto = "Sem registro de opção pelo Simples Nacional na base pública (provavelmente não optante — confirme no portal da Receita se for decisivo)";
+    tipo = "aviso";
   }
   if (r.optanteMei === true) texto += " · também é MEI";
-  return texto;
+  return { texto, tipo };
 }
 
-async function consultarSimplesNacional(empresa, elResultado) {
-  if (!empresa.cnpj) { elResultado.textContent = "Informe o CNPJ da empresa primeiro."; return; }
+// Foco na EXCLUSÃO: se/quando a empresa foi excluída do Simples (e desenquadrada do MEI).
+// situacao: "excluida" | "agendada" | "voltou" | "sem_exclusao" | "nao_optante" | "sem_registro"
+function descreverExclusao(r) {
+  const hoje = hojeMeiaNoite();
+  const exS = dataLocal(r.dataExclusaoSimples);
+  const opS = dataLocal(r.dataOpcaoSimples);
+  const fEx = formatarDataISO(r.dataExclusaoSimples);
+  const fOp = formatarDataISO(r.dataOpcaoSimples);
+  let texto, tipo, situacao, rotulo;
+
+  if (exS && exS > hoje) {
+    situacao = "agendada"; tipo = "erro"; rotulo = `Exclusão em ${fEx}`;
+    texto = `Exclusão do Simples Nacional já registrada, com efeito em ${fEx} (até lá ainda é optante)`;
+  } else if (exS && r.optanteSimples === true && opS && opS > exS) {
+    situacao = "voltou"; tipo = "aviso"; rotulo = "Voltou a optar";
+    texto = `Já foi excluída do Simples em ${fEx}, mas voltou a optar em ${fOp}`;
+  } else if (exS) {
+    situacao = "excluida"; tipo = "erro"; rotulo = `Excluída em ${fEx}`;
+    texto = `Excluída do Simples Nacional em ${fEx}${fOp ? ` (era optante desde ${fOp})` : ""}`;
+  } else if (r.optanteSimples === true) {
+    situacao = "sem_exclusao"; tipo = "ok"; rotulo = "Sem exclusão";
+    texto = `Nenhuma exclusão registrada — optante desde ${fOp || "data não informada"}`;
+  } else if (r.optanteSimples === false) {
+    situacao = "nao_optante"; tipo = "aviso"; rotulo = "Não optante";
+    texto = "Não é optante e a base pública não traz data de exclusão (provavelmente nunca optou)";
+  } else {
+    situacao = "sem_registro"; tipo = "aviso"; rotulo = "Sem registro";
+    texto = "A base pública não tem registro de opção nem de exclusão do Simples para esse CNPJ";
+  }
+
+  const exM = dataLocal(r.dataExclusaoMei);
+  if (exM) {
+    const fM = formatarDataISO(r.dataExclusaoMei);
+    texto += exM > hoje ? ` · desenquadramento do MEI com efeito em ${fM}` : ` · desenquadrada do MEI em ${fM}`;
+    if (situacao === "sem_exclusao" || situacao === "nao_optante" || situacao === "sem_registro") {
+      situacao = "mei"; tipo = "aviso"; rotulo = exM > hoje ? `Sai do MEI em ${fM}` : `Saiu do MEI em ${fM}`;
+    }
+  }
+  return { texto, tipo, situacao, rotulo, teveExclusao: !!(exS || exM) };
+}
+
+function textoOrigemConsulta(r) {
+  return `Fonte: ${r.fonte} (base pública da Receita, atualizada mensalmente)` +
+    (r.doCache && r.consultadoEm ? ` · consulta de ${new Date(r.consultadoEm).toLocaleString("pt-BR")}` : "");
+}
+
+// modo "optante" (botão Consultar Simples Nacional) ou "exclusao" (botão Consultar exclusão)
+async function consultarSimplesNacional(empresa, elResultado, colComentarios, modo = "optante") {
+  if (!empresa.cnpj) { elResultado.className = "resultado-simples aviso"; elResultado.innerHTML = `${icone("alerta")}Informe o CNPJ da empresa primeiro.`; return; }
   if (CONSULTANDO_SIMPLES.has(empresa.cnpj)) return;
   CONSULTANDO_SIMPLES.add(empresa.cnpj);
-  elResultado.textContent = "Consultando...";
+  elResultado.className = "resultado-simples";
+  elResultado.innerHTML = `${icone("carregando", "girando")}Consultando...`;
   try {
     const r = await api(`/api/consulta-cnpj?cnpj=${encodeURIComponent(empresa.cnpj)}`);
-    const texto = descreverSimples(r);
-    const origem = `Fonte: ${r.fonte} (base pública da Receita, atualizada mensalmente)` +
-      (r.doCache && r.consultadoEm ? ` · consulta de ${new Date(r.consultadoEm).toLocaleString("pt-BR")}` : "");
-    elResultado.textContent = `${texto} — ${origem}`;
+    const { texto, tipo } = modo === "exclusao" ? descreverExclusao(r) : descreverSimples(r);
+    const origem = textoOrigemConsulta(r);
+    elResultado.className = `resultado-simples ${tipo}`;
+    elResultado.innerHTML = `${icone(tipo === "ok" ? "ok" : tipo === "erro" ? "erro" : "alerta")}<span>${escaparHtml(texto)}</span>`;
+    elResultado.title = origem + (modo === "exclusao" ? "\nExclusões por débito notificadas agora (Termo de Exclusão) só aparecem na base depois de entrarem em vigor." : "");
     empresa.comentarios = empresa.comentarios || [];
-    empresa.comentarios.push(`🔎 ${texto}\n${origem}\n${agora()}`);
-    renderizarGrupos($("#busca")?.value.toLowerCase() || "");
+    empresa.comentarios.push(`${modo === "exclusao" ? "Consulta exclusão do Simples" : "Consulta Simples Nacional"}: ${texto}\n${origem}\n${agora()}`);
+    colComentarios?.atualizar();
+    marcarAlterado();
   } catch (err) {
-    elResultado.textContent = "Erro: " + err.message;
+    elResultado.className = "resultado-simples erro";
+    elResultado.innerHTML = `${icone("erro")}<span>${escaparHtml(err.message)}</span>`;
   } finally {
     CONSULTANDO_SIMPLES.delete(empresa.cnpj);
   }
 }
 
 // ---------------------------------------------------------------------------
-// IMPORTAR RESUMO PDF (porta a funcionalidade original: lê o Resumo do PGDAS
-// e monta um Relatório Fiscal formatado, anexando na própria empresa)
+// VERIFICAR EXCLUSÕES DE TODAS AS EMPRESAS (lote, uma consulta por vez)
+// ---------------------------------------------------------------------------
+function irParaEmpresa(empresa) {
+  const grupo = grupoDaEmpresa(empresa);
+  if (!grupo) return;
+  if (filtroAtual && !empresaPassaFiltro(empresa)) {
+    filtroAtual = "";
+    const busca = $("#busca");
+    if (busca) busca.value = "";
+    renderizarGrupos();
+  }
+  GRUPOS_ABERTOS.add(grupo);
+  EMPRESAS_ABERTAS.add(empresa.id);
+  redesenharGrupo(grupo);
+  requestAnimationFrame(() => EL_EMPRESA.get(empresa.id)?.scrollIntoView({ block: "center", behavior: "smooth" }));
+}
+
+const ORDEM_SITUACAO = { agendada: 0, excluida: 1, mei: 2, voltou: 3, erro: 4, nao_optante: 5, sem_registro: 6, sem_exclusao: 7 };
+const ETIQUETA_SITUACAO = { agendada: "erro", excluida: "erro", mei: "aviso", voltou: "aviso", erro: "neutra", nao_optante: "neutra", sem_registro: "neutra", sem_exclusao: "ok" };
+
+$("#btn-verificar-exclusoes")?.addEventListener("click", () => {
+  const empresas = [];
+  ESTADO.grupos.forEach((g) => g.empresas.forEach((e) => { if (limparDigitos(e.cnpj).length === 14) empresas.push(e); }));
+  abrirModal(`
+    <h2>Verificar exclusões do Simples Nacional</h2>
+    <p class="modal-sub">Consulta a base pública da Receita para as <b>${empresas.length}</b> empresa(s) com CNPJ cadastrado, uma de cada vez. Gratuito e sem certificado.
+    <br><b>Atenção:</b> a base é atualizada uma vez por mês e só mostra a exclusão depois que ela entra em vigor. Exclusões por débito notificadas agora (Termo de Exclusão no DTE-SN, com efeito em 1º de janeiro) ainda não aparecem aqui.</p>
+    <label class="chip-check azul" style="margin-bottom:14px"><input type="checkbox" id="vx-comentar" checked><span class="caixa">${icone("check")}</span>Registrar nos comentários das empresas com exclusão</label>
+    <div class="ic-progresso oculto" id="vx-progresso" style="margin-bottom:12px">
+      <span id="vx-progresso-texto"></span>
+      <div class="ic-progresso-barra"><span id="vx-progresso-barra"></span></div>
+    </div>
+    <div id="vx-resultado" class="lista-linhas" style="max-height:46vh;overflow-y:auto"></div>
+    <div class="modal-rodape">
+      <button type="button" class="btn-ghost" id="vx-fechar">Fechar</button>
+      <button type="button" class="btn-primario" id="vx-iniciar"${empresas.length ? "" : " disabled"}>${icone("busca")}Verificar ${empresas.length} empresa(s)</button>
+    </div>`);
+  $("#vx-fechar").addEventListener("click", fecharModal);
+  $("#vx-iniciar").addEventListener("click", (ev) => comCarregando(ev.currentTarget, () => verificarExclusoesEmLote(empresas)));
+});
+
+async function verificarExclusoesEmLote(empresas) {
+  const lista = $("#vx-resultado");
+  const comentar = $("#vx-comentar").checked;
+  const prog = $("#vx-progresso"), progTexto = $("#vx-progresso-texto"), progBarra = $("#vx-progresso-barra");
+  prog.classList.remove("oculto");
+  lista.innerHTML = "";
+  const resultados = [];
+  let comExclusao = 0, falhas = 0, comentados = 0;
+  const modalAberto = () => document.body.contains(lista) && !$("#modal-fundo").classList.contains("oculto");
+  const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const desenhar = () => {
+    resultados.sort((a, b) => (ORDEM_SITUACAO[a.situacao] - ORDEM_SITUACAO[b.situacao]) || a.empresa.nome.localeCompare(b.empresa.nome, "pt-BR"));
+    lista.innerHTML = resultados.map((x, i) => `
+      <div class="linha-item">
+        <span class="linha-icone">${icone(x.situacao === "sem_exclusao" ? "ok" : x.situacao === "erro" ? "info" : "alerta", "ico-sm")}</span>
+        <span class="linha-texto"><b>${escaparHtml(x.empresa.nome)}</b><small title="${escaparHtml(x.texto)}">${escaparHtml(x.empresa.cnpj)} · ${escaparHtml(x.texto)}</small></span>
+        <span class="etiqueta etiqueta-${ETIQUETA_SITUACAO[x.situacao]}">${escaparHtml(x.rotulo)}</span>
+        <button type="button" class="btn-icone neutro" data-ir="${i}" title="Abrir empresa">${icone("seta")}</button>
+      </div>`).join("");
+  };
+  lista.onclick = (e) => {
+    const b = e.target.closest("[data-ir]");
+    if (!b) return;
+    const emp = resultados[+b.dataset.ir].empresa;
+    fecharModal();
+    irParaEmpresa(emp);
+  };
+
+  for (let i = 0; i < empresas.length; i++) {
+    if (!modalAberto()) break; // fechou a janela = cancelou
+    const empresa = empresas[i];
+    progTexto.textContent = `Consultando ${i + 1} de ${empresas.length}: ${empresa.nome}`;
+    progBarra.style.transform = `scaleX(${i / empresas.length})`;
+    let r = null, erro = null;
+    for (let tentativa = 0; tentativa < 4 && modalAberto(); tentativa++) {
+      try {
+        r = await api(`/api/consulta-cnpj?cnpj=${encodeURIComponent(empresa.cnpj)}`);
+        break;
+      } catch (err) {
+        erro = err;
+        if (err.status !== 429) break;
+        // Fonte limitando: espera e tenta de novo (as já consultadas ficam em cache 24h)
+        for (let s = 20; s > 0 && modalAberto(); s--) {
+          progTexto.textContent = `A fonte pública pediu uma pausa — continuando em ${s}s (${i + 1} de ${empresas.length})`;
+          await esperar(1000);
+        }
+      }
+    }
+    if (r) {
+      const d = descreverExclusao(r);
+      resultados.push({ empresa, ...d });
+      if (d.teveExclusao) {
+        comExclusao++;
+        if (comentar) {
+          const linha = `Consulta exclusão do Simples: ${d.texto}`;
+          const ja = (empresa.comentarios || []).some((c) => c.startsWith(linha));
+          if (!ja) {
+            empresa.comentarios = empresa.comentarios || [];
+            empresa.comentarios.push(`${linha}\n${textoOrigemConsulta(r)}\n${agora()}`);
+            comentados++;
+          }
+        }
+      }
+      if (!r.doCache) await esperar(400); // gentil com a fonte gratuita
+    } else if (erro) {
+      falhas++;
+      resultados.push({ empresa, situacao: "erro", rotulo: "Não consultada", texto: erro.message });
+    }
+    desenhar();
+  }
+
+  progBarra.style.transform = "scaleX(1)";
+  const consultadas = resultados.length;
+  progTexto.textContent = `${consultadas} de ${empresas.length} consultadas · ${comExclusao} com exclusão${falhas ? ` · ${falhas} não consultada(s)` : ""}`;
+  if (comentados) {
+    marcarAlterado();
+    renderizarGrupos(); // atualiza os comentários das empresas abertas
+  }
+  notificar(comExclusao ? `${comExclusao} empresa(s) com exclusão do Simples encontrada(s)` : "Nenhuma exclusão encontrada na base pública", comExclusao ? "aviso" : "ok");
+}
+
+// ---------------------------------------------------------------------------
+// IMPORTAR RESUMO PDF (lê o Resumo do PGDAS e monta um Relatório Fiscal formatado,
+// anexando na própria empresa) — lógica idêntica à do app original
 // ---------------------------------------------------------------------------
 function removerAcentosResumo(texto) {
   return (texto || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -571,15 +854,16 @@ function gerarRelatorioFiscalPDF(nomeEmpresa, dados) {
   return doc.output("blob");
 }
 
-async function importarResumoPdf(empresa, arquivo, inputEl) {
+async function importarResumoPdf(empresa, arquivo, inputEl, { colComentarios, colAnexos } = {}) {
   if (!arquivo) return;
-  notificar("Lendo o Resumo...");
+  notificar("Lendo o Resumo...", "carregando");
   try {
+    if (!window.jspdf) throw new Error("O gerador de PDF ainda está carregando. Tente de novo em alguns segundos.");
     const textoPdf = await extrairTextoPdf(arquivo);
     if (!textoPdf || !textoPdf.trim()) throw new Error("Não foi possível extrair texto desse PDF.");
 
     const dados = processarTextoResumo(textoPdf);
-    notificar("Montando o Relatório Fiscal...");
+    notificar("Montando o Relatório Fiscal...", "carregando");
     const blob = gerarRelatorioFiscalPDF(empresa.nome, dados);
 
     const nomeArquivo = `RelatorioFiscal_${empresa.nome.replace(/[^a-zA-Z0-9]+/g, "_")}_${Date.now()}.pdf`;
@@ -589,66 +873,84 @@ async function importarResumoPdf(empresa, arquivo, inputEl) {
     await anexarArquivoNaLista(empresa.anexos, arquivoGerado);
 
     empresa.comentarios = empresa.comentarios || [];
-    empresa.comentarios.push(`📄 Extrato Profissional gerado em: ${agora()}`);
+    empresa.comentarios.push(`Relatório Fiscal gerado a partir do Resumo\n${agora()}`);
 
-    notificar("✅ Relatório Fiscal gerado e anexado!");
-    renderizarGrupos($("#busca")?.value.toLowerCase() || "");
+    colComentarios?.atualizar();
+    colAnexos?.atualizar();
+    atualizarEmpresa(empresa);
+    marcarAlterado();
+    notificar("Relatório Fiscal gerado e anexado", "ok");
   } catch (err) {
-    alert("Erro ao gerar o Relatório Fiscal: " + err.message);
+    avisar("Erro ao gerar o Relatório Fiscal: " + err.message, { titulo: "Não deu certo", tipo: "erro" });
   } finally {
     if (inputEl) inputEl.value = "";
   }
 }
 
 // ---------------------------------------------------------------------------
-// CHECKLIST (TAREFAS DO DIA)
+// CHECKLIST (TAREFAS DO DIA) — cada tarefa se atualiza sozinha
 // ---------------------------------------------------------------------------
+function criarTarefaEl(item) {
+  const div = document.createElement("div");
+  div.className = "tarefa-item" + (item.concluido ? " feita" : "");
+  div.innerHTML = `
+    <div class="tarefa-topo">
+      <input type="checkbox" class="check-redondo" ${item.concluido ? "checked" : ""} aria-label="Concluída">
+      <span class="tarefa-texto">${escaparHtml(item.texto)}</span>
+      <button type="button" class="btn-icone" title="Remover tarefa">${icone("x", "ico-sm")}</button>
+    </div>
+    <div class="tarefa-comentarios">
+      <div class="tarefa-lista-coment">${(item.comentarios || []).map((c) => `<div class="comentario-linha">• ${escaparHtml(c)}</div>`).join("")}</div>
+      <input placeholder="Comentar e apertar Enter..." maxlength="500">
+    </div>`;
+  div.querySelector(".check-redondo").addEventListener("change", (e) => {
+    item.concluido = e.target.checked;
+    div.classList.toggle("feita", item.concluido);
+    marcarAlterado();
+  });
+  div.querySelector(".btn-icone").addEventListener("click", () => {
+    const i = ESTADO.checklist.indexOf(item);
+    if (i >= 0) ESTADO.checklist.splice(i, 1);
+    marcarAlterado();
+    renderizarChecklist();
+  });
+  const inp = div.querySelector(".tarefa-comentarios input");
+  inp.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || !inp.value.trim()) return;
+    item.comentarios = item.comentarios || [];
+    item.comentarios.push(inp.value.trim());
+    div.querySelector(".tarefa-lista-coment").insertAdjacentHTML("beforeend", `<div class="comentario-linha">• ${escaparHtml(inp.value.trim())}</div>`);
+    inp.value = "";
+    marcarAlterado();
+  });
+  return div;
+}
+
 function renderizarChecklist() {
   const cont = $("#lista-checklist");
-  cont.innerHTML = "";
-  ESTADO.checklist.forEach((item, i) => {
-    const div = document.createElement("div");
-    div.className = "tarefa-item";
-    div.innerHTML = `
-      <div class="tarefa-topo">
-        <input type="checkbox" ${item.concluido ? "checked" : ""} data-i="${i}" class="tarefa-check">
-        <span class="tarefa-texto ${item.concluido ? "feita" : ""}">${escaparHtml(item.texto)}</span>
-        <button class="btn-icone tarefa-remover" data-i="${i}">×</button>
-      </div>
-      <div class="tarefa-comentarios">
-        ${(item.comentarios || []).map((c) => `<div class="comentario-linha">• ${escaparHtml(c)}</div>`).join("")}
-        <input placeholder="Comentar..." data-i="${i}" class="tarefa-comentario-input">
-      </div>
-    `;
-    cont.appendChild(div);
-  });
-
-  $$(".tarefa-check").forEach((chk) => chk.addEventListener("change", (e) => { ESTADO.checklist[+e.target.dataset.i].concluido = e.target.checked; renderizarChecklist(); }));
-  $$(".tarefa-remover").forEach((btn) => btn.addEventListener("click", (e) => { ESTADO.checklist.splice(+e.target.dataset.i, 1); renderizarChecklist(); }));
-  $$(".tarefa-comentario-input").forEach((inp) => inp.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && e.target.value.trim()) {
-      const item = ESTADO.checklist[+e.target.dataset.i];
-      item.comentarios = item.comentarios || [];
-      item.comentarios.push(e.target.value.trim());
-      renderizarChecklist();
-    }
-  }));
+  if (!ESTADO.checklist.length) {
+    cont.innerHTML = `<div class="vazio">${icone("tarefas", "ico-xl")}<p>Nenhuma tarefa para hoje.</p></div>`;
+    return;
+  }
+  cont.replaceChildren(...ESTADO.checklist.map(criarTarefaEl));
 }
+
+$("#btn-nova-tarefa").addEventListener("click", async () => {
+  const texto = await perguntar("Nova tarefa", { placeholder: "Descreva a tarefa", textoOk: "Adicionar" });
+  if (!texto || !texto.trim()) return;
+  ESTADO.checklist.push({ texto: texto.trim(), concluido: false, comentarios: [] });
+  marcarAlterado();
+  renderizarChecklist();
+});
 
 // ---------------------------------------------------------------------------
 // E-MAIL (igual ao "enviarEmailComAnexos" do app original: assunto e corpo
 // automáticos com a competência do mês anterior, exige e-mail e anexo, e
 // marca a empresa como VERDE ao enviar com sucesso)
 // ---------------------------------------------------------------------------
-async function enviarEmailEmpresaOriginal(empresa) {
-  if (!empresa.email) {
-    notificar("Esta empresa não possui um e-mail cadastrado.");
-    return;
-  }
-  if (!empresa.anexos || empresa.anexos.length === 0) {
-    notificar("A empresa não possui arquivos anexados para enviar.");
-    return;
-  }
+async function enviarEmailEmpresaOriginal(empresa, botao) {
+  if (!empresa.email) return notificar("Esta empresa não possui um e-mail cadastrado.", "aviso");
+  if (!empresa.anexos || empresa.anexos.length === 0) return notificar("A empresa não possui arquivos anexados para enviar.", "aviso");
 
   const hoje = new Date();
   const mesAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
@@ -656,29 +958,18 @@ async function enviarEmailEmpresaOriginal(empresa) {
   const assunto = `Documentos Setor Fiscal - Competência ${competencia}`;
   const mensagem = `Olá, tudo bem?\n\nSegue em anexo os documentos do setor Fiscal referente à competência ${competencia}.\n\nAtenciosamente,\nFZ CONT`;
 
-  notificar(`A enviar e-mail para ${empresa.nome}...`);
-  try {
-    await enviarEmailBruto({
-      destinatario: empresa.email,
-      assunto,
-      mensagem,
-      anexoIds: empresa.anexos.map((a) => a.id),
-    });
-    empresa.status = "VERDE";
-    renderizarGrupos($("#busca")?.value.toLowerCase() || "");
-    renderizarDashboard();
-    notificar(`✅ E-mail enviado com sucesso para ${empresa.nome}!`);
-  } catch (err) {
-    alert("Erro ao enviar e-mail: " + err.message);
-  }
+  await comCarregando(botao, async () => {
+    notificar(`Enviando e-mail para ${empresa.nome}...`, "carregando");
+    try {
+      await enviarEmailBruto({ destinatario: empresa.email, assunto, mensagem, anexoIds: empresa.anexos.map((a) => a.id) });
+      empresa.status = "VERDE";
+      mudouStatus(empresa);
+      notificar(`E-mail enviado para ${empresa.nome}`, "ok");
+    } catch (err) {
+      avisar("Erro ao enviar e-mail: " + err.message, { titulo: "E-mail não enviado", tipo: "erro" });
+    }
+  });
 }
-
-$("#btn-nova-tarefa").addEventListener("click", () => {
-  const texto = prompt("Descrição da tarefa:");
-  if (!texto) return;
-  ESTADO.checklist.push({ texto, concluido: false, comentarios: [] });
-  renderizarChecklist();
-});
 
 // ---------------------------------------------------------------------------
 // IMPORTAR PDFs EM LOTE (igual ao "processarPdfDas" do app original):
@@ -688,53 +979,57 @@ $("#btn-nova-tarefa").addEventListener("click", () => {
 $("#btn-importar-pdfs")?.addEventListener("click", () => $("#input-importar-pdfs").click());
 $("#input-importar-pdfs")?.addEventListener("change", async (e) => {
   const arquivos = [...e.target.files];
+  e.target.value = "";
   if (!arquivos.length) return;
-  notificar(`Analisando ${arquivos.length} PDF(s)...`);
 
   let vinculados = 0, jaExistiam = 0, semCnpj = 0, semEmpresa = 0, comErro = 0;
+  await comCarregando($("#btn-importar-pdfs"), async () => {
+    for (const [i, arquivo] of arquivos.entries()) {
+      notificar(`Analisando PDF ${i + 1} de ${arquivos.length}...`, "carregando");
+      try {
+        const texto = await extrairTextoPdf(arquivo);
+        if (!texto.trim()) { comErro++; continue; }
+        const cnpjEncontrado = extrairCnpjDoTexto(texto);
+        if (!cnpjEncontrado) { semCnpj++; continue; }
+        const empresa = buscarEmpresaPorCnpj(cnpjEncontrado);
+        if (!empresa) { semEmpresa++; continue; }
 
-  for (const arquivo of arquivos) {
-    try {
-      const texto = await extrairTextoPdf(arquivo);
-      if (!texto.trim()) { comErro++; continue; }
+        empresa.anexos = empresa.anexos || [];
+        const resp = await anexarArquivoNaLista(empresa.anexos, arquivo);
+        if (!resp) { jaExistiam++; continue; }
 
-      const cnpjEncontrado = extrairCnpjDoTexto(texto);
-      if (!cnpjEncontrado) { semCnpj++; continue; }
-
-      const empresa = buscarEmpresaPorCnpj(cnpjEncontrado);
-      if (!empresa) { semEmpresa++; continue; }
-
-      empresa.anexos = empresa.anexos || [];
-      const resp = await anexarArquivoNaLista(empresa.anexos, arquivo);
-      if (!resp) { jaExistiam++; continue; }
-
-      const competencia = extrairCompetenciaDoTexto(texto);
-      const valor = extrairValorDoTexto(texto);
-      let comentario = "📄 Guia DAS Simples Nacional processada via PDF.";
-      if (competencia) comentario += `\nCompetência: ${competencia}`;
-      if (valor) comentario += `\nValor Total: R$ ${valor}`;
-      empresa.comentarios.push(`${comentario}\n${agora()}`);
-
-      vinculados++;
-    } catch (err) {
-      console.error("Erro ao processar PDF", arquivo.name, err);
-      comErro++;
+        const competencia = extrairCompetenciaDoTexto(texto);
+        const valor = extrairValorDoTexto(texto);
+        let comentario = "Guia DAS Simples Nacional processada via PDF.";
+        if (competencia) comentario += `\nCompetência: ${competencia}`;
+        if (valor) comentario += `\nValor Total: R$ ${valor}`;
+        empresa.comentarios.push(`${comentario}\n${agora()}`);
+        vinculados++;
+      } catch (err) {
+        console.error("Erro ao processar PDF", arquivo.name, err);
+        comErro++;
+      }
     }
-  }
+  });
 
-  renderizarGrupos($("#busca")?.value.toLowerCase() || "");
+  if (vinculados) marcarAlterado();
+  renderizarGrupos();
   renderizarDashboard();
 
-  let msg = `✅ Lote processado: ${vinculados} arquivo(s) vinculado(s).`;
-  if (jaExistiam) msg += ` ${jaExistiam} já estavam anexados (ignorados).`;
-  if (semCnpj) msg += ` ${semCnpj} sem CNPJ localizado.`;
-  if (semEmpresa) msg += ` ${semEmpresa} sem empresa cadastrada com esse CNPJ.`;
-  if (comErro) msg += ` ${comErro} com erro de leitura.`;
-  notificar(msg);
-  alert(msg + "\n\nLembre-se de clicar em Salvar para gravar os comentários e status.");
-  e.target.value = "";
+  const linhas = [`${vinculados} arquivo(s) vinculado(s) às empresas.`];
+  if (jaExistiam) linhas.push(`${jaExistiam} já estavam anexados (ignorados).`);
+  if (semCnpj) linhas.push(`${semCnpj} sem CNPJ localizado no PDF.`);
+  if (semEmpresa) linhas.push(`${semEmpresa} sem empresa cadastrada com esse CNPJ.`);
+  if (comErro) linhas.push(`${comErro} com erro de leitura.`);
+  if (vinculados) linhas.push("\nClique em Salvar para gravar os comentários e anexos.");
+  notificar(`Lote processado: ${vinculados} vinculado(s)`, vinculados ? "ok" : "aviso");
+  avisar(linhas.join("\n"), { titulo: "Importação concluída", tipo: vinculados ? "ok" : "aviso" });
 });
 
-$("#busca")?.addEventListener("input", (e) => renderizarGrupos(e.target.value.toLowerCase()));
+// Busca com atraso curto — não redesenha a cada tecla.
+$("#busca")?.addEventListener("input", atrasar((e) => {
+  filtroAtual = e.target.value.trim().toLowerCase();
+  renderizarGrupos();
+}, 150));
 
 iniciarPagina();

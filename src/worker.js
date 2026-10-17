@@ -216,30 +216,60 @@ function limparNumeroDoc(s) {
   return (s || "").replace(/[^0-9]/g, "");
 }
 
+// Erros com "etapa" e "dica" para a tela mostrar exatamente onde e por que falhou.
+function erroComEtapa(mensagem, etapa, dica) {
+  const e = new Error(mensagem);
+  e.etapa = etapa;
+  if (dica) e.dica = dica;
+  return e;
+}
+const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function obterTokenSitfis(env) {
-  if (!env.SERPRO_CERT) throw new Error("Certificado digital ainda não vinculado ao Worker (binding SERPRO_CERT ausente no wrangler.toml).");
-  if (!env.SERPRO_CONSUMER_KEY || !env.SERPRO_CONSUMER_SECRET) throw new Error("SERPRO_CONSUMER_KEY / SERPRO_CONSUMER_SECRET não configurados.");
+  if (!env.SERPRO_CERT) {
+    throw erroComEtapa(
+      "Certificado digital ainda não vinculado ao Worker (binding SERPRO_CERT ausente).",
+      "configuracao",
+      "Suba o certificado pela tela IntegraContador e ative o bloco [[mtls_certificates]] no wrangler.toml."
+    );
+  }
+  if (!env.SERPRO_CONSUMER_KEY || !env.SERPRO_CONSUMER_SECRET) {
+    throw erroComEtapa(
+      "SERPRO_CONSUMER_KEY / SERPRO_CONSUMER_SECRET não configurados.",
+      "configuracao",
+      "Cadastre os dois secrets no Worker (Settings → Variables and Secrets)."
+    );
+  }
   const basic = Buffer.from(`${env.SERPRO_CONSUMER_KEY}:${env.SERPRO_CONSUMER_SECRET}`).toString("base64");
   const resp = await env.SERPRO_CERT.fetch(SERPRO_SITFIS_AUTH_URL, {
     method: "POST",
     headers: { Authorization: `Basic ${basic}`, "Role-Type": "TERCEIROS" },
   });
   const texto = await resp.text();
-  if (!resp.ok) throw new Error(`Falha ao autenticar no SERPRO (SITFIS): ${resp.status} ${texto}`);
+  if (!resp.ok) {
+    throw erroComEtapa(
+      `O SERPRO recusou a autenticação (HTTP ${resp.status}): ${texto.replace(/\s+/g, " ").slice(0, 300) || "sem detalhes"}`,
+      "autenticacao",
+      "Confira o Consumer Key/Secret, se o certificado (.pfx) enviado é o e-CNPJ do titular do contrato e se ele não está vencido."
+    );
+  }
   let dados;
-  try { dados = JSON.parse(texto); } catch { throw new Error("Resposta de autenticação do SERPRO não é JSON: " + texto.slice(0, 300)); }
-  if (!dados.access_token) throw new Error("SERPRO não retornou access_token: " + texto.slice(0, 300));
+  try { dados = JSON.parse(texto); } catch {
+    throw erroComEtapa("A resposta de autenticação do SERPRO não é JSON: " + texto.slice(0, 300), "autenticacao");
+  }
+  if (!dados.access_token) throw erroComEtapa("O SERPRO não retornou access_token: " + texto.slice(0, 300), "autenticacao");
   return dados;
 }
 
 // Reaproveita o token por alguns minutos (com margem de segurança) em vez de repetir o
 // handshake com o certificado a cada empresa consultada — é a parte mais lenta da requisição.
-async function obterTokenSitfisCacheado(env) {
-  try {
-    const cacheado = await env.SFC_KV.get("sitfis_token_cache", "json");
-    if (cacheado && cacheado.expiraEm > Date.now() + 5000) return cacheado.token;
-  } catch {}
-
+async function obterTokenSitfisCacheado(env, forcar = false) {
+  if (!forcar) {
+    try {
+      const cacheado = await env.SFC_KV.get("sitfis_token_cache", "json");
+      if (cacheado && cacheado.expiraEm > Date.now() + 5000) return cacheado.token;
+    } catch {}
+  }
   const token = await obterTokenSitfis(env);
   const segundos = Number(token.expires_in || token.expiresIn || 300);
   const validoPor = Math.max(segundos - 30, 30); // margem de segurança de 30s
@@ -247,7 +277,7 @@ async function obterTokenSitfisCacheado(env) {
     await env.SFC_KV.put(
       "sitfis_token_cache",
       JSON.stringify({ token, expiraEm: Date.now() + validoPor * 1000 }),
-      { expirationTtl: validoPor }
+      { expirationTtl: Math.max(validoPor, 60) }
     );
   } catch {}
   return token;
@@ -265,56 +295,158 @@ async function chamarIntegraContador(env, token, caminho, corpo) {
   });
   const texto = await resp.text();
   let json;
-  try { json = JSON.parse(texto); } catch { json = { status: resp.status, dados: texto }; }
-  return { httpStatus: resp.status, ...json };
+  try { json = JSON.parse(texto); } catch { json = { dados: texto }; }
+  if (!json || typeof json !== "object" || Array.isArray(json)) json = { dados: json };
+  const { httpStatus: _ignorar, ...resto } = json;
+  return { ...resto, statusCorpo: json.status, httpStatus: resp.status };
 }
 
-async function buscarRelatorioSitfis(env, cnpjCliente) {
-  const token = await obterTokenSitfisCacheado(env);
-  const contratante = limparNumeroDoc(env.SERPRO_CONTRATANTE_CNPJ);
-  if (!contratante) throw new Error("SERPRO_CONTRATANTE_CNPJ não configurado (CNPJ do seu escritório contábil).");
-  const cnpj = limparNumeroDoc(cnpjCliente);
+// Se o token em cache foi invalidado do lado do SERPRO (401), renova uma vez e repete.
+async function chamarComRenovacao(env, tokenRef, caminho, corpo) {
+  let resp = await chamarIntegraContador(env, tokenRef.token, caminho, corpo);
+  if (resp.httpStatus === 401) {
+    try { await env.SFC_KV.delete("sitfis_token_cache"); } catch {}
+    tokenRef.token = await obterTokenSitfisCacheado(env, true);
+    resp = await chamarIntegraContador(env, tokenRef.token, caminho, corpo);
+  }
+  return resp;
+}
 
-  const envelope = (idServico, dadosStr, versao) => ({
+function lerDadosSerpro(dados) {
+  if (dados == null || dados === "") return null;
+  if (typeof dados === "object") return dados;
+  try { return JSON.parse(dados); } catch { return null; }
+}
+
+function extrairMensagensSerpro(resp) {
+  const m = resp && resp.mensagens;
+  if (!m) return [];
+  return (Array.isArray(m) ? m : [m])
+    .map((i) => (typeof i === "string"
+      ? { codigo: "", texto: i }
+      : { codigo: String((i && i.codigo) || ""), texto: String((i && (i.texto || i.mensagem)) || "") }))
+    .filter((i) => i.codigo || i.texto);
+}
+
+// Traduz os códigos mais comuns do Integra Contador numa orientação prática.
+function explicarErroSerpro(mensagens, httpStatus) {
+  const t = mensagens.map((m) => `${m.codigo} ${m.texto}`).join(" ");
+  if (/ICGERENCIADOR-016|NI do Contratante/i.test(t)) {
+    return "O CNPJ configurado em SERPRO_CONTRATANTE_CNPJ não bate com o do certificado digital (e-CNPJ). Os dois precisam ser do mesmo titular — o que contratou o Integra Contador. Esse erro afetaria todas as empresas, não só uma.";
+  }
+  if (/procura[çc][ãa]o|PROELETRON|ICGERENCIADOR-0?(17|21|32)\b/i.test(t)) {
+    return "Essa empresa provavelmente ainda não deu procuração eletrônica no e-CAC para o CNPJ do seu escritório, com permissão para o serviço de Situação Fiscal. É a causa mais comum de erro em um CNPJ específico enquanto os outros funcionam. O cadastro é feito no e-CAC da empresa (Procuração Eletrônica). Atenção: o SERPRO cobra também as chamadas recusadas (403), então evite repetir várias vezes.";
+  }
+  if (/vers[ãa]o/i.test(t)) {
+    return "O SERPRO reclamou da versão do serviço. Defina a variável SERPRO_SITFIS_VERSAO no Worker (teste com 1.0; o padrão é 2.0).";
+  }
+  if (httpStatus === 429 || /excesso de (requisi|solicita)/i.test(t)) {
+    return "O SERPRO limitou a quantidade de requisições. Aguarde um pouco antes de tentar de novo (chamadas recusadas também são cobradas).";
+  }
+  if (httpStatus === 401) return "O SERPRO não aceitou o token de acesso mesmo depois de renovar. Confira as credenciais e o certificado.";
+  if (httpStatus === 403) {
+    return "O SERPRO negou o acesso a essa empresa. Normalmente é falta de procuração eletrônica no e-CAC da empresa para o CNPJ do seu escritório. Chamadas recusadas também são cobradas, então evite repetir.";
+  }
+  if (httpStatus >= 500) {
+    return "O erro veio do lado do SERPRO (instabilidade ou falha ao processar essa empresa). Tente de novo em alguns minutos; se persistir só nesse CNPJ, vale conferir a situação cadastral dele.";
+  }
+  return null;
+}
+
+const ROTULO_ETAPA = {
+  solicitar_protocolo: "ao solicitar o protocolo do relatório",
+  emitir_relatorio: "ao emitir o relatório",
+};
+
+function erroSerpro(etapa, resp, { semMensagens, protocolo } = {}) {
+  const mensagens = extrairMensagensSerpro(resp);
+  let resumo;
+  if (mensagens.length) {
+    resumo = mensagens.map((m) => [m.codigo, m.texto].filter(Boolean).join(" ")).join(" | ");
+  } else if (semMensagens) {
+    resumo = semMensagens;
+  } else if (typeof resp.dados === "string" && resp.dados.trim()) {
+    resumo = resp.dados.replace(/\s+/g, " ").slice(0, 300);
+  } else {
+    resumo = "o SERPRO não informou o motivo";
+  }
+  let detalheTecnico;
+  try {
+    detalheTecnico = JSON.stringify({
+      etapa, httpStatus: resp.httpStatus, statusCorpo: resp.statusCorpo, mensagens: resp.mensagens,
+      dados: typeof resp.dados === "string" ? resp.dados.slice(0, 400) : resp.dados,
+    }).slice(0, 1000);
+  } catch { detalheTecnico = ""; }
+  const resultado = {
+    ok: false,
+    etapa,
+    httpStatus: resp.httpStatus,
+    mensagens,
+    erro: `Erro do SERPRO ${ROTULO_ETAPA[etapa] || etapa} (HTTP ${resp.httpStatus}): ${resumo}`,
+    dica: explicarErroSerpro(mensagens, resp.httpStatus),
+    detalheTecnico,
+  };
+  if (protocolo) resultado.protocolo = protocolo;
+  return resultado;
+}
+
+async function buscarRelatorioSitfis(env, cnpjCliente, { protocolo: protocoloExistente } = {}) {
+  const contratante = limparNumeroDoc(env.SERPRO_CONTRATANTE_CNPJ);
+  if (!contratante) {
+    throw erroComEtapa(
+      "SERPRO_CONTRATANTE_CNPJ não configurado (CNPJ do seu escritório contábil).",
+      "configuracao",
+      "Cadastre o secret SERPRO_CONTRATANTE_CNPJ com o CNPJ do escritório (o mesmo do certificado digital)."
+    );
+  }
+  const versao = String(env.SERPRO_SITFIS_VERSAO || "2.0");
+  const cnpj = limparNumeroDoc(cnpjCliente);
+  const tokenRef = { token: await obterTokenSitfisCacheado(env) };
+
+  const envelope = (idServico, dadosStr) => ({
     contratante: { numero: contratante, tipo: 2 },
     autorPedidoDados: { numero: contratante, tipo: 2 },
     contribuinte: { numero: cnpj, tipo: tipoPessoa(cnpj) },
     pedidoDados: { idSistema: "SITFIS", idServico, versaoSistema: versao, dados: dadosStr },
   });
 
-  const protocoloResp = await chamarIntegraContador(env, token, "Apoiar", envelope("SOLICITARPROTOCOLO91", "", "2.0"));
-  if (protocoloResp.httpStatus >= 400) {
-    return { ok: false, erro: `Falha ao solicitar protocolo (${protocoloResp.httpStatus}): ${JSON.stringify(protocoloResp).slice(0, 400)}` };
-  }
-  let dadosProtocolo;
-  try { dadosProtocolo = typeof protocoloResp.dados === "string" ? JSON.parse(protocoloResp.dados) : protocoloResp.dados; } catch { dadosProtocolo = protocoloResp.dados; }
-  const protocolo = dadosProtocolo && (dadosProtocolo.protocoloRelatorio || dadosProtocolo.protocolo);
-  if (!protocolo) return { ok: false, erro: "SERPRO não retornou o protocolo do relatório: " + JSON.stringify(protocoloResp).slice(0, 400) };
+  let protocolo = protocoloExistente || null;
+  let espera = protocolo ? 0 : 2000;
 
-  for (let tentativa = 0; tentativa < 5; tentativa++) {
-    const emitirResp = await chamarIntegraContador(
-      env, token, "Emitir",
-      envelope("RELATORIOSITFIS92", JSON.stringify({ protocoloRelatorio: protocolo }), "2.0")
+  if (!protocolo) {
+    const protocoloResp = await chamarComRenovacao(env, tokenRef, "Apoiar", envelope("SOLICITARPROTOCOLO91", ""));
+    if (protocoloResp.httpStatus >= 400) return erroSerpro("solicitar_protocolo", protocoloResp);
+    const dadosProtocolo = lerDadosSerpro(protocoloResp.dados);
+    protocolo = dadosProtocolo && (dadosProtocolo.protocoloRelatorio || dadosProtocolo.protocolo);
+    if (!protocolo) {
+      return erroSerpro("solicitar_protocolo", protocoloResp, { semMensagens: "a resposta veio sem o protocolo do relatório" });
+    }
+    espera = Math.min(Number(dadosProtocolo.tempoEspera) || 2000, 15000);
+  }
+
+  for (let tentativa = 0; tentativa < 2; tentativa++) {
+    if (espera > 0) await esperar(espera);
+    const emitirResp = await chamarComRenovacao(
+      env, tokenRef, "Emitir",
+      envelope("RELATORIOSITFIS92", JSON.stringify({ protocoloRelatorio: protocolo }))
     );
     if (emitirResp.httpStatus === 202) {
-      let espera = 3000;
-      try {
-        const d = typeof emitirResp.dados === "string" ? JSON.parse(emitirResp.dados) : emitirResp.dados;
-        if (d && d.tempoEspera) espera = Math.min(d.tempoEspera, 6000);
-      } catch {}
-      await new Promise((r) => setTimeout(r, espera));
+      const d = lerDadosSerpro(emitirResp.dados);
+      espera = Math.min(Number(d && d.tempoEspera) || 3000, 15000);
       continue;
     }
-    if (emitirResp.httpStatus >= 400) {
-      return { ok: false, erro: `Falha ao emitir relatório (${emitirResp.httpStatus}): ${JSON.stringify(emitirResp).slice(0, 400)}` };
-    }
-    let dadosFinal;
-    try { dadosFinal = typeof emitirResp.dados === "string" ? JSON.parse(emitirResp.dados) : emitirResp.dados; } catch { dadosFinal = emitirResp.dados; }
+    if (emitirResp.httpStatus >= 400) return erroSerpro("emitir_relatorio", emitirResp, { protocolo });
+    const dadosFinal = lerDadosSerpro(emitirResp.dados);
     const pdfBase64 = dadosFinal && (dadosFinal.pdf || dadosFinal.relatorio || dadosFinal.arquivo);
-    if (!pdfBase64) return { ok: false, erro: "Relatório emitido, mas não achei o PDF na resposta: " + JSON.stringify(emitirResp).slice(0, 400) };
+    if (!pdfBase64) {
+      return erroSerpro("emitir_relatorio", emitirResp, { semMensagens: "o relatório veio sem o PDF na resposta", protocolo });
+    }
     return { ok: true, pdfBase64, nomeArquivo: `SITFIS-${cnpj}.pdf` };
   }
-  return { ok: false, processando: true, erro: "O SERPRO ainda está processando esse relatório. Tente novamente em alguns segundos." };
+  return {
+    ok: false, processando: true, protocolo, tempoEsperaMs: espera,
+    erro: "O SERPRO ainda está gerando o relatório.",
+  };
 }
 
 // Área própria do IntegraContador (não mexe nos anexos da empresa): cada relatório usa uma
@@ -422,6 +554,7 @@ function normalizarMinhaReceita(dados, fonte) {
     dataExclusaoSimples: dados.data_exclusao_do_simples || null,
     optanteMei: tresEstados(dados.opcao_pelo_mei),
     dataOpcaoMei: dados.data_opcao_pelo_mei || null,
+    dataExclusaoMei: dados.data_exclusao_do_mei || null,
   };
 }
 
@@ -440,6 +573,7 @@ function normalizarCnpjWs(dados) {
     dataExclusaoSimples: s.data_exclusao_simples || null,
     optanteMei: simNao(s.mei),
     dataOpcaoMei: s.data_opcao_mei || null,
+    dataExclusaoMei: s.data_exclusao_mei || null,
   };
 }
 
@@ -450,7 +584,7 @@ const PROVEDORES_CNPJ = [
 ];
 
 async function consultarCnpjPublico(env, cnpj) {
-  const chaveCache = `cnpj_cache:${cnpj}`;
+  const chaveCache = `cnpj_cache:v2:${cnpj}`;
   try {
     const emCache = await env.KV_EMPRESAS.get(chaveCache, "json");
     if (emCache) return { ok: true, ...emCache, doCache: true };
@@ -749,30 +883,42 @@ export default {
       }
 
       if (pathname === "/api/integracontador/sitfis" && request.method === "POST") {
-        const { cnpj, nomeEmpresa } = await request.json();
-        if (!cnpj) return json({ erro: "CNPJ é obrigatório." }, 400);
+        const { cnpj, nomeEmpresa, protocolo } = await request.json().catch(() => ({}));
+        if (!cnpj || !cnpjValido(limparNumeroDoc(cnpj))) {
+          return json({ ok: false, etapa: "validacao", erro: cnpj ? "CNPJ inválido (confira os dígitos no cadastro da empresa)." : "CNPJ é obrigatório." }, 400);
+        }
         try {
-          const resultado = await buscarRelatorioSitfis(env, cnpj);
+          const resultado = await buscarRelatorioSitfis(env, cnpj, { protocolo });
           if (resultado.ok) {
-            await salvarRelatorioIntegraContador(env, { servico: "sitfis", cnpj, nomeEmpresa, bytesBase64: resultado.pdfBase64 });
+            try {
+              await salvarRelatorioIntegraContador(env, { servico: "sitfis", cnpj, nomeEmpresa, bytesBase64: resultado.pdfBase64 });
+            } catch (e) {
+              resultado.avisoSalvar = "Baixou, mas não consegui guardar em 'Relatórios salvos': " + (e && e.message ? e.message : e);
+            }
           }
-          return json(resultado, resultado.ok ? 200 : resultado.processando ? 202 : 500);
+          return json(resultado, resultado.ok ? 200 : resultado.processando ? 202 : 502);
         } catch (err) {
-          return json({ ok: false, erro: err.message }, 500);
+          return json({ ok: false, etapa: err.etapa || "interno", erro: err.message, dica: err.dica || null }, 500);
         }
       }
 
       if (pathname === "/api/integracontador/cnd" && request.method === "POST") {
-        const { cnpj, nomeEmpresa } = await request.json();
-        if (!cnpj) return json({ erro: "CNPJ é obrigatório." }, 400);
+        const { cnpj, nomeEmpresa } = await request.json().catch(() => ({}));
+        if (!cnpj || !cnpjValido(limparNumeroDoc(cnpj))) {
+          return json({ ok: false, etapa: "validacao", erro: cnpj ? "CNPJ inválido (confira os dígitos no cadastro da empresa)." : "CNPJ é obrigatório." }, 400);
+        }
         try {
           const resultado = await buscarCnd(env, cnpj);
           if (resultado.ok) {
-            await salvarRelatorioIntegraContador(env, { servico: "cnd", cnpj, nomeEmpresa, bytesBase64: resultado.pdfBase64 });
+            try {
+              await salvarRelatorioIntegraContador(env, { servico: "cnd", cnpj, nomeEmpresa, bytesBase64: resultado.pdfBase64 });
+            } catch (e) {
+              resultado.avisoSalvar = "Baixou, mas não consegui guardar em 'Relatórios salvos': " + (e && e.message ? e.message : e);
+            }
           }
-          return json(resultado, resultado.ok ? 200 : 500);
+          return json(resultado, resultado.ok ? 200 : 502);
         } catch (err) {
-          return json({ ok: false, erro: err.message }, 500);
+          return json({ ok: false, etapa: err.etapa || "interno", erro: err.message, dica: err.dica || null }, 500);
         }
       }
 
