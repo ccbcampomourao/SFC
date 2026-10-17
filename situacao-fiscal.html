@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FZCONT · Situação Fiscal</title>
+<link rel="icon" href="/img/logo-mark.png" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.12.313/pdf.min.js" defer></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<style>
+  /* Estilos exclusivos do visualizador de Situação Fiscal (o resto vem do style.css) */
+  :root{
+    --rfb:#2563eb; --pgfn:#dc2626; --parc:#059669; --proc:#7c3aed; --decl:#d97706; --outras:#475569;
+  }
+  .mono{ font-family:'JetBrains Mono',monospace; }
+
+  /* ---------- Menu lateral: upload + lista de empresas ---------- */
+  .sf-upload{
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    border:1.5px dashed #3a4266; border-radius:12px; padding:14px;
+    text-align:center; cursor:pointer; margin:0 0 8px; background:#1E2547;
+    transition:border-color .15s ease, background-color .15s ease;
+  }
+  .sf-upload:hover, .sf-upload.arrastando{ border-color:var(--blue-bright); background:#232A55; }
+  .sf-upload .ico{ width:22px; height:22px; color:var(--blue-bright); }
+  .sf-upload strong{ color:#e7ebfb; font-size:13px; }
+  .sf-upload span{ font-size:11.5px; color:#8f99c2; }
+  #pdf-upload{ display:none; }
+  .sf-dica{ font-size:11px; color:#66709a; margin:0 4px 14px; line-height:1.5; }
+  .sf-lista-titulo{ display:flex; align-items:center; justify-content:space-between; }
+  .sf-lista-titulo .contador-pilula{ background:#232C55; color:#A9B1D4; margin-right:6px; }
+  .empresa-list{ flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:2px; min-height:0; margin:0 -4px; padding:0 4px; scrollbar-width:thin; scrollbar-color:#333c63 transparent; }
+  .empresa-item{ display:flex; align-items:center; gap:10px; padding:8px; border-radius:9px; cursor:pointer; border:1px solid transparent; transition:background-color .12s ease, border-color .12s ease; }
+  .empresa-item:hover{ background:#20274A; }
+  .empresa-item.active{ background:#232C55; border-color:#2F4A86; }
+  .empresa-avatar{ width:30px; height:30px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; color:#fff; font-family:'Sora',sans-serif; }
+  .empresa-info{ min-width:0; flex:1; }
+  .empresa-info .nome{ font-size:12.5px; color:#e7ebfb; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .empresa-info .cnpj{ font-size:10.5px; color:#7580ab; }
+  .empresa-badge{ font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:20px; flex-shrink:0; font-variant-numeric:tabular-nums; }
+  .empty-side{ color:#66709a; font-size:12px; padding:14px 6px; text-align:center; }
+
+  /* ---------- Faixa superior: busca + filtro ---------- */
+  .filter-chip{ display:none; align-items:center; gap:8px; color:#fff; font-size:12.5px; font-weight:700; padding:6px 6px 6px 12px; border-radius:20px; }
+  .filter-chip.mostrar{ display:inline-flex; }
+  .filter-chip button{ background:rgba(255,255,255,.25); border:none; color:#fff; width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; }
+  .filter-chip button .ico{ width:12px; height:12px; stroke-width:3; }
+  .filter-chip button:hover{ background:rgba(255,255,255,.4); }
+
+  .placeholder{ display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:90px 20px; color:var(--ink-soft); animation:fz-aparecer .25s ease both; }
+  .placeholder .ico{ width:48px; height:48px; stroke-width:1.4; color:var(--ink-3); margin-bottom:14px; }
+  .placeholder h3{ color:var(--ink); font-size:17px; margin-bottom:6px; }
+  .placeholder p{ max-width:440px; font-size:13px; margin:0; }
+
+  /* ---------- Visão geral ---------- */
+  .overview-table{ background:#fff; border-radius:var(--raio); box-shadow:var(--sombra); overflow:auto; border:1.3px solid var(--line); }
+  .overview-table table{ width:100%; border-collapse:collapse; min-width:820px; }
+  .overview-table th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); padding:12px 16px; border-bottom:1.3px solid var(--line); background:var(--paper-2); position:sticky; top:0; }
+  .overview-table td{ padding:12px 16px; border-bottom:1px solid var(--line); font-size:13px; vertical-align:middle; font-variant-numeric:tabular-nums; }
+  .overview-table tr:last-child td{ border-bottom:none; }
+  .overview-table tr.clickable{ transition:background-color .12s ease; cursor:pointer; }
+  .overview-table tr.clickable:hover{ background:#F4F8FD; }
+  .overview-table td.zero{ color:var(--ink-3); }
+  .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px; font-size:11.5px; font-weight:700; white-space:nowrap; }
+  .pill::before{ content:""; width:7px; height:7px; border-radius:50%; background:currentColor; }
+
+  /* ---------- Detalhe da empresa ---------- */
+  .sf-cabecalho{ background:#fff; border-radius:var(--raio); box-shadow:var(--sombra); border:1.3px solid var(--line); padding:20px 22px; margin-bottom:18px; display:flex; justify-content:space-between; gap:20px; flex-wrap:wrap; align-items:center; animation:fz-surgir .22s var(--ease) both; }
+  .sf-cabecalho h2{ font-size:18px; }
+  .sf-cabecalho .cnpj-line{ color:var(--ink-soft); font-size:12px; margin-top:4px; }
+  .risk-gauge{ display:flex; align-items:center; gap:12px; }
+  .donut{ width:56px; height:56px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .donut span{ background:#fff; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; font-family:'Sora',sans-serif; }
+  .risk-label{ font-size:11.5px; color:var(--ink-soft); }
+  .risk-label strong{ display:block; font-size:13.5px; }
+
+  .cards-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:20px; }
+  .stat-card{ background:#fff; border-radius:var(--raio); box-shadow:var(--sombra); border:1.3px solid var(--line); padding:14px 16px; position:relative; overflow:hidden; cursor:pointer; user-select:none; transition:border-color .15s ease, opacity .15s ease, background-color .15s ease; }
+  .stat-card::before{ content:""; position:absolute; left:0; right:0; top:0; height:3px; background:var(--cat-color, var(--blue)); }
+  .stat-card:hover{ border-color:var(--line-strong); }
+  .stat-card.active{ border-color:var(--cat-color, var(--blue)); background:#F7FAFF; }
+  .stat-card.dimmed{ opacity:.45; }
+  .stat-card .label{ font-size:11px; color:var(--ink-soft); font-weight:700; text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px; }
+  .stat-card .value{ font-size:19px; font-weight:750; font-family:'Sora',sans-serif; font-variant-numeric:tabular-nums; }
+  .stat-card .value.zero{ color:var(--ink-3); }
+  .stat-card .count{ font-size:11.5px; color:var(--ink-soft); margin-top:4px; }
+
+  .section-card{ background:#fff; border-radius:var(--raio); box-shadow:var(--sombra); border:1.3px solid var(--line); margin-bottom:12px; overflow:hidden; }
+  .section-head{ display:flex; align-items:center; justify-content:space-between; padding:13px 18px; cursor:pointer; user-select:none; border-left:4px solid var(--cat-color, var(--blue)); transition:background-color .12s ease; }
+  .section-head:hover{ background:var(--paper-2); }
+  .section-head-left{ display:flex; align-items:center; gap:10px; }
+  .section-head h3{ font-size:14px; }
+  .section-count{ background:var(--cat-bg,#eef1ff); color:var(--cat-color,var(--blue)); font-size:11px; font-weight:800; padding:2px 9px; border-radius:20px; }
+  .section-head .ico{ color:var(--ink-3); transition:transform .2s var(--ease); }
+  .section-card.collapsed .section-head .ico{ transform:rotate(-90deg); }
+  .section-body{ padding:0 18px 14px; }
+  .section-card.collapsed .section-body{ display:none; }
+
+  .item-row{ display:flex; justify-content:space-between; gap:14px; padding:10px 0; border-bottom:1px solid #eef0f5; }
+  .item-row:last-child{ border-bottom:none; }
+  .item-main{ min-width:0; }
+  .item-title{ font-size:13px; font-weight:600; }
+  .item-sub{ font-size:11.5px; color:var(--ink-soft); margin-top:2px; }
+  .item-context{ font-size:11px; color:#8891ab; margin-top:4px; font-family:'JetBrains Mono',monospace; line-height:1.5; word-break:break-word; }
+  .item-value{ text-align:right; flex-shrink:0; white-space:nowrap; }
+  .item-value .valor{ font-weight:800; font-size:13.5px; font-variant-numeric:tabular-nums; }
+  .status-tag{ display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:20px; margin-top:3px; }
+  .status-suspensa{ background:#fef3c7; color:#92400e; }
+  .status-ativa{ background:#fee2e2; color:#991b1b; }
+  .status-parcelada{ background:#dbeafe; color:#1e40af; }
+  .status-encerrada, .status-regular{ background:#dcfce7; color:#166534; }
+  .status-indef{ background:#eef1f6; color:#5c6685; }
+  .empty-section{ font-size:12.5px; color:#8a95b0; padding:8px 0 4px; display:flex; align-items:center; gap:7px; }
+  .empty-section .ico{ color:var(--verde-vivo); }
+  mark{ background:#fff1a8; padding:0 1px; border-radius:2px; }
+
+  .raw-panel{ background:#10142a; color:#c7cdea; border-radius:var(--raio); padding:16px 18px; margin-top:14px; font-family:'JetBrains Mono',monospace; font-size:11.5px; white-space:pre-wrap; max-height:420px; overflow:auto; line-height:1.6; display:none; }
+  .raw-panel.show{ display:block; }
+  .actions-row{ display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
+
+  @media print{
+    .actions-row, .filter-chip{ display:none !important; }
+    .section-card.collapsed .section-body{ display:block !important; }
+  }
+</style>
+</head>
+<body>
+  <script src="/icones.js"></script>
+
+<div class="app-shell">
+
+  <aside class="app-sidebar" id="barra-lateral">
+    <div class="app-sidebar-inner">
+      <div class="app-sidebar-brand">
+        <img src="/img/logo-mark.png" alt="" width="36" height="36" />
+        <div><h1>FZCONT</h1><small>Sistema Fiscal Contábil</small></div>
+      </div>
+      <nav class="app-nav" aria-label="Páginas">
+        <a href="/empresas.html" class="app-nav-link"><svg class="ico" aria-hidden="true"><use href="#i-empresas"/></svg><span>Empresas</span></a>
+        <a href="/parcelamentos.html" class="app-nav-link"><svg class="ico" aria-hidden="true"><use href="#i-parcelamentos"/></svg><span>Parcelamentos</span></a>
+        <a href="/situacao-fiscal.html" class="app-nav-link ativo" aria-current="page"><svg class="ico" aria-hidden="true"><use href="#i-situacao"/></svg><span>Situação Fiscal</span></a>
+        <a href="/integracontador.html" class="app-nav-link"><svg class="ico" aria-hidden="true"><use href="#i-governo"/></svg><span>IntegraContador</span></a>
+      </nav>
+
+      <label class="sf-upload" for="pdf-upload" id="sf-upload">
+        <svg class="ico" aria-hidden="true"><use href="#i-nuvem"/></svg>
+        <strong>Carregar relatórios</strong>
+        <span>Clique ou arraste os PDFs do e-CAC</span>
+      </label>
+      <input type="file" id="pdf-upload" multiple accept="application/pdf,.pdf" />
+      <p class="sf-dica">Relatórios baixados pelo IntegraContador aparecem sozinhos. PDFs carregados à mão ficam só nesta janela.</p>
+
+      <div class="app-sidebar-titulo sf-lista-titulo">Empresas <span class="contador-pilula" id="sf-contador"></span></div>
+      <div class="empresa-list" id="empresa-list">
+        <div class="empty-side" id="empty-side-msg">Nenhum relatório carregado ainda.</div>
+      </div>
+
+      <button class="btn-ghost-side" id="btn-overview" style="margin-top:8px"><svg class="ico" aria-hidden="true"><use href="#i-grafico"/></svg><span>Visão geral de todas</span></button>
+
+      <div class="usuario-chip">
+        <span class="avatar-mini" id="usuario-avatar">·</span>
+        <span class="usuario-nome"><span id="usuario-logado">&nbsp;</span><small>Conectado</small></span>
+        <button class="btn-icone-side" id="btn-sair" title="Sair"><svg class="ico" aria-hidden="true"><use href="#i-sair"/></svg></button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="app-conteudo">
+    <header class="faixa-superior">
+      <button class="btn-toggle-sidebar" id="btn-toggle-sidebar" title="Abrir/fechar menu" aria-label="Abrir/fechar menu"><svg class="ico" aria-hidden="true"><use href="#i-menu"/></svg></button>
+      <div class="faixa-titulo">
+        <h1 id="page-title">Visão geral</h1>
+        <span id="page-sub">Carregue um ou mais relatórios de situação fiscal do e-CAC para começar.</span>
+      </div>
+      <div class="faixa-direita">
+        <div class="filter-chip" id="filter-chip"></div>
+        <label class="campo-busca oculto" id="search-box"><svg class="ico" aria-hidden="true"><use href="#i-busca"/></svg><input type="search" id="search-input" placeholder="Buscar número, valor, palavra..." autocomplete="off"><kbd>/</kbd></label>
+      </div>
+    </header>
+
+    <main class="conteudo">
+      <div id="content-root"></div>
+    </main>
+  </div>
+
+</div>
+
+<script src="/common.js"></script>
+<script>
+  iniciarPagina();
+</script>
+<script>
+/* ================= ESTADO ================= */
+const empresasMap = {};   // chave -> {texto, cnpj, nome, arquivos:[...]}
+let empresaAtiva = null;  // chave selecionada, ou null = visão geral
+let cacheAnalise = {};    // chave -> resultado processado (cache p/ performance)
+
+const CATS = [
+  {id:'rfb',    label:'Débitos — Receita Federal',           color:'var(--rfb)',    bg:'#eaf1fe'},
+  {id:'pgfn',   label:'Débitos — PGFN (Dívida Ativa)',       color:'var(--pgfn)',   bg:'#fdeceb'},
+  {id:'parc',   label:'Parcelamentos',                        color:'var(--parc)',   bg:'#e7f7f0'},
+  {id:'proc',   label:'Processos Judiciais / Administrativos',color:'var(--proc)',   bg:'#f2ecfe'},
+  {id:'decl',   label:'Declarações em Aberto / Omissas',      color:'var(--decl)',   bg:'#fdf1e0'},
+  {id:'outras', label:'Outras Pendências',                    color:'var(--outras)', bg:'#eef0f4'},
+];
+
+/* ================= UPLOAD ================= */
+async function processarConteudoPdf(nomeArquivo, arrayBuffer, origem) {
+  if (typeof garantirWorkerPdfJs === "function") garantirWorkerPdfJs();
+  const typedarray = new Uint8Array(arrayBuffer);
+  const pdf = await pdfjsLib.getDocument(typedarray).promise;
+  let fullText = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const strings = content.items.map(item => item.str);
+    fullText += strings.join(" ") + "\n";
+  }
+  const {cnpj, nome} = extrairIdentificacao(fullText, nomeArquivo);
+  const chave = `${cnpj || 's/cnpj'} — ${nome}`;
+
+  if (empresasMap[chave]) {
+    empresasMap[chave].texto += "\n\n" + fullText;
+    empresasMap[chave].arquivos.push(nomeArquivo);
+  } else {
+    empresasMap[chave] = { texto: fullText, cnpj, nome, arquivos:[nomeArquivo] };
+  }
+  if (origem) empresasMap[chave].origem = origem;
+  delete cacheAnalise[chave];
+  return chave;
+}
+
+// Lê os PDFs um de cada vez (antes eram todos ao mesmo tempo, o que travava a aba com
+// muitos arquivos) e mostra o progresso.
+async function carregarArquivosPdf(lista) {
+  const files = Array.from(lista).filter(f => f.type === "application/pdf" || f.name.toLowerCase().endsWith('.pdf'));
+  if (!files.length) { notificar('Nenhum PDF encontrado na seleção.', 'aviso'); return; }
+  if (!window.pdfjsLib) { notificar('O leitor de PDF ainda está carregando. Tente de novo em alguns segundos.', 'aviso'); return; }
+  let erros = 0;
+  for (const [i, file] of files.entries()) {
+    notificar(`Lendo PDF ${i + 1} de ${files.length}...`, 'carregando');
+    try { await processarConteudoPdf(file.name, await file.arrayBuffer()); }
+    catch (err) { erros++; console.error('Erro ao ler PDF', file.name, err); }
+  }
+  renderSidebar();
+  if (empresaAtiva && empresasMap[empresaAtiva]) renderDetalheEmpresa(empresaAtiva); else renderOverview();
+  notificar(erros ? `${files.length - erros} PDF(s) lido(s), ${erros} com erro` : `${files.length} PDF(s) carregado(s)`, erros ? 'aviso' : 'ok');
+}
+document.getElementById('pdf-upload').addEventListener('change', function (e) {
+  carregarArquivosPdf(e.target.files);
+  e.target.value = '';
+});
+(function () {
+  const zona = document.getElementById('sf-upload');
+  zona.addEventListener('dragover', (e) => { e.preventDefault(); zona.classList.add('arrastando'); });
+  zona.addEventListener('dragleave', () => zona.classList.remove('arrastando'));
+  zona.addEventListener('drop', (e) => { e.preventDefault(); zona.classList.remove('arrastando'); carregarArquivosPdf(e.dataTransfer.files); });
+})();
+
+/* ============ IMPORTAÇÃO DO INTEGRACONTADOR, COM CACHE LOCAL ============ */
+// Guarda os relatórios já processados no navegador (localStorage), pra não precisar
+// baixar e reprocessar tudo de novo toda vez que a página abre. Ao voltar, os dados já
+// aparecem na hora. Só baixa/reprocessa de novo a empresa cuja data de atualização no
+// servidor for mais nova do que a que está guardada aqui — o resto fica como está.
+const CACHE_SITFIS_KEY = 'fzcont_sitfis_cache_v1';
+
+function carregarCacheSitfis() {
+  try {
+    const bruto = localStorage.getItem(CACHE_SITFIS_KEY);
+    return bruto ? JSON.parse(bruto) : {};
+  } catch {
+    return {};
+  }
+}
+
+function salvarCacheSitfis(cache) {
+  try {
+    localStorage.setItem(CACHE_SITFIS_KEY, JSON.stringify(cache));
+  } catch (err) {
+    console.warn('Não consegui salvar o cache local (talvez tenha ficado sem espaço):', err);
+  }
+}
+
+// Aplica tudo que já está em cache direto no empresasMap, instantâneo, sem rede.
+function restaurarDoCacheSitfis() {
+  const cache = carregarCacheSitfis();
+  Object.values(cache).forEach(item => {
+    empresasMap[item.chave] = { texto: item.texto, cnpj: item.cnpj, nome: item.nome, arquivos: item.arquivos, origem: 'integracontador' };
+  });
+  return Object.keys(cache).length > 0;
+}
+
+// Confere no servidor só a "ficha" leve (data de atualização de cada empresa) e baixa o
+// PDF de verdade apenas para quem mudou desde a última vez. Retorna true se algo mudou.
+async function atualizarRelatoriosIntegraContador() {
+  try {
+    const resp = await fetch('/api/integracontador/relatorios', { headers: { 'Content-Type': 'application/json' } });
+    if (!resp.ok) return false;
+    const { relatorios } = await resp.json();
+    const cache = carregarCacheSitfis();
+    let mudou = false;
+
+    for (const cnpj of Object.keys(relatorios || {})) {
+      const info = relatorios[cnpj].sitfis;
+      if (!info) continue;
+      const cacheado = cache[cnpj];
+      if (cacheado && cacheado.atualizadoEm === info.atualizadoEm) continue; // já temos a versão mais recente
+
+      try {
+        const arqResp = await fetch(`/api/integracontador/arquivo/sitfis/${cnpj}`);
+        if (!arqResp.ok) continue;
+        const buf = await arqResp.arrayBuffer();
+
+        if (cacheado && empresasMap[cacheado.chave]) delete empresasMap[cacheado.chave]; // evita duplicar texto
+        const chave = await processarConteudoPdf(`SITFIS-${cnpj}.pdf`, buf, 'integracontador');
+
+        cache[cnpj] = {
+          chave,
+          texto: empresasMap[chave].texto,
+          cnpj: empresasMap[chave].cnpj,
+          nome: empresasMap[chave].nome,
+          arquivos: empresasMap[chave].arquivos,
+          atualizadoEm: info.atualizadoEm,
+        };
+        mudou = true;
+      } catch (err) {
+        console.error('Erro ao importar relatório do IntegraContador', cnpj, err);
+      }
+    }
+
+    if (mudou) salvarCacheSitfis(cache);
+    return mudou;
+  } catch (err) {
+    console.error('Erro ao buscar relatórios do IntegraContador', err);
+    return false;
+  }
+}
+
+function extrairIdentificacao(fullText, fallbackName) {
+  const linhas = fullText.replace(/\s{2,}/g, '\n').split('\n');
+
+  // CNPJ: sempre a partir do bloco "Dados Cadastrais da Matriz", nunca o
+  // primeiro CNPJ do documento (que costuma ser o "CNPJ do certificado").
+  let cnpj = '';
+  const ancoraIdx = fullText.search(/Dados\s+Cadastrais\s+da\s+Matriz/i);
+  if (ancoraIdx !== -1) {
+    const trecho = fullText.slice(ancoraIdx, ancoraIdx + 400);
+    const m = trecho.match(/CNPJ:\s*(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/i);
+    if (m) cnpj = m[1];
+  }
+  if (!cnpj) {
+    // fallback: primeiro CNPJ completo (com filial) que aparecer no texto
+    const m2 = fullText.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/);
+    if (m2) cnpj = m2[0];
+  }
+
+  // Nome da empresa: linha "CNPJ: XX.XXX.XXX - NOME DA EMPRESA" que antecede
+  // o bloco de Dados Cadastrais (funciona mesmo sem espaço entre o nome e a
+  // palavra seguinte, já que o pdf.js às vezes concatena sem espaço).
+  const nomeRegex = /CNPJ:\s*\d{2}\.\d{3}\.\d{3}\s*-\s*([A-ZÂ-ÚÀ-ÚÉÍÓÔÕÇ0-9º°\s&.,'\/-]+?)(?=Dados\s+Cadastrais|UA\s+de\s+Dom|CEP:|CNAE:|Situa[çc][ãa]o:|Natureza\s+Jur|Respons[áa]vel:|\n|$)/i;
+  const nomeMatch = fullText.match(nomeRegex);
+  let nome = nomeMatch ? nomeMatch[1].trim() : '';
+  if (!nome) {
+    // fallback: primeira linha em maiúsculas com 3+ palavras perto do topo
+    const candidata = linhas.slice(0, 30).find(l => /^[A-ZÂ-ÚÀ-ÚÉÍÓÔÕÇ\s.,&'-]{8,}$/.test(l.trim()) && l.trim().split(/\s+/).length >= 2);
+    nome = candidata ? candidata.trim() : fallbackName.replace(/\.pdf$/i, '');
+  }
+  return { cnpj, nome };
+}
+
+/* ================= HELPERS DE PARSING ================= */
+function normalizarValor(str) {
+  if (!str) return 0;
+  return parseFloat(str.replace(/\./g, '').replace(',', '.')) || 0;
+}
+function fmtMoeda(v) {
+  return 'R$ ' + v.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d)(?=[,.]))/g, '.');
+}
+function escapeHtml(s){
+  return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function dedupPush(set, arr, item) {
+  const key = item.chaveDedup || item.contexto || item.titulo;
+  const norm = key.toLowerCase().replace(/\s+/g,' ').trim().slice(0,90);
+  if (set.has(norm)) return;
+  set.add(norm);
+  arr.push(item);
+}
+function buscarValorProximo(txt) {
+  const m = txt.match(/R?\$?\s?[\d]{1,3}(?:\.\d{3})*,\d{2}/);
+  return m ? normalizarValor(m[0].replace(/^R?\$?\s?/, '')) : null;
+}
+function buscarStatus(txt) {
+  const t = txt.toUpperCase();
+  if (/SUSPEN/.test(t)) return {tag:'status-suspensa', label:'Exigibilidade Suspensa'};
+  if (/RESCIND|CANCELAD/.test(t)) return {tag:'status-ativa', label:'Rescindido/Cancelado'};
+  if (/PARCELA|NEGOCIA/.test(t)) return {tag:'status-parcelada', label:'Parcelado/Negociado'};
+  if (/ENCERRAD|QUITAD|REGULAR/.test(t)) return {tag:'status-encerrada', label:'Regularizado'};
+  if (/ATIV[AO]|AJUIZAD|EXECU/.test(t)) return {tag:'status-ativa', label:'Ativo/Em cobrança'};
+  return {tag:'status-indef', label:'A verificar'};
+}
+// Remove o cabeçalho repetido em toda página (Ministério da Fazenda...) para
+// não confundir texto de cabeçalho com conteúdo real ao usar janelas de busca.
+function removerCabecalhos(fullText) {
+  return fullText
+    // Rodapé de paginação ("Página: 1 / 3") que o pdf.js insere entre o
+    // fim de uma página e o cabeçalho da próxima — se não for removido,
+    // uma linha de débito que termina bem no fim da página perde o
+    // marcador de fechamento esperado pelo regex e é descartada inteira.
+    .replace(/P[áa]gina:\s*\d+\s*\/\s*\d+/gi, ' ')
+    // Importante: quando a página vira NO MEIO de uma tabela (sem repetir
+    // o título "Pendência - Débito (SIEF)"), o nome da empresa no
+    // cabeçalho fica colado direto nas linhas de débito reais, sem
+    // nenhuma quebra de linha entre eles (mesma página = mesmo espaço).
+    // Por isso o corte do nome da empresa TEM que parar também ao
+    // encontrar um início de linha de débito (código de receita ou
+    // "SIMPLES NAC.") e tem um teto de tamanho — sem isso, a captura não
+    // gulosa avança até a PRÓXIMA seção do relatório, engolindo débitos
+    // reais pelo caminho.
+    .replace(/MINIST[ÉE]RIO DA FAZENDA[\s\S]{0,350}?EMISS[ÃA]O DE CERTID[ÃA]O\s*\n?CNPJ:\s*[\d.]+\s*-\s*[A-ZÀ-Ú0-9\s&.,'\/-]{0,120}?(?=\n|Dados Cadastrais|Parcelamento|Pend[êe]ncia|Inscri[çc][ãa]o|Certid[ãa]o Emitida|Diagn[óo]stico|Modalidade:|S[óo]cios|\d{3,4}-\d{2}\s*-|SIMPLES NAC\.|\d{6,12}\s+[A-Z])/gi, ' ');
+}
+// Corta um trecho do texto entre uma âncora (ex.: título de seção) e a
+// próxima âncora de fechamento (outro título de seção / fim do relatório).
+function fatiarSecao(fullText, anchorRegex, fimRegex) {
+  const inicio = fullText.search(anchorRegex);
+  if (inicio === -1) return null;
+  const restoIdx = inicio + 20;
+  const rest = fullText.slice(restoIdx);
+  const m = rest.search(fimRegex);
+  const fim = m === -1 ? fullText.length : restoIdx + m;
+  return fullText.slice(inicio, fim);
+}
+
+/* ---- RFB: débitos (Simples Nacional / Previdenciário / demais tributos) ----
+   Cada linha da tabela "Pendência - Débito (SIEF)" e "Débito com
+   Exigibilidade Suspensa (SIEF)" segue o padrão:
+     [CÓD-NN -] NOME_RECEITA   PA/Exerc.   Dt.Vcto   valor(es)...   Situação
+   O PA/Exerc. normalmente é MM/AAAA, mas em alguns lançamentos (ex.: multas
+   de declaração - MAED) vem como DD/MM/AAAA — por isso tentamos casar a
+   data completa primeiro, senão caímos para MM/AAAA. */
+const LINHA_DEBITO_RE = /((?:\d{3,4}-\d{2}\s*-\s*)?[A-ZÀ-ÚÇ][A-ZÀ-ÚÇ.\-]*(?:\s[A-ZÀ-ÚÇ.\-]+){0,4})\s+(\d{2}\/\d{2}\/\d{4}|\d{2}\/\d{4}|\d[ºo]\s*TRIM\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+((?:[\d.,]+\s+){0,4}[\d.,]+)(?:\s+(?:Situa[çc][ãa]o:\s*)?([A-ZÀ-Ú][A-ZÀ-ÚÇ]*(?:[ \-][A-ZÀ-ÚÇ]+)*))?(?=\s+\d{3,4}-\d{2}\s*-|\s+SIMPLES NAC\.|\s+Notifica[çc][ãa]o|[\s_]+D[ée]bito|[\s_]+Pend[êe]ncia|[\s_]+Parcelamento|\s+CNPJ:|[\s_]+Diagn[óo]stico|\s*\n|$)/g;
+
+function extrairDebitosRFB(fullText) {
+  const itens = [];
+  const seen = new Set();
+
+  // Remove ruído de cabeçalho/rodapé repetido a cada página ANTES de rodar o
+  // regex — sem isso, uma linha de débito que cai bem na virada de página
+  // (seguida por "Página: X / Y" + o cabeçalho da próxima página) perde o
+  // marcador de fechamento que o regex espera logo após os valores, e a
+  // linha inteira é descartada silenciosamente.
+  const limpo = removerCabecalhos(fullText);
+  const matches = [...limpo.matchAll(LINHA_DEBITO_RE)];
+  matches.forEach(m => {
+    const receitaBruta = m[1].trim();
+    const pa = m[2];
+    const vcto = m[3];
+    const valores = m[4].trim().split(/\s+/).map(normalizarValor);
+    const situacao = (m[5] || '').trim();
+    // último valor da linha = saldo devedor consolidado (ou o valor mais
+    // representativo disponível quando a linha tem menos colunas)
+    const valor = valores[valores.length - 1];
+    const valorOriginal = valores[0];
+
+    const isSimples = /SIMPLES/i.test(receitaBruta);
+    const isPrevidenciario = /CP-SEGUR|CP-PATRONAL|CP-TERCEIROS|PREVIDENCI/i.test(receitaBruta);
+    const isMaed = /MAED/i.test(receitaBruta);
+    const nomeReceita = receitaBruta.replace(/^\d{3,4}-\d{2}\s*-\s*/, '');
+    const tipo = isSimples ? 'simples' : isMaed ? 'maed' : isPrevidenciario ? 'prev' : 'outros';
+
+    const item = {
+      titulo: isSimples ? 'Simples Nacional' : nomeReceita,
+      sub: `Competência: ${pa} · Vencimento: ${vcto}${valorOriginal !== valor ? ` · Original: ${fmtMoeda(valorOriginal)}` : ''}`,
+      valor,
+      tipo,
+      status: !situacao ? null : (/SUSPENS/i.test(situacao) ? {tag:'status-suspensa', label:'Exigibilidade Suspensa'} : buscarStatus(situacao)),
+      chaveDedup: `${receitaBruta}-${pa}-${vcto}-${valor}`
+    };
+    dedupPush(seen, itens, item);
+  });
+
+  // Totais somados a partir dos itens já deduplicados — evita contar duas
+  // vezes uma mesma linha quando o PDF repete o texto (ex.: negrito
+  // "desenhado" com o texto sobreposto, comum em PDFs gerados por sistemas).
+  let totalSimples = 0, totalPrev = 0, totalMaed = 0, totalOutros = 0;
+  itens.forEach(item => {
+    if (item.tipo === 'simples') totalSimples += item.valor;
+    else if (item.tipo === 'maed') totalMaed += item.valor;
+    else if (item.tipo === 'prev') totalPrev += item.valor;
+    else totalOutros += item.valor;
+  });
+
+  return { itens, totalSimples, totalPrev, totalMaed, totalOutros, total: totalSimples + totalPrev + totalMaed + totalOutros };
+}
+
+/* ---- PGFN: inscrições em dívida ativa (SIDA) ----
+   Linha real: "90.2.26.010322-92  3551-IRPJ  13/04/2026  [ajuizado?]
+   14966.157.633/2026-32  DEVEDOR PRINCIPAL  Situação: ATIVA EM COBRANCA" */
+const LINHA_SIDA_RE = /(\d{2}\.\d\.\d{2}\.\d{6}-\d{2})\s+([\dA-ZÀ-ÚÇ.\-\s]+?)\s+(\d{2}\/\d{2}\/\d{4})\s+(?:(\d{2}\/\d{2}\/\d{4})\s+)?(\d{5}\.\d{3}\.\d{3}\/\d{4}-\d{2})\s+([A-ZÀ-Ú\s]+?)\s*Situa[çc][ãa]o:\s*([A-ZÀ-Ú][\s\S]*?)(?=\d{2}\.\d\.\d{2}\.\d{6}-\d{2}|Diagn[óo]stico|Final do Relat[óo]rio|$)/g;
+
+/* ---- PGFN: Inscrição com Exigibilidade Suspensa (Sistema DIVIDA) ----
+   Formato simplificado, sem receita/processo:
+   "Inscrição: 13.878.920-7  Situação: 000731 - NEGOCIADO NO SISPAR" */
+function extrairInscricaoDividaSuspensa(fullText) {
+  const itens = [];
+  const re = /Inscri[çc][ãa]o:\s*([\d.\-]+)\s*Situa[çc][ãa]o:\s*([\dA-ZÀ-Ú\s\-]+?)(?=Inscri[çc][ãa]o:|_{3,}|Final do Relat[óo]rio|$)/gi;
+  let m;
+  while ((m = re.exec(fullText)) !== null) {
+    const [, inscricao, situacaoBruta] = m;
+    const situacao = situacaoBruta.trim();
+    itens.push({
+      titulo: inscricao,
+      sub: 'Sistema DIVIDA · Exigibilidade Suspensa',
+      contexto: situacao,
+      status: {tag:'status-suspensa', label:'Exigibilidade Suspensa'},
+      chaveDedup: inscricao
+    });
+  }
+  return itens;
+}
+
+function extrairPGFN(fullText) {
+  const itens = [];
+  const seen = new Set();
+
+  // Mesmo motivo do extrairDebitosRFB: evita perder uma inscrição cujo
+  // registro cai bem na virada de página.
+  const limpo = removerCabecalhos(fullText);
+  const matches = [...limpo.matchAll(LINHA_SIDA_RE)];
+  if (matches.length) {
+    matches.forEach(m => {
+      const [, inscricao, receitaBruta, inscritoEm, ajuizadoEm, processo, tipoDevedor, situacaoBruta] = m;
+      const receita = receitaBruta.replace(/\s+/g, ' ').trim();
+      const situacao = situacaoBruta.split('\n')[0].replace(/[\s_]+$/g, '').trim();
+      const tipo = /SIMPLES/i.test(receita) ? "Simples Nacional"
+        : /413[3-9]|CP-|PREVIDENCI/i.test(receita) ? "Dívida Previdenciária"
+        : receita;
+      dedupPush(seen, itens, {
+        titulo: inscricao,
+        sub: `${tipo} · Processo: ${processo}${ajuizadoEm ? ` · Ajuizado em ${ajuizadoEm}` : ''}`,
+        contexto: `Inscrito em ${inscritoEm} · ${tipoDevedor.trim()}`,
+        status: /SUSPENS/i.test(situacao) ? {tag:'status-suspensa', label:'Exigibilidade Suspensa'} : buscarStatus(situacao),
+        chaveDedup: inscricao
+      });
+    });
+  } else {
+    // fallback: método antigo por contexto, caso o layout não bata com o padrão estrutural
+    const padraoInscricao = /\d{2}\.\d{1}\.\d{2}\.\d{6}-\d{2}/g;
+    let m;
+    while ((m = padraoInscricao.exec(limpo)) !== null) {
+      const contexto = limpo.slice(Math.max(0, m.index - 120), m.index + 160).replace(/\s{2,}/g,' ').trim();
+      const valor = buscarValorProximo(contexto);
+      dedupPush(seen, itens, {
+        titulo: m[0],
+        sub: 'Inscrição em Dívida Ativa',
+        contexto,
+        valor,
+        status: buscarStatus(contexto),
+        chaveDedup: m[0]
+      });
+    }
+  }
+
+  // Inscrições do Sistema DIVIDA com exigibilidade suspensa (formato simplificado,
+  // sem receita/processo — inscrições antigas negociadas, comuns em pessoa física)
+  extrairInscricaoDividaSuspensa(limpo).forEach(item => dedupPush(seen, itens, item));
+
+  const total = itens.reduce((soma, item) => soma + (item.valor || 0), 0);
+  return { itens, total };
+}
+
+/* ---- Processos Fiscais (SIEF) ----
+   Bloco "Pendência - Processo Fiscal (SIEF)": Processo | Situação | Localização
+   ex.: "10641.075.978/2025-08  DEVEDOR  SETOR PROC ELETRONICO REFIS DRF MGA PR" */
+function extrairProcessosFiscais(fullText) {
+  const itens = [];
+  const seen = new Set();
+  const inicio = fullText.search(/Pend[êe]ncia\s*-\s*Processo\s+Fiscal/i);
+  if (inicio === -1) return { itens };
+  const fim = (() => {
+    const rest = fullText.slice(inicio + 30);
+    const m = rest.search(/Diagn[óo]stico\s+Fiscal\s+na\s+Procuradoria|Final do Relat[óo]rio/i);
+    return m === -1 ? fullText.length : inicio + 30 + m;
+  })();
+  const trecho = fullText.slice(inicio, fim);
+
+  const linhaRe = /(\d{5}\.\d{3}\.\d{3}\/\d{4}-\d{2})\s+([A-ZÀ-Ú]+)\s+([^\n]*?)(?=\d{5}\.\d{3}\.\d{3}\/\d{4}-\d{2}|Diagn[óo]stico|Pend[êe]ncia|$)/g;
+  let m;
+  while ((m = linhaRe.exec(trecho)) !== null) {
+    const [, processo, situacao, localizacaoBruta] = m;
+    const localizacao = localizacaoBruta.replace(/[_\s]+$/g, '').trim();
+    dedupPush(seen, itens, {
+      titulo: `Processo Fiscal ${processo}`,
+      sub: localizacao ? `Localização: ${localizacao}` : null,
+      status: buscarStatus(situacao),
+      chaveDedup: processo
+    });
+  }
+  return { itens };
+}
+
+/* ---- Parcelamentos ----
+   Cobre 3 formatos reais do relatório:
+   - "Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI)": só uma frase
+     descritiva (ex.: "SIMPLES NACIONAL - EM PARCELAMENTO")
+   - "... (SIEFPAR)": "Parcelamento: NÚMERO  Valor Suspenso: VALOR  MODALIDADE"
+   - "... (SISPAR)": lista de contas "CONTA DESCRIÇÃO \n Modalidade: TEXTO"
+   mais uma heurística genérica de fallback para qualquer outra menção. */
+function extrairParcelamentoPARCSN(fullText) {
+  const itens = [];
+  const re = /Parcelamento com Exigibilidade Suspensa\s*\(PARCSN\/PARCMEI\)[\s\S]{0,80}?CNPJ:\s*[\d.\/-]+\s*([A-ZÀ-Ú][A-ZÀ-Ú0-9\s\-]*?)(?=Pend[êe]ncia|Parcelamento com|Diagn[óo]stico|\n|$)/i;
+  const m = fullText.match(re);
+  if (m && m[1].trim()) {
+    itens.push({
+      titulo: 'Parcelamento Simples Nacional (PARCSN/PARCMEI)',
+      sub: `${m[1].trim()} · Receita Federal`,
+      status: {tag:'status-parcelada', label:'Parcelado'},
+      chaveDedup: 'parcsn-' + m[1].trim()
+    });
+  }
+  return itens;
+}
+
+function extrairParcelamentoSIEFPAR(fullText) {
+  const itens = [];
+  const trecho = fatiarSecao(fullText, /Parcelamento com Exigibilidade Suspensa\s*\(SIEFPAR\)/i, /Diagn[óo]stico|Inscri[çc][ãa]o com|Final do Relat[óo]rio/i);
+  if (!trecho) return itens;
+  const re = /Parcelamento:\s*([\d.\-]+)\s+Valor Suspenso:\s*([\d.,]+)\s*([A-ZÀ-Ú][A-ZÀ-Ú\s]*)?/gi;
+  let m;
+  while ((m = re.exec(trecho)) !== null) {
+    const [, numero, valorTxt, modalidade] = m;
+    // SIEFPAR é o Parcelamento Simplificado da Receita Federal — nunca PGFN.
+    itens.push({
+      titulo: `Parcelamento Simplificado (SIEFPAR) ${numero}`,
+      sub: `${(modalidade || '').trim() || 'Parcelamento Simplificado'} · Receita Federal · Valor suspenso: ${fmtMoeda(normalizarValor(valorTxt))}`,
+      valor: normalizarValor(valorTxt),
+      status: {tag:'status-parcelada', label:'Parcelado'},
+      chaveDedup: numero
+    });
+  }
+  return itens;
+}
+
+function extrairParcelamentoSISPAR(fullText) {
+  const itens = [];
+  const limpo = removerCabecalhos(fullText);
+  const trecho = fatiarSecao(limpo, /Parcelamento com Exigibilidade Suspensa\s*\(SISPAR\)/i, /Inscri[çc][ãa]o com Exigibilidade|Diagn[óo]stico|Final do Relat[óo]rio/i);
+  if (!trecho) return itens;
+  const re = /(?:Conta)?(\d{6,12})\s+([A-ZÀ-Ú][A-ZÀ-Ú0-9,.\-\/\s]*?)\s*Modalidade:\s*([A-ZÀ-Ú][A-ZÀ-Ú0-9\s]*?)(?=\s*\d{6,12}\s+[A-Z]|$)/g;
+  let m;
+  while ((m = re.exec(trecho)) !== null) {
+    const [, conta, descricao, modalidade] = m;
+    // SISPAR é sistema da PGFN (negociação de dívida ativa).
+    itens.push({
+      titulo: `Transação/Parcelamento — Conta ${conta} (PGFN)`,
+      sub: `${descricao.trim().replace(/\s+/g, ' ')} · PGFN`,
+      contexto: `Modalidade: ${modalidade.trim().replace(/\s+/g, ' ')}`,
+      status: {tag:'status-parcelada', label:'Negociado (SISPAR)'},
+      chaveDedup: conta
+    });
+  }
+  return itens;
+}
+
+function extrairParcelamentos(fullText) {
+  const itens = [];
+  const seen = new Set();
+
+  [
+    ...extrairParcelamentoPARCSN(fullText),
+    ...extrairParcelamentoSIEFPAR(fullText),
+    ...extrairParcelamentoSISPAR(fullText),
+  ].forEach(item => dedupPush(seen, itens, item));
+
+  // heurística genérica de fallback (por posição, não por "linha" de página
+  // inteira) — só roda se NENHUM dos 3 formatos estruturados encontrou algo,
+  // pra não duplicar/gerar ruído sobre o que já foi capturado acima.
+  if (!itens.length) {
+    const limpo = removerCabecalhos(fullText);
+    // ignora "parcelamento" quando é só o status de uma linha de débito já
+    // capturada em Débitos RFB (ex.: "Situação: EM NEGOCIAÇÃO DE PARCELAMENTO")
+    const re = /(?<!NEGOCIA[ÇC][ÃA]O DE )parcelamento/gi;
+    let m;
+    while ((m = re.exec(limpo)) !== null) {
+      const janela = limpo.slice(Math.max(0, m.index - 60), m.index + 160).replace(/\s{2,}/g, ' ').trim();
+      if (janela.length < 15) continue;
+      // ignora se a janela contém um código de receita típico de linha de
+      // débito (ex.: "1099-01 - CP-SEGUR."), sinal de que já foi capturado
+      if (/\d{3,4}-\d{2}\s*-\s*[A-ZÀ-Ú]/.test(janela)) continue;
+      const chave = janela.toLowerCase().slice(0, 90);
+      if (seen.has(chave)) continue;
+      const numMatch = janela.match(/\b\d{4,17}\b/);
+      const valor = buscarValorProximo(janela);
+      dedupPush(seen, itens, {
+        titulo: numMatch ? `Parcelamento nº ${numMatch[0]}` : 'Parcelamento identificado',
+        contexto: janela.slice(0, 220),
+        valor,
+        status: buscarStatus(janela),
+        chaveDedup: chave
+      });
+    }
+  }
+
+  const total = itens.reduce((soma, item) => soma + (item.valor || 0), 0);
+  return { itens, total };
+}
+
+/* ---- Processos (Fiscais/SIEF + judiciais/administrativos genéricos) ---- */
+function extrairProcessos(fullText) {
+  const { itens: itensFiscais } = extrairProcessosFiscais(fullText);
+  const seen = new Set(itensFiscais.map(i => i.chaveDedup.toLowerCase()));
+  const itens = [...itensFiscais];
+
+  // Heurística complementar para "Ação Judicial" / processos em formato CNJ,
+  // que podem aparecer em outras seções do relatório.
+  const padraoCNJ = /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/g;
+  let m;
+  while ((m = padraoCNJ.exec(fullText)) !== null) {
+    const contexto = fullText.slice(Math.max(0, m.index - 100), m.index + 140).replace(/\s{2,}/g,' ').trim();
+    if (!/process|ação|judicial|execução|embargo|autos/i.test(contexto)) continue;
+    const tipo = /judicial/i.test(contexto) ? 'Ação Judicial'
+      : /execução fiscal/i.test(contexto) ? 'Execução Fiscal'
+      : /administrativ/i.test(contexto) ? 'Processo Administrativo'
+      : 'Processo';
+    dedupPush(seen, itens, {
+      titulo: m[0],
+      sub: tipo,
+      contexto,
+      status: buscarStatus(contexto),
+      chaveDedup: m[0]
+    });
+  }
+  return { itens };
+}
+
+/* ---- Declarações em aberto / omissas ----
+   Padrão real do relatório: "Pendência - Omissão de DCTFWeb* ... (Período de
+   Apuração) 2024 - FEV MAR" ou "Omissão de DEFIS ... (Ano-Calendário) 2024" */
+const OMISSAO_RE = /Omiss[ãa]o\s+de\s+([A-ZÀ-Ú][\w\-]*)\*?[ _]*?\((Per[íi]odo de Apura[çc][ãa]o|Ano-Calend[áa]rio)\)[ ]*([0-9A-ZÀ-Ú \-\/]+?)(?=\*|\n|Pend[êe]ncia|Omiss[ãa]o|Diagn[óo]stico|Final do Relat[óo]rio|$)/gi;
+
+function extrairDeclaracoes(fullText) {
+  const itens = [];
+  const seen = new Set();
+
+  const matches = [...fullText.matchAll(OMISSAO_RE)];
+  matches.forEach(m => {
+    const [, nome, tipoLabel, periodo] = m;
+    dedupPush(seen, itens, {
+      titulo: `Omissão de ${nome}`,
+      sub: `${tipoLabel}: ${periodo.trim()}`,
+      status: {tag:'status-ativa', label:'Omissa / Não entregue'},
+      chaveDedup: `${nome}-${periodo.trim()}`
+    });
+  });
+
+  // fallback heurístico p/ menções de pendência em declarações que não sigam
+  // exatamente o padrão "Omissão de X (...)"
+  if (!itens.length) {
+    const nomes = ['DCTFWeb','DCTF','ECF','EFD-Contribuições','EFD-Reinf','DIRF','DASN-SIMEI','PGDAS-D','DEFIS','DIPJ','DES','RAIS','ECD'];
+    const statusRegex = /(PENDENTE|EM ABERTO|N[ÃA]O ENTREGUE|OMISS[AÃ]O|OMISSA)/i;
+    const linhas = fullText.split('\n');
+    linhas.forEach((linha, i) => {
+      const nomeEncontrado = nomes.find(n => new RegExp(`\\b${n.replace('-','\\-')}\\b`,'i').test(linha));
+      if (nomeEncontrado) {
+        const janela = (linhas.slice(Math.max(0,i-1), i+3).join(' ')).replace(/\s{2,}/g,' ').trim();
+        if (statusRegex.test(janela) || statusRegex.test(linha)) {
+          dedupPush(seen, itens, {
+            titulo: nomeEncontrado,
+            contexto: janela.slice(0, 220),
+            chaveDedup: `${nomeEncontrado}-${janela.slice(0,60)}`
+          });
+        }
+      }
+    });
+  }
+  return { itens };
+}
+
+/* ---- Outras pendências (catch-all) ---- */
+function extrairOutras(fullText, jaCapturado) {
+  const itens = [];
+  const seen = new Set();
+
+  // Remove o cabeçalho repetido em toda página (Ministério da Fazenda...) para
+  // não confundir "pendência" citada no cabeçalho com uma pendência real.
+  const limpo = fullText.replace(/MINIST[ÉE]RIO DA FAZENDA[\s\S]{0,350}?EMISS[ÃA]O DE CERTID[ÃA]O/gi, ' ');
+
+  // "pendência"/"pendente" foram removidos da lista: todo bloco real de
+  // pendência do relatório já vem com um título "Pendência - X (Y)" próprio,
+  // que é tratado pelos extratores dedicados (débito, processo, inscrição,
+  // omissão). Manter essas palavras aqui só gerava ruído com os próprios
+  // títulos de seção já cobertos.
+  const palavras = ['malha fiscal', 'divergência', 'inconsistência', 'irregularidade'];
+  const re = new RegExp(`(${palavras.join('|')})`, 'gi');
+
+  let m;
+  while ((m = re.exec(limpo)) !== null) {
+    const contexto = limpo.slice(Math.max(0, m.index - 80), m.index + 180).replace(/\s{2,}/g, ' ').trim();
+    if (contexto.length < 15) continue;
+    // ignora se o trecho ainda contém resíduo de cabeçalho (indica que caiu
+    // numa quebra de página, não é conteúdo real)
+    if (/CNPJ do certificado|Por meio do Portal de Servi[çc]os/i.test(contexto)) continue;
+    const chave = contexto.toLowerCase().slice(0, 90);
+    if (jaCapturado.has(chave)) continue;
+    dedupPush(seen, itens, {
+      titulo: 'Possível pendência adicional',
+      contexto,
+      chaveDedup: chave
+    });
+  }
+  return { itens };
+}
+
+/* ================= ANÁLISE COMPLETA POR EMPRESA ================= */
+function analisarEmpresa(chave) {
+  if (cacheAnalise[chave]) return cacheAnalise[chave];
+  const emp = empresasMap[chave];
+  const fullText = emp.texto;
+
+  const rfb = extrairDebitosRFB(fullText);
+  const pgfn = extrairPGFN(fullText);
+  const parc = extrairParcelamentos(fullText);
+  const proc = extrairProcessos(fullText);
+  const decl = extrairDeclaracoes(fullText);
+
+  const jaCapturado = new Set();
+  [rfb, pgfn, parc, proc, decl].forEach(r => r.itens.forEach(it => {
+    if (it.chaveDedup) jaCapturado.add(it.chaveDedup.toLowerCase().slice(0,90));
+  }));
+  const outras = extrairOutras(fullText, jaCapturado);
+
+  const resultado = {
+    rfb, pgfn, parc, proc, decl, outras,
+    totalGeral: (rfb.total||0) + (pgfn.total||0) + (parc.total||0),
+    qtdPendencias: rfb.itens.length + pgfn.itens.length + parc.itens.length + proc.itens.length + decl.itens.length + outras.itens.length,
+    fullText
+  };
+  cacheAnalise[chave] = resultado;
+  return resultado;
+}
+
+function nivelRisco(resultado) {
+  const q = resultado.qtdPendencias;
+  if (q === 0) return {label:'Sem pendências', color:'#16a34a', pct:4};
+  if (q <= 3) return {label:'Risco baixo', color:'#65a30d', pct:30};
+  if (q <= 8) return {label:'Risco médio', color:'#d97706', pct:65};
+  return {label:'Risco alto', color:'#dc2626', pct:95};
+}
+
+/* ================= RENDER: SIDEBAR ================= */
+function chavesOrdenadas() {
+  const normalizar = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\s.]+/g, '').toLowerCase();
+  return Object.keys(empresasMap).sort((a, b) => {
+    const na = normalizar(empresasMap[a].nome);
+    const nb = normalizar(empresasMap[b].nome);
+    return na.localeCompare(nb, 'pt-BR');
+  });
+}
+
+function corAvatar(nome) {
+  const cores = ['#3245d1','#059669','#dc2626','#7c3aed','#d97706','#0891b2','#be185d'];
+  let h = 0;
+  for (let c of nome) h = (h*31 + c.charCodeAt(0)) % cores.length;
+  return cores[Math.abs(h)];
+}
+
+function marcarAtivaNaSidebar() {
+  document.querySelectorAll('#empresa-list .empresa-item').forEach(el => el.classList.toggle('active', el.dataset.chave === empresaAtiva));
+}
+
+function renderSidebar() {
+  const list = document.getElementById('empresa-list');
+  const chaves = chavesOrdenadas();
+  const contador = document.getElementById('sf-contador');
+  if (contador) contador.textContent = chaves.length || '';
+  if (!chaves.length) {
+    list.innerHTML = '<div class="empty-side" id="empty-side-msg">Nenhum relatório carregado ainda.</div>';
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  chaves.forEach(chave => {
+    const emp = empresasMap[chave];
+    const resultado = analisarEmpresa(chave);
+    const risco = nivelRisco(resultado);
+    const div = document.createElement('div');
+    div.className = 'empresa-item' + (chave === empresaAtiva ? ' active' : '');
+    div.dataset.chave = chave;
+    div.innerHTML = `
+      <div class="empresa-avatar" style="background:${corAvatar(emp.nome)}">${escapeHtml((emp.nome||'?').trim().charAt(0).toUpperCase())}</div>
+      <div class="empresa-info">
+        <div class="nome">${escapeHtml(emp.nome)}</div>
+        <div class="cnpj mono">${escapeHtml(emp.cnpj || 'CNPJ não identificado')}</div>
+      </div>
+      <div class="empresa-badge" style="background:${risco.color}22; color:${risco.color}">${resultado.qtdPendencias}</div>
+    `;
+    div.addEventListener('click', () => selecionarEmpresa(chave));
+    frag.appendChild(div);
+  });
+  list.replaceChildren(frag);
+}
+
+/* ================= RENDER: VISÃO GERAL ================= */
+document.getElementById('btn-overview').addEventListener('click', async () => {
+  empresaAtiva = null;
+  marcarAtivaNaSidebar();
+  renderOverview();
+  document.documentElement.classList.remove('sidebar-mobile-aberta');
+  const mudou = await atualizarRelatoriosIntegraContador();
+  if (mudou) { renderSidebar(); renderOverview(); }
+});
+
+function renderOverview() {
+  document.getElementById('page-title').textContent = 'Visão geral';
+  document.getElementById('search-box').classList.add('oculto');
+  filtroCard = null;
+  atualizarChipFiltro();
+  const chaves = chavesOrdenadas();
+  const root = document.getElementById('content-root');
+
+  if (!chaves.length) {
+    document.getElementById('page-sub').textContent = 'Carregue um ou mais relatórios de situação fiscal do e-CAC para começar.';
+    root.innerHTML = `
+      <div class="placeholder">
+        ${icone('situacao')}
+        <h3>Nenhum relatório carregado</h3>
+        <p>Baixe pelo IntegraContador (aparecem aqui sozinhos) ou use “Carregar relatórios” no menu para abrir os PDFs de Situação Fiscal do e-CAC. Pode carregar vários de uma vez.</p>
+      </div>`;
+    return;
+  }
+
+  document.getElementById('page-sub').textContent = `${chaves.length} empresa(s) carregada(s). Clique em uma linha para ver o detalhamento completo.`;
+
+  let rows = '';
+  chaves.forEach(chave => {
+    const emp = empresasMap[chave];
+    const r = analisarEmpresa(chave);
+    const risco = nivelRisco(r);
+    rows += `
+      <tr class="clickable" data-chave="${escapeHtml(chave)}">
+        <td><strong>${escapeHtml(emp.nome)}</strong></td>
+        <td class="mono">${escapeHtml(emp.cnpj || '—')}</td>
+        <td class="${r.rfb.total ? '' : 'zero'}">${fmtMoeda(r.rfb.total||0)}</td>
+        <td class="${r.pgfn.total ? '' : 'zero'}">${fmtMoeda(r.pgfn.total||0)}</td>
+        <td class="${r.parc.itens.length ? '' : 'zero'}">${r.parc.itens.length}</td>
+        <td class="${r.proc.itens.length ? '' : 'zero'}">${r.proc.itens.length}</td>
+        <td class="${r.decl.itens.length ? '' : 'zero'}">${r.decl.itens.length}</td>
+        <td><span class="pill" style="background:${risco.color}22;color:${risco.color}">${risco.label}</span></td>
+      </tr>`;
+  });
+
+  root.innerHTML = `
+    <div class="overview-table anim-aparecer">
+      <table>
+        <thead><tr>
+          <th>Empresa</th><th>CNPJ</th><th>Débitos RFB</th><th>Débitos PGFN</th>
+          <th>Parcelamentos</th><th>Processos</th><th>Declarações</th><th>Situação</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  root.querySelectorAll('tr[data-chave]').forEach(tr => {
+    tr.addEventListener('click', () => selecionarEmpresa(tr.dataset.chave));
+  });
+}
+
+/* ================= RENDER: DETALHE DE EMPRESA ================= */
+function selecionarEmpresa(chave) {
+  empresaAtiva = chave;
+  marcarAtivaNaSidebar(); // antes redesenhava a lista inteira a cada clique
+  renderDetalheEmpresa(chave);
+  document.documentElement.classList.remove('sidebar-mobile-aberta');
+  window.scrollTo({ top: 0 });
+}
+
+function renderDetalheEmpresa(chave) {
+  const emp = empresasMap[chave];
+  const r = analisarEmpresa(chave);
+  const risco = nivelRisco(r);
+
+  document.getElementById('page-title').textContent = emp.nome;
+  document.getElementById('page-sub').textContent = `${r.qtdPendencias} pendência(s) encontrada(s) em ${emp.arquivos.length} arquivo(s).`;
+  document.getElementById('search-box').classList.remove('oculto');
+  document.getElementById('search-input').value = '';
+  filtroCard = null;
+
+  const root = document.getElementById('content-root');
+  root.innerHTML = `
+    <div class="sf-cabecalho">
+      <div>
+        <h2>${escapeHtml(emp.nome)}</h2>
+        <div class="cnpj-line mono">CNPJ: ${escapeHtml(emp.cnpj || 'não identificado')} · ${emp.arquivos.length} arquivo(s): ${escapeHtml(emp.arquivos.join(', '))}</div>
+      </div>
+      <div class="risk-gauge">
+        <div class="risk-label" style="text-align:right;">Nível de pendência<strong style="color:${risco.color}">${risco.label}</strong></div>
+        <div class="donut" style="background:conic-gradient(${risco.color} ${risco.pct}%, #e7e9f2 0)"><span>${r.qtdPendencias}</span></div>
+      </div>
+    </div>
+
+    <div class="cards-grid" id="cards-grid"></div>
+    <div id="sections-root"></div>
+
+    <div class="actions-row">
+      <button class="btn-secundario" id="btn-raw">${icone('olho')}Ver texto extraído (conferência manual)</button>
+      <button class="btn-secundario" id="btn-print">${icone('imprimir')}Exportar / Imprimir</button>
+    </div>
+    <div class="raw-panel" id="raw-panel"></div>
+  `;
+
+  renderStatCards(r);
+  renderSecoes(r);
+  aplicarFiltros();
+
+  document.getElementById('btn-raw').addEventListener('click', () => {
+    const panel = document.getElementById('raw-panel');
+    panel.classList.toggle('show');
+    if (panel.classList.contains('show')) panel.textContent = r.fullText;
+  });
+  document.getElementById('btn-print').addEventListener('click', () => window.print());
+}
+document.getElementById('search-input').addEventListener('input', atrasar(() => aplicarFiltros(), 120));
+
+let filtroCard = null; // {cat, tipo, label, color} | null
+
+function renderStatCards(r) {
+  const grid = document.getElementById('cards-grid');
+  const cards = [
+    {label:'Simples Nacional', value: fmtMoeda(r.rfb.totalSimples||0), color:'var(--rfb)', cat:'rfb', tipo:'simples'},
+    {label:'Previdenciário (RFB)', value: fmtMoeda(r.rfb.totalPrev||0), color:'#1d4ed8', cat:'rfb', tipo:'prev'},
+    {label:'Multas MAED', value: fmtMoeda(r.rfb.totalMaed||0), color:'#b45309', cat:'rfb', tipo:'maed'},
+    {label:'PGFN — Dívida Ativa', value: fmtMoeda(r.pgfn.total||0), count:`${r.pgfn.itens.length} inscrição(ões)`, color:'var(--pgfn)', cat:'pgfn'},
+    {label:'Parcelamentos', value: r.parc.itens.length, count: r.parc.total ? fmtMoeda(r.parc.total) : null, color:'var(--parc)', cat:'parc'},
+    {label:'Processos', value: r.proc.itens.length, color:'var(--proc)', cat:'proc'},
+    {label:'Declarações pendentes', value: r.decl.itens.length, color:'var(--decl)', cat:'decl'},
+  ];
+  if (r.rfb.totalOutros) {
+    cards.splice(3, 0, {label:'Outros tributos (RFB)', value: fmtMoeda(r.rfb.totalOutros), color:'#0891b2', cat:'rfb', tipo:'outros'});
+  }
+  grid.innerHTML = cards.map((c, i) => `
+    <div class="stat-card" data-idx="${i}" style="--cat-color:${c.color}" title="Clique para filtrar por esta categoria" role="button" tabindex="0">
+      <div class="label">${c.label}</div>
+      <div class="value${(c.value === 0 || c.value === fmtMoeda(0)) ? ' zero' : ''}">${c.value}</div>
+      ${c.count ? `<div class="count">${c.count}</div>` : ''}
+    </div>
+  `).join('');
+
+  grid.querySelectorAll('.stat-card').forEach((el, i) => {
+    el.addEventListener('click', () => toggleFiltroCard(cards[i]));
+  });
+}
+
+function toggleFiltroCard(c) {
+  const mesmo = filtroCard && filtroCard.cat === c.cat && filtroCard.tipo === c.tipo;
+  filtroCard = mesmo ? null : {cat: c.cat, tipo: c.tipo, label: c.label, color: c.color};
+  aplicarFiltros();
+}
+
+function limparFiltroCard() {
+  filtroCard = null;
+  aplicarFiltros();
+}
+
+function renderSecoes(r) {
+  const root = document.getElementById('sections-root');
+  const secoes = [
+    {cat: CATS[0], dados: r.rfb.itens, tipo:'rfb'},
+    {cat: CATS[1], dados: r.pgfn.itens, tipo:'pgfn'},
+    {cat: CATS[2], dados: r.parc.itens, tipo:'parc'},
+    {cat: CATS[3], dados: r.proc.itens, tipo:'proc'},
+    {cat: CATS[4], dados: r.decl.itens, tipo:'decl'},
+    {cat: CATS[5], dados: r.outras.itens, tipo:'outras'},
+  ];
+
+  root.innerHTML = secoes.map(({cat, dados}) => {
+    const itensHtml = dados.length ? dados.map(item => `
+      <div class="item-row" data-cat="${cat.id}"${item.tipo ? ` data-tipo="${item.tipo}"` : ''}>
+        <div class="item-main">
+          <div class="item-title">${escapeHtml(item.titulo)}</div>
+          ${item.sub ? `<div class="item-sub">${escapeHtml(item.sub)}</div>` : ''}
+          ${item.contexto ? `<div class="item-context">${escapeHtml(item.contexto)}</div>` : ''}
+        </div>
+        <div class="item-value">
+          ${item.valor ? `<div class="valor">${fmtMoeda(item.valor)}</div>` : ''}
+          ${item.status ? `<span class="status-tag ${item.status.tag}">${item.status.label}</span>` : ''}
+        </div>
+      </div>
+    `).join('') : `<div class="empty-section">${icone('ok')}Nenhum registro encontrado nesta categoria.</div>`;
+
+    return `
+      <div class="section-card" data-cat="${cat.id}" style="--cat-color:${cat.color};--cat-bg:${cat.bg}">
+        <div class="section-head" role="button" tabindex="0" onclick="this.parentElement.classList.toggle('collapsed')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.parentElement.classList.toggle('collapsed')}">
+          <div class="section-head-left">
+            <h3>${cat.label}</h3>
+            <span class="section-count">${dados.length}</span>
+          </div>
+          ${icone('setaBaixo')}
+        </div>
+        <div class="section-body">${itensHtml}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+/* ================= BUSCA / FILTRO ================= */
+function aplicarFiltros() {
+  const termo = (document.getElementById('search-input')?.value || '').trim().toLowerCase();
+
+  // linhas: visíveis se baterem com o termo de busca E com o card ativo (se houver)
+  document.querySelectorAll('.item-row').forEach(row => {
+    const passaBusca = !termo || row.textContent.toLowerCase().includes(termo);
+    const passaCard = !filtroCard || (
+      row.dataset.cat === filtroCard.cat &&
+      (!filtroCard.tipo || row.dataset.tipo === filtroCard.tipo)
+    );
+    row.style.display = (passaBusca && passaCard) ? '' : 'none';
+  });
+
+  // seções: mostra contagem visível; se filtro de card ativo, esconde seções de outra categoria
+  // e garante que a seção relevante fique expandida.
+  document.querySelectorAll('.section-card').forEach(card => {
+    const cat = card.dataset.cat;
+    const relevante = !filtroCard || cat === filtroCard.cat;
+    card.style.display = relevante ? '' : 'none';
+    if (relevante && (termo || filtroCard)) card.classList.remove('collapsed');
+
+    const total = card.querySelectorAll('.item-row').length;
+    const visiveis = [...card.querySelectorAll('.item-row')].filter(r => r.style.display !== 'none').length;
+    const countEl = card.querySelector('.section-count');
+    countEl.textContent = (termo || filtroCard) ? visiveis : total;
+  });
+
+  // realce visual dos cards de resumo
+  document.querySelectorAll('.stat-card').forEach(el => el.classList.remove('active', 'dimmed'));
+  if (filtroCard) {
+    document.querySelectorAll('.stat-card').forEach(el => {
+      const label = el.querySelector('.label').textContent;
+      if (label === filtroCard.label) el.classList.add('active');
+      else el.classList.add('dimmed');
+    });
+  }
+
+  atualizarChipFiltro();
+}
+
+function atualizarChipFiltro() {
+  const chip = document.getElementById('filter-chip');
+  if (filtroCard) {
+    chip.classList.add('mostrar');
+    chip.style.background = filtroCard.color;
+    chip.innerHTML = `Filtrando: ${escapeHtml(filtroCard.label)} <button aria-label="Limpar filtro">${icone('x')}</button>`;
+    chip.querySelector('button').addEventListener('click', limparFiltroCard);
+  } else {
+    chip.classList.remove('mostrar');
+  }
+}
+
+/* init */
+function mostrarCarregandoInicial() {
+  document.getElementById('page-title').textContent = 'Carregando...';
+  document.getElementById('page-sub').textContent = 'Buscando os relatórios já baixados no IntegraContador...';
+  document.getElementById('search-box').classList.add('oculto');
+  document.getElementById('content-root').innerHTML = `
+    <div class="placeholder">
+      ${icone('carregando', 'girando')}
+      <h3>Carregando relatórios...</h3>
+      <p>Isso leva só alguns segundos.</p>
+    </div>`;
+}
+
+async function carregarTudoInicial() {
+  // 1) Mostra na hora o que já está guardado no navegador, sem esperar rede nenhuma.
+  const tinhaCache = restaurarDoCacheSitfis();
+  if (tinhaCache) {
+    renderSidebar();
+    if (!empresaAtiva) renderOverview();
+  } else {
+    mostrarCarregandoInicial();
+  }
+
+  // 2) Em segundo plano, confere no servidor só o que mudou (baixa e reprocessa só isso).
+  const mudou = await atualizarRelatoriosIntegraContador();
+  if (mudou || !tinhaCache) {
+    renderSidebar();
+    if (!empresaAtiva) renderOverview();
+  }
+}
+carregarTudoInicial();
+
+// Confere sozinho de tempos em tempos se apareceu relatório novo/atualizado no
+// IntegraContador — mas como agora só baixa/reprocessa quem realmente mudou (compara pela
+// data de atualização), isso é bem leve e não fica reconsultando o Cloudflare à toa.
+setInterval(async () => {
+  const mudou = await atualizarRelatoriosIntegraContador();
+  if (mudou) {
+    renderSidebar();
+    if (!empresaAtiva) renderOverview();
+  }
+}, 300000);
+</script>
+</body>
+</html>

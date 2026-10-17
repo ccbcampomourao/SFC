@@ -100,11 +100,12 @@ sfc-web/
     ├── empresas.html      # página de grupos/empresas + tarefas do dia
     ├── parcelamentos.html # página de parcelamentos
     ├── situacao-fiscal.html # importador de relatórios ECAC (só leitura local)
-    ├── common.js          # utilitários e ações compartilhadas (salvar, período, backup, usuários)
+    ├── icones.js          # ícones SVG do sistema + estado do menu lateral (carrega antes de tudo)
+    ├── common.js          # utilitários e ações compartilhadas (salvar, período, backup, usuários, diálogos)
     ├── login.js            # lógica exclusiva da tela de login
     ├── empresas.js          # lógica exclusiva da página de empresas
     ├── parcelamentos.js      # lógica exclusiva da página de parcelamentos
-    └── style.css              # visual (paleta índigo/violeta)
+    └── style.css              # visual (cores da logo: navy + azul)
 ```
 
 ## IntegraContador (SERPRO) — Situação Fiscal e CND
@@ -138,10 +139,36 @@ cole o ID ali no lugar, salve — o deploy automático cuida do resto.
 | `SERPRO_CONTRATANTE_CNPJ` | CNPJ do seu escritório contábil (o mesmo do certificado) |
 | `CND_CONSUMER_KEY` / `CND_CONSUMER_SECRET` | Credenciais do seu contrato do produto "Consulta CND" (separado do Integra Contador — não precisa de certificado) |
 
+| `SERPRO_SITFIS_VERSAO` *(opcional)* | Versão do serviço de Situação Fiscal. Padrão `2.0`; só mude (ex.: `1.0`) se o erro disser que a versão é inválida |
+
 A página `/integracontador.html` mostra em tempo real o que já está configurado (✅/⚠️) pra cada parte.
+
+**3. Procuração eletrônica de cada empresa.** Para baixar a Situação Fiscal de um cliente, ele precisa ter
+cadastrado no e-CAC uma **procuração eletrônica** para o CNPJ do seu escritório, incluindo o serviço de
+Situação Fiscal. Sem isso o SERPRO recusa só aquela empresa (as outras funcionam). Atenção: o SERPRO
+cobra também as chamadas recusadas, então não fique repetindo uma empresa que está dando erro.
+
+**Quando der erro:** a linha da empresa mostra a mensagem exata do SERPRO, uma dica 💡 do que fazer e o
+botão **📋 Copiar detalhes**. Se o erro for de configuração (certificado, credenciais, CNPJ do contratante),
+o lote para na primeira empresa para não gastar chamadas à toa.
 
 ## Próxima fase (quando quiser)
 
 - Importação de planilha Excel para cadastro em massa
 - Importação/leitura de PDF fiscal (parser de "Operações" + gerador de PDF resumo)
 - Regras finas de permissão entre funcionários
+
+## Atalhos e recursos de uso
+
+- **Ctrl+S** salva de qualquer página (Empresas/Parcelamentos). Uma bolinha laranja no botão **Salvar** indica alterações ainda não salvas, e o navegador avisa se você tentar sair sem salvar.
+- **/** coloca o cursor na busca.
+- Em **Documentos** de cada empresa/parcelamento dá para **arrastar arquivos** direto para a área tracejada (vários de uma vez).
+- Grupos podem ser **renomeados** e **excluídos** pelos botões dentro do grupo aberto.
+- No IntegraContador, lotes com mais de 10 consultas pedem confirmação antes (o SERPRO cobra por consulta).
+
+## Consulta de exclusão do Simples Nacional
+
+- **Dentro de cada empresa:** botão **Consultar exclusão** (ao lado de "Consultar Simples Nacional"). Mostra se e quando a empresa foi excluída do Simples, se voltou a optar, e se foi desenquadrada do MEI. O resultado fica registrado nos comentários.
+- **Todas de uma vez:** botão **Verificar exclusões** no painel "Grupos e empresas". Consulta uma empresa por vez, mostra as excluídas primeiro e (opcionalmente) registra nos comentários. Clicar numa linha abre a empresa.
+- Fonte: base pública da Receita (BrasilAPI → Minha Receita → CNPJ.ws), gratuita, sem certificado, com cache de 24h.
+- **Limite importante:** essa base é atualizada uma vez por mês e só mostra a exclusão depois que ela entra em vigor. Exclusões por débito notificadas no fim do ano (Termo de Exclusão no DTE-SN, com efeito em 1º de janeiro) só aparecem depois dessa data — para vê-las antes, é preciso olhar a caixa postal do e-CAC.

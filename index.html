@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FZCONT · Entrar</title>
+<link rel="icon" href="/img/logo-mark.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <script src="/icones.js"></script>
+
+  <div id="tela-login" class="tela-login-split">
+    <aside class="painel-hero">
+      <div class="hero-topo"></div>
+      <div class="hero-meio">
+        <img class="hero-logo" src="/img/logo-full.png" alt="FZCONT" />
+        <p class="hero-tagline">Controle fiscal e contábil de cada empresa, período a período.</p>
+        <ul class="hero-lista">
+          <li><svg class="ico" aria-hidden="true"><use href="#i-empresas"/></svg>Status, documentos e acessos de todas as empresas</li>
+          <li><svg class="ico" aria-hidden="true"><use href="#i-parcelamentos"/></svg>Parcelamentos na Receita e na PGFN</li>
+          <li><svg class="ico" aria-hidden="true"><use href="#i-governo"/></svg>Situação Fiscal e CND direto do SERPRO</li>
+        </ul>
+      </div>
+      <div class="hero-rodape"><svg class="ico ico-sm" aria-hidden="true"><use href="#i-cadeado"/></svg>Acesso restrito à equipe</div>
+    </aside>
+
+    <main class="painel-form">
+      <div class="card-login">
+        <h2 id="login-titulo">Bem-vindo de volta</h2>
+        <p id="login-subtitulo" class="login-subtitulo">Entre com seu usuário e senha</p>
+
+        <div class="tabs-login" role="tablist">
+          <button type="button" class="tab-login-btn ativa" data-modo="login" role="tab">Entrar</button>
+          <button type="button" class="tab-login-btn" data-modo="cadastro" role="tab">Criar conta</button>
+        </div>
+
+        <form id="form-login" class="form-login" data-modo="login">
+          <label id="campo-nome-setup" class="oculto">Seu nome
+            <span class="campo-icone"><svg class="ico" aria-hidden="true"><use href="#i-usuario"/></svg><input type="text" id="login-nome" autocomplete="name" /></span>
+          </label>
+          <label>Usuário
+            <span class="campo-icone"><svg class="ico" aria-hidden="true"><use href="#i-usuario"/></svg><input type="text" id="login-usuario" autocomplete="username" autocapitalize="none" spellcheck="false" required /></span>
+          </label>
+          <label id="campo-email-setup" class="oculto">Seu e-mail
+            <span class="campo-icone"><svg class="ico" aria-hidden="true"><use href="#i-email"/></svg><input type="email" id="login-email" autocomplete="email" /></span>
+          </label>
+          <label>Senha
+            <span class="campo-icone"><svg class="ico" aria-hidden="true"><use href="#i-senha"/></svg><input type="password" id="login-senha" autocomplete="current-password" required /></span>
+          </label>
+          <div id="login-erro" class="mensagem-erro oculto"></div>
+          <button type="submit" id="btn-login-submit" class="btn-primario"><span>Entrar</span></button>
+        </form>
+      </div>
+    </main>
+  </div>
+
+  <script src="/common.js"></script>
+  <script src="/login.js"></script>
+</body>
+</html>
