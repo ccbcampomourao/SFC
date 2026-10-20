@@ -635,6 +635,41 @@ async function consultarCnpjPublico(env, cnpj) {
 // Handler principal
 // ---------------------------------------------------------------------------
 
+// Página pública que o cliente abre pelo link do WhatsApp (sem login).
+function paginaDownload(registro, token) {
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const tamanho = (b) => (!b ? "" : b > 1048576 ? (b / 1048576).toFixed(1).replace(".", ",") + " MB" : Math.max(1, Math.round(b / 1024)) + " KB");
+  const dataBR = (iso) => { try { return new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }); } catch { return ""; } };
+  const icone = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>';
+  const baixar = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>';
+  const corpo = registro
+    ? `<h1>Seus documentos</h1>
+       ${registro.titulo ? `<p class="sub">${esc(registro.titulo)}</p>` : ""}
+       <div class="lista">${registro.arquivos.map((a, i) => `
+         <a class="arq" href="/d/${token}/${i}" download>
+           <span class="ic">${icone}</span>
+           <span class="nome"><b>${esc(a.nome)}</b><small>${tamanho(a.tamanho)}</small></span>
+           <span class="bt">${baixar}<span>Baixar</span></span>
+         </a>`).join("")}</div>
+       <p class="val">Link disponível até ${esc(dataBR(registro.expiraEm))}.</p>`
+    : `<h1>Link expirado</h1><p class="sub">Este link não está mais disponível. Peça um novo ao escritório.</p>`;
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow"><title>FZ CONT · Documentos</title><link rel="icon" href="/img/logo-mark.png">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#F4F6FA;color:#232A4A;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px}
+.c{width:100%;max-width:520px;background:#fff;border:1.3px solid #E4E7F0;border-radius:18px;padding:26px 22px;box-shadow:0 10px 30px rgba(23,27,51,.08)}
+.topo{display:flex;align-items:center;gap:10px;margin-bottom:20px;font-weight:800;letter-spacing:.02em}.topo img{width:34px;height:34px}
+h1{font-size:21px;margin:0 0 4px}.sub{color:#5B6285;margin:0 0 18px;font-size:14px;line-height:1.5}
+.lista{display:flex;flex-direction:column;gap:8px}
+.arq{display:flex;align-items:center;gap:12px;padding:12px;border:1.3px solid #E4E7F0;border-radius:12px;text-decoration:none;color:inherit;transition:border-color .15s}
+.arq:hover{border-color:#0B84C0}.ic{width:40px;height:40px;border-radius:10px;background:#FDEDED;color:#DC2626;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.nome{flex:1;min-width:0}.nome b{display:block;font-size:14px;overflow-wrap:anywhere}.nome small{color:#8A90AE;font-size:12px}
+.bt{display:flex;align-items:center;gap:6px;background:#0B84C0;color:#fff;font-weight:700;font-size:13px;padding:8px 12px;border-radius:9px;flex-shrink:0}
+.val{color:#8A90AE;font-size:12.5px;margin:18px 0 0;text-align:center}
+@media(max-width:420px){.bt span{display:none}}
+</style></head><body><main class="c"><div class="topo"><img src="/img/logo-mark.png" alt="">FZ CONT</div>${corpo}</main></body></html>`;
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -773,6 +808,37 @@ export default {
         return new Response(paginaHtml("E-mail confirmado! ✓", "Sua conta está liberada. Já pode fazer login normalmente.", true), {
           headers: { "Content-Type": "text/html; charset=utf-8" },
         });
+      }
+
+      // ---------- LINK PÚBLICO DE DOWNLOAD (enviado ao cliente pelo WhatsApp) ----------
+      // Não exige login: quem tem o link baixa SÓ os arquivos daquele envio, até a data de validade.
+      if (pathname.startsWith("/d/") && request.method === "GET") {
+        const partes = pathname.slice(3).split("/");
+        const token = partes[0];
+        const registro = /^[a-f0-9]{40,64}$/.test(token) ? await env.SFC_KV.get(`link:${token}`, "json") : null;
+        const cabecalhosSeguros = {
+          "Cache-Control": "no-store",
+          "X-Robots-Tag": "noindex, nofollow",
+          "Referrer-Policy": "no-referrer",
+          "X-Content-Type-Options": "nosniff",
+        };
+        if (!registro || (registro.expiraEm && Date.parse(registro.expiraEm) < Date.now())) {
+          return new Response(paginaDownload(null), { status: 404, headers: { ...cabecalhosSeguros, "Content-Type": "text/html; charset=utf-8" } });
+        }
+        if (partes.length === 1 || partes[1] === "") {
+          return new Response(paginaDownload(registro, token), { headers: { ...cabecalhosSeguros, "Content-Type": "text/html; charset=utf-8" } });
+        }
+        const indice = Number(partes[1]);
+        const arquivo = Number.isInteger(indice) ? registro.arquivos[indice] : null;
+        if (!arquivo) return new Response("Arquivo não encontrado.", { status: 404, headers: cabecalhosSeguros });
+        const obj = await env.ANEXOS_R2.get(`anexos/${arquivo.id}`);
+        if (!obj) return new Response("Esse arquivo não está mais disponível.", { status: 404, headers: cabecalhosSeguros });
+        const headers = new Headers(cabecalhosSeguros);
+        obj.writeHttpMetadata(headers);
+        const nome = arquivo.nome || obj.customMetadata?.nome || "arquivo";
+        const ascii = nome.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w.\- ]+/g, "_");
+        headers.set("Content-Disposition", `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(nome)}`);
+        return new Response(obj.body, { headers });
       }
 
       // A partir daqui, tudo exige login
@@ -1002,6 +1068,7 @@ export default {
             senhaRegularize: e.senhaRegularize,
             inscricaoEstadual: e.inscricaoEstadual,
             email: e.email,
+            whatsapp: e.whatsapp || "",
             comentarios: [],
             anexos: [],
           })),
@@ -1119,6 +1186,40 @@ export default {
         } catch (err) {
           return json({ erro: "Falha ao enviar e-mail: " + err.message }, 500);
         }
+      }
+
+      // ---------- CRIAR LINK DE DOWNLOAD PARA O CLIENTE (WhatsApp) ----------
+      if (pathname === "/api/compartilhar" && request.method === "POST") {
+        const { anexoIds, titulo, dias, ate } = await request.json().catch(() => ({}));
+        const ids = Array.isArray(anexoIds) ? [...new Set(anexoIds.filter((x) => typeof x === "string" && /^[\w-]{8,64}$/.test(x)))] : [];
+        if (!ids.length) return json({ erro: "Nenhum arquivo para compartilhar." }, 400);
+        if (ids.length > 50) return json({ erro: "Máximo de 50 arquivos por link." }, 400);
+        // Validade: até o FIM do dia escolhido (23:59:59, horário de Brasília). "dias" fica por compatibilidade.
+        let expiraMs;
+        if (typeof ate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(ate)) {
+          expiraMs = Date.parse(`${ate}T23:59:59-03:00`);
+          if (!Number.isFinite(expiraMs)) return json({ erro: "Data de validade inválida." }, 400);
+          if (expiraMs <= Date.now()) return json({ erro: "A data de validade precisa ser hoje ou depois." }, 400);
+          if (expiraMs - Date.now() > 366 * 86400000) return json({ erro: "A validade máxima é de 1 ano." }, 400);
+        } else {
+          expiraMs = Date.now() + Math.min(Math.max(Number(dias) || 7, 1), 366) * 86400000;
+        }
+        const ttlSegundos = Math.max(60, Math.ceil((expiraMs - Date.now()) / 1000));
+        const arquivos = [];
+        for (const id of ids) {
+          const head = await env.ANEXOS_R2.head(`anexos/${id}`);
+          if (head) arquivos.push({ id, nome: head.customMetadata?.nome || id, tamanho: head.size || 0 });
+        }
+        if (!arquivos.length) return json({ erro: "Os arquivos não foram encontrados no armazenamento (talvez tenham sido apagados)." }, 404);
+        const bytes = crypto.getRandomValues(new Uint8Array(24));
+        const token = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join(""); // 48 caracteres, impossível de adivinhar
+        const expiraEm = new Date(expiraMs).toISOString();
+        await env.SFC_KV.put(
+          `link:${token}`,
+          JSON.stringify({ titulo: String(titulo || "").slice(0, 200), arquivos, criadoEm: new Date().toISOString(), criadoPor: username, expiraEm }),
+          { expirationTtl: ttlSegundos }
+        );
+        return json({ url: `${url.origin}/d/${token}`, expiraEm, arquivos: arquivos.length });
       }
 
       // ---------- ANEXOS (upload/download/exclusão reais, guardados no bucket R2) ----------

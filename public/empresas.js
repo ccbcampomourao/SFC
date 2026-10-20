@@ -202,6 +202,7 @@ function abrirFormNovaEmpresa(grupo) {
     <form id="form-nova-empresa">
       <div class="campo-form"><label>CNPJ</label><input id="ne-cnpj" inputmode="numeric" placeholder="00.000.000/0000-00"></div>
       <div class="campo-form"><label>Nome</label><input id="ne-nome" placeholder="Razão social ou apelido"></div>
+      <div class="campo-form"><label>WhatsApp do cliente (opcional)</label><input id="ne-whatsapp" type="tel" placeholder="(44) 99999-9999"></div>
       <div id="ne-erro" class="mensagem-erro oculto"></div>
       <div class="modal-rodape">
         <button type="button" class="btn-ghost" id="ne-cancelar">Cancelar</button>
@@ -221,6 +222,7 @@ function abrirFormNovaEmpresa(grupo) {
       nome: nome || "Empresa sem nome",
       status: "SEM", nfs: false, nfe: false, nfc: false, fechado: false,
       cnpj, cpf: "", senhaPrefeitura: "", senhaRegularize: "", inscricaoEstadual: "", email: "",
+      whatsapp: $("#ne-whatsapp").value.trim() ? formatarTelefone($("#ne-whatsapp").value.trim()) : "",
       comentarios: [], anexos: [],
     };
     grupo.empresas.push(empresa);
@@ -260,6 +262,7 @@ function htmlCabecalhoEmpresa(empresa) {
       ${botaoCopiaSe(empresa.senhaPrefeitura, "Prefeitura")}
       ${botaoCopiaSe(empresa.senhaRegularize, "Regularize")}
       ${empresa.email ? `<button type="button" class="chip-copia chip-email" data-email title="Enviar documentos para ${escaparHtml(empresa.email)}">${icone("email")}Enviar e-mail</button>` : ""}
+      ${empresa.whatsapp ? `<button type="button" class="chip-copia chip-whatsapp" data-whatsapp title="Enviar documentos pelo WhatsApp para ${escaparHtml(empresa.whatsapp)}">${icone("conversa")}WhatsApp</button>` : ""}
     </div>
     <button type="button" class="btn-icone" data-excluir title="Excluir empresa">${icone("lixeira")}</button>`;
 }
@@ -284,6 +287,7 @@ function criarEmpresaCard(empresa) {
       return copiar(copia.dataset.copiar, mapa[copia.dataset.copiar]);
     }
     if (e.target.closest("[data-email]")) return enviarEmailEmpresaOriginal(empresa, e.target.closest("[data-email]"));
+    if (e.target.closest("[data-whatsapp]")) return enviarWhatsAppEmpresa(empresa);
     if (e.target.closest("[data-excluir]")) return excluirEmpresa(empresa);
     alternarEmpresa(empresa);
   });
@@ -345,6 +349,7 @@ async function excluirEmpresa(empresa) {
 
 const CAMPOS_EMPRESA = [
   ["nome", "Nome"], ["cnpj", "CNPJ"], ["cpf", "CPF"], ["email", "E-mail", "email"],
+  ["whatsapp", "WhatsApp do cliente", "tel", "(44) 99999-9999"],
   ["senhaPrefeitura", "Senha Prefeitura"], ["senhaRegularize", "Senha Regularize"], ["inscricaoEstadual", "Inscrição Estadual"],
 ];
 
@@ -376,14 +381,19 @@ function criarCorpoEmpresa(empresa) {
   // Dados de acesso
   const campos = document.createElement("div");
   campos.className = "grade-campos";
-  campos.innerHTML = CAMPOS_EMPRESA.map(([campo, rotulo, tipo]) =>
-    `<div class="campo-form"><label>${rotulo}</label><input data-campo="${campo}" ${tipo ? `type="${tipo}"` : ""} value="${escaparHtml(empresa[campo] || "")}" autocomplete="off" spellcheck="false"></div>`
+  campos.innerHTML = CAMPOS_EMPRESA.map(([campo, rotulo, tipo, placeholder]) =>
+    `<div class="campo-form"><label>${rotulo}</label><input data-campo="${campo}" ${tipo ? `type="${tipo}"` : ""} ${placeholder ? `placeholder="${placeholder}"` : ""} value="${escaparHtml(empresa[campo] || "")}" autocomplete="off" spellcheck="false"></div>`
   ).join("");
   campos.addEventListener("change", (e) => {
     const inp = e.target.closest("[data-campo]");
     if (!inp) return;
-    const valor = inp.value.trim();
+    let valor = inp.value.trim();
     if (inp.dataset.campo === "nome" && !valor) { inp.value = empresa.nome; return; }
+    if (inp.dataset.campo === "whatsapp" && valor) {
+      valor = formatarTelefone(valor);
+      inp.value = valor;
+      if (!normalizarWhatsapp(valor)) notificar("Esse WhatsApp não parece um celular válido (use DDD + número).", "aviso");
+    }
     empresa[inp.dataset.campo] = valor;
     atualizarEmpresa(empresa); // só o cabeçalho — o foco continua no próximo campo
     marcarAlterado();
@@ -933,6 +943,32 @@ function renderizarChecklist() {
     return;
   }
   cont.replaceChildren(...ESTADO.checklist.map(criarTarefaEl));
+}
+
+// ---------------------------------------------------------------------------
+// WHATSAPP — mesma mensagem do e-mail, com link para baixar os documentos
+// ---------------------------------------------------------------------------
+function enviarWhatsAppEmpresa(empresa) {
+  if (!empresa.whatsapp) return notificar("Cadastre o WhatsApp do cliente nos dados da empresa.", "aviso");
+  const competencia = competenciaMesAnterior();
+  abrirEnvioWhatsApp({
+    destino: empresa.nome,
+    telefone: empresa.whatsapp,
+    anexos: empresa.anexos || [],
+    tituloLink: `${empresa.nome} — documentos do setor Fiscal, competência ${competencia}`,
+    montarMensagem: (link, validade) =>
+      `Olá, tudo bem?\n\nSegue os documentos do setor Fiscal referente à competência ${competencia}.\n\n` +
+      `Para baixar os arquivos, acesse:\n${link}\n(link disponível até ${validade})\n\nAtenciosamente,\nFZ CONT`,
+    aoEnviar: (telefone) => {
+      empresa.status = "VERDE";
+      empresa.comentarios = empresa.comentarios || [];
+      empresa.comentarios.push(`Documentos enviados pelo WhatsApp para ${telefone} (competência ${competencia})\n${agora()}`);
+      mudouStatus(empresa);
+      const wrap = EL_EMPRESA.get(empresa.id);
+      if (wrap && wrap.classList.contains("aberto")) { wrap.querySelector(".empresa-corpo")?.remove(); wrap.appendChild(criarCorpoEmpresa(empresa)); }
+      notificar(`Envio registrado para ${empresa.nome}`, "ok");
+    },
+  });
 }
 
 $("#btn-nova-tarefa").addEventListener("click", async () => {

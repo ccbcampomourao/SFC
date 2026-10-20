@@ -792,3 +792,133 @@ function htmlKpi({ nome, total, verde, atencao, vermelho, destaque = false, icon
       </div>
     </div>`;
 }
+
+// ============================================================================
+// WHATSAPP — abre a conversa já com a mensagem pronta e um link de download
+// das guias (link público com validade, gerado pelo Worker). Gratuito e oficial:
+// usa os links "clique para conversar" do próprio WhatsApp, sem API.
+// ============================================================================
+function normalizarWhatsapp(valor) {
+  let d = limparDigitos(valor).replace(/^0+/, "");
+  if (d.length === 10 || d.length === 11) d = "55" + d;
+  return /^55\d{10,11}$/.test(d) ? d : null;
+}
+
+function formatarTelefone(valor) {
+  let d = limparDigitos(valor);
+  if (d.startsWith("55") && (d.length === 12 || d.length === 13)) d = d.slice(2);
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return valor || "";
+}
+
+function competenciaMesAnterior() {
+  const hoje = new Date();
+  const m = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+  return `${String(m.getMonth() + 1).padStart(2, "0")}/${m.getFullYear()}`;
+}
+
+function _lerPref(chave, padrao) { try { return localStorage.getItem(chave) || padrao; } catch { return padrao; } }
+function _gravarPref(chave, valor) { try { localStorage.setItem(chave, valor); } catch {} }
+
+// opcoes: { destino, telefone, anexos, tituloLink, montarMensagem(link, validadeTexto), aoEnviar() }
+function abrirEnvioWhatsApp({ destino, telefone, anexos, tituloLink, montarMensagem, aoEnviar }) {
+  const numero = normalizarWhatsapp(telefone);
+  if (!numero) {
+    avisar(`O WhatsApp cadastrado (${telefone || "vazio"}) não parece um celular válido. Use DDD + número, ex.: (44) 99999-9999.`, { titulo: "Número inválido", tipo: "aviso" });
+    return;
+  }
+  if (!anexos || !anexos.length) {
+    notificar("Não há documentos anexados para enviar.", "aviso");
+    return;
+  }
+  // Data padrão: hoje + último intervalo usado (7 dias na primeira vez)
+  const hojeLocal = new Date();
+  const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const somarDias = (n) => { const d = new Date(hojeLocal); d.setDate(d.getDate() + n); return d; };
+  const diasPadrao = Math.min(Math.max(Number(_lerPref("fzcont_wa_dias", "7")) || 7, 0), 365);
+  const brDeIso = (iso) => iso.split("-").reverse().join("/");
+  const modoPadrao = _lerPref("fzcont_wa_modo", "web");
+  abrirModal(`
+    <h2>Enviar por WhatsApp</h2>
+    <p class="modal-sub">Para <b>${escaparHtml(destino)}</b> · ${escaparHtml(formatarTelefone(numero))}</p>
+    <div class="wa-arquivos">
+      <div class="bloco-titulo">${icone("clipe", "ico-sm")}Arquivos no link <span class="contador-pilula">${anexos.length}</span></div>
+      ${anexos.map((a) => `<div class="wa-arquivo">${icone("documento", "ico-sm")}<span>${escaparHtml(a.nome)}</span></div>`).join("")}
+    </div>
+    <div class="linha-dois-campos">
+      <div class="campo-form"><label>Arquivos disponíveis até</label>
+        <input type="date" id="wa-ate" value="${isoLocal(somarDias(diasPadrao))}" min="${isoLocal(hojeLocal)}" max="${isoLocal(somarDias(365))}" required>
+      </div>
+      <div class="campo-form"><label>Abrir no</label>
+        <select id="wa-modo">
+          <option value="web"${modoPadrao === "web" ? " selected" : ""}>WhatsApp Web (navegador)</option>
+          <option value="app"${modoPadrao === "app" ? " selected" : ""}>Aplicativo do computador</option>
+        </select>
+      </div>
+    </div>
+    <div class="campo-form"><label>Mensagem <span class="wa-status" id="wa-status">${icone("carregando", "girando ico-sm")}gerando link...</span></label>
+      <textarea id="wa-mensagem" rows="9" spellcheck="true"></textarea>
+    </div>
+    <div class="modal-rodape">
+      <button type="button" class="btn-ghost" id="wa-cancelar">Cancelar</button>
+      <button type="button" class="btn-secundario" id="wa-copiar" disabled>${icone("copiar")}Copiar mensagem</button>
+      <button type="button" class="btn-primario btn-whatsapp" id="wa-abrir" disabled>${icone("conversa")}Abrir no WhatsApp</button>
+    </div>`);
+
+  const txt = $("#wa-mensagem"), status = $("#wa-status"), btnAbrir = $("#wa-abrir"), btnCopiar = $("#wa-copiar");
+  let atual = null; // { url, validadeTexto }
+  let geracao = 0;
+
+  async function gerarLink() {
+    const minha = ++geracao;
+    const ate = $("#wa-ate").value;
+    btnAbrir.disabled = btnCopiar.disabled = true;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ate) || ate < isoLocal(hojeLocal)) {
+      status.innerHTML = `${icone("alerta", "ico-sm")}escolha uma data de hoje em diante`;
+      return;
+    }
+    status.innerHTML = `${icone("carregando", "girando ico-sm")}gerando link...`;
+    try {
+      const r = await api("/api/compartilhar", { method: "POST", body: JSON.stringify({ anexoIds: anexos.map((a) => a.id), titulo: tituloLink, ate }) });
+      if (minha !== geracao || !document.body.contains(txt)) return;
+      const novo = { url: r.url, validadeTexto: brDeIso(ate) };
+      if (!atual || !txt.value.trim()) txt.value = montarMensagem(novo.url, novo.validadeTexto);
+      else txt.value = txt.value.split(atual.url).join(novo.url).split(atual.validadeTexto).join(novo.validadeTexto);
+      atual = novo;
+      status.innerHTML = `${icone("link", "ico-sm")}link válido até ${escaparHtml(novo.validadeTexto)}`;
+      btnAbrir.disabled = btnCopiar.disabled = false;
+      if (r.arquivos < anexos.length) notificar(`${anexos.length - r.arquivos} arquivo(s) não estavam mais no armazenamento e ficaram de fora do link.`, "aviso");
+    } catch (err) {
+      if (minha !== geracao) return;
+      status.innerHTML = `${icone("erro", "ico-sm")}${escaparHtml(err.message)}`;
+    }
+  }
+
+  $("#wa-ate").addEventListener("change", (e) => {
+    const [a, m, d] = e.target.value.split("-").map(Number);
+    if (a) _gravarPref("fzcont_wa_dias", String(Math.round((new Date(a, m - 1, d) - new Date(hojeLocal.getFullYear(), hojeLocal.getMonth(), hojeLocal.getDate())) / 86400000)));
+    gerarLink();
+  });
+  $("#wa-modo").addEventListener("change", (e) => _gravarPref("fzcont_wa_modo", e.target.value));
+  $("#wa-cancelar").addEventListener("click", fecharModal);
+  btnCopiar.addEventListener("click", async () => {
+    const ok = await copiarParaAreaDeTransferencia(txt.value);
+    notificar(ok ? "Mensagem copiada" : "Não consegui copiar", ok ? "ok" : "erro");
+  });
+  btnAbrir.addEventListener("click", async () => {
+    const texto = encodeURIComponent(txt.value);
+    const destinoUrl = $("#wa-modo").value === "app"
+      ? `whatsapp://send?phone=${numero}&text=${texto}`
+      : `https://web.whatsapp.com/send?phone=${numero}&text=${texto}`;
+    // Abre de forma síncrona no clique (senão o navegador bloqueia como pop-up)
+    if ($("#wa-modo").value === "app") window.location.href = destinoUrl;
+    else window.open(destinoUrl, "fzcont_whatsapp");
+    fecharModal();
+    if (aoEnviar) {
+      const marcar = await confirmar("Depois de apertar enviar no WhatsApp, quer registrar o envio?", { titulo: "Mensagem aberta no WhatsApp", textoOk: "Registrar envio" });
+      if (marcar) aoEnviar(formatarTelefone(numero));
+    }
+  });
+  gerarLink();
+}

@@ -172,3 +172,19 @@ o lote para na primeira empresa para não gastar chamadas à toa.
 - **Todas de uma vez:** botão **Verificar exclusões** no painel "Grupos e empresas". Consulta uma empresa por vez, mostra as excluídas primeiro e (opcionalmente) registra nos comentários. Clicar numa linha abre a empresa.
 - Fonte: base pública da Receita (BrasilAPI → Minha Receita → CNPJ.ws), gratuita, sem certificado, com cache de 24h.
 - **Limite importante:** essa base é atualizada uma vez por mês e só mostra a exclusão depois que ela entra em vigor. Exclusões por débito notificadas no fim do ano (Termo de Exclusão no DTE-SN, com efeito em 1º de janeiro) só aparecem depois dessa data — para vê-las antes, é preciso olhar a caixa postal do e-CAC.
+
+## Situação Fiscal — como o relatório é lido
+
+O leitor (`public/sitfis-parser.js`) segue as seções do próprio relatório da Receita:
+- **Pendências** (impedem a certidão): débitos em aberto (agrupados por tributo, com as competências seguidas resumidas), inscrições em dívida ativa em cobrança, parcelamentos com parcelas em atraso, declarações omissas.
+- **Parcelamentos e transações**: um cartão por parcelamento (PARCSN, SIEFPAR, SISPAR…), com as inscrições negociadas dentro da negociação da PGFN da mesma categoria (Simples / Previdenciário / Demais). Quando há mais de uma conta da mesma categoria, o relatório não diz qual inscrição está em qual conta — elas aparecem juntas, com aviso.
+- **A vencer e outras suspensões**: não impedem a certidão e não entram no total em aberto.
+- **Simples Nacional e certidão**: histórico de opção/exclusão (inclusive exclusão agendada) e a última certidão emitida.
+
+## Envio pelo WhatsApp (gratuito, sem API)
+
+- Em cada empresa há o campo **WhatsApp do cliente** (formatado automaticamente). Com ele preenchido, aparece o botão **WhatsApp** no cabeçalho da empresa — e também no parcelamento com o mesmo CNPJ.
+- O botão abre uma janela com a mensagem pronta (editável), cria um **link de download** com os documentos anexados e abre o WhatsApp Web (ou o aplicativo do computador) na conversa do cliente, com tudo preenchido. Basta apertar enviar.
+- O link leva a uma página com a marca FZ CONT onde o cliente baixa os arquivos, sem login. Ele **expira sozinho** no fim do dia que você escolher no calendário (até 1 ano), tem um código impossível de adivinhar, não aparece em buscadores e só dá acesso aos arquivos daquele envio.
+- Depois de enviar, o sistema pergunta se quer registrar o envio: na empresa, marca como OK e anota nos comentários (como o e-mail faz).
+- Não usa API do WhatsApp: são os links oficiais "clique para conversar" — sem custo, sem cadastro e sem risco de bloqueio do número.

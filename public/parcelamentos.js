@@ -100,6 +100,32 @@ async function enviarEmailParcelamentoOriginal(p, botao) {
   });
 }
 
+// WhatsApp do parcelamento: usa o número cadastrado na empresa com o mesmo CNPJ (igual ao e-mail)
+function enviarWhatsAppParcelamento(p) {
+  const empresa = buscarEmpresaPorCnpj(p.cnpj);
+  if (!empresa || !empresa.whatsapp) {
+    avisar("Nenhuma empresa com este CNPJ tem WhatsApp cadastrado. Cadastre o número em Empresas → abrir a empresa → WhatsApp do cliente.", { titulo: "WhatsApp não cadastrado", tipo: "aviso" });
+    return;
+  }
+  abrirEnvioWhatsApp({
+    destino: empresa.nome,
+    telefone: empresa.whatsapp,
+    anexos: p.anexos || [],
+    tituloLink: `${p.nome} — guias de parcelamento`,
+    montarMensagem: (link, validade) =>
+      `Olá, tudo bem?\n\nSegue as guias dos parcelamentos de ${p.nome}.\n\n` +
+      `Para baixar os arquivos, acesse:\n${link}\n(link disponível até ${validade})\n\nAtenciosamente,\nDepartamento Fiscal e Contábil — FZ CONT`,
+    aoEnviar: (telefone) => {
+      p.comentarios = p.comentarios || [];
+      p.comentarios.push(`Guias enviadas pelo WhatsApp para ${telefone}\n${agora()}`);
+      marcarAlterado();
+      const wrap = EL_PARC.get(p.id);
+      if (wrap && wrap.classList.contains("aberto")) { wrap.querySelector(".empresa-corpo")?.remove(); wrap.appendChild(criarCorpoParcelamento(p)); }
+      notificar(`Envio registrado para ${p.nome}`, "ok");
+    },
+  });
+}
+
 $("#btn-novo-parcelamento").addEventListener("click", () => {
   abrirModal(`
     <h2>Novo parcelamento</h2>
@@ -171,6 +197,7 @@ function htmlCabecalhoParc(p) {
       ${botaoCopiaSe(p.cnpj, "CNPJ")}
       ${botaoCopiaSe(p.senhaRegularize, "Regularize")}
       <button type="button" class="chip-copia chip-email" data-email title="Enviar e-mail com as guias">${icone("email")}Enviar e-mail</button>
+      <button type="button" class="chip-copia chip-whatsapp" data-whatsapp title="Enviar as guias pelo WhatsApp do cliente">${icone("conversa")}WhatsApp</button>
     </div>
     <button type="button" class="btn-icone" data-excluir title="Excluir">${icone("lixeira")}</button>`;
 }
@@ -190,6 +217,7 @@ function criarParcelamentoCard(p) {
     const copia = e.target.closest("[data-copiar]");
     if (copia) return copiar(copia.dataset.copiar, { CNPJ: p.cnpj, Regularize: p.senhaRegularize }[copia.dataset.copiar]);
     if (e.target.closest("[data-email]")) return enviarEmailParcelamentoOriginal(p, e.target.closest("[data-email]"));
+    if (e.target.closest("[data-whatsapp]")) return enviarWhatsAppParcelamento(p);
     if (e.target.closest("[data-excluir]")) return excluirParcelamento(p);
     alternarParcelamento(p);
   });

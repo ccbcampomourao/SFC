@@ -624,3 +624,16 @@ body.dados-prontos .so-carregando { display: none !important; }
   .app-sidebar, .faixa-superior, .toasts { display: none !important; }
   body { background: #fff; }
 }
+
+/* ---------- WHATSAPP ---------- */
+.chip-whatsapp { background: #E7F8EE; color: #128C4B; border-color: transparent; }
+.chip-whatsapp .ico { color: #19A55A; }
+.chip-whatsapp:hover { background: #D3F2E0; color: #0E7A40; border-color: transparent; }
+.btn-whatsapp { background: #1DA851; box-shadow: 0 1px 2px rgba(29, 168, 81, .3); }
+.btn-whatsapp:hover { background: #168C43; }
+.wa-arquivos { border: 1.3px solid var(--line); border-radius: var(--raio-sm); padding: 10px 12px; margin-bottom: 14px; max-height: 150px; overflow-y: auto; }
+.wa-arquivo { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 3px 0; color: var(--ink); }
+.wa-arquivo .ico { color: var(--vermelho); }
+.wa-arquivo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wa-status { float: right; display: inline-flex; align-items: center; gap: 5px; font-weight: 500; color: var(--ink-3); }
+#wa-mensagem { resize: vertical; line-height: 1.5; font-size: 13px; }
