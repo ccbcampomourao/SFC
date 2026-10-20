@@ -351,7 +351,7 @@ const CAMPOS_EMPRESA = [
   ["nome", "Nome"], ["cnpj", "CNPJ"], ["cpf", "CPF"], ["email", "E-mail", "email"],
   ["whatsapp", "WhatsApp do cliente", "tel", "(44) 99999-9999"],
   ["senhaPrefeitura", "Senha Prefeitura"], ["senhaRegularize", "Senha Regularize"], ["inscricaoEstadual", "Inscrição Estadual"],
-  ["cadastroMunicipal", "Cadastro econômico (prefeitura)", null, "inscrição municipal"], ["nfseSerie", "Série da NFS-e", null, "1"],
+  ["loginPrefeitura", "Login prefeitura (se não for o CNPJ)", null, "CPF ou CNPJ, só números"], ["cadastroMunicipal", "Cadastro econômico (prefeitura)", null, "inscrição municipal"], ["nfseSerie", "Série da NFS-e", null, "1"],
 ];
 
 function criarCorpoEmpresa(empresa) {

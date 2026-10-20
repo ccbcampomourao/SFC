@@ -699,9 +699,30 @@ async function criarLinkCompartilhado(env, { ids, titulo, expiraMs, username, or
 const IPM_MUNICIPIO_PADRAO = "campomourao";
 const IPM_MAX_NOTAS_POR_CHAMADA = 15; // o plano gratuito permite 50 consultas externas por chamada
 
-function urlWebserviceIpm(env) {
+// Endereços do webservice. O manual traz o primeiro; em algumas cidades a IPM usa o segundo
+// (ws-cidade.atende.net:7443). Se o primeiro negar o acesso, o sistema tenta o outro.
+// Para fixar um endereço, crie a variável IPM_URL no Worker.
+function urlsWebserviceIpm(env) {
+  if (env.IPM_URL) return [String(env.IPM_URL)];
   const municipio = String(env.IPM_MUNICIPIO || IPM_MUNICIPIO_PADRAO).toLowerCase().replace(/[^a-z0-9]/g, "");
-  return `https://${municipio}.atende.net/?pg=rest&service=WNERestServiceNFSe`;
+  return [
+    `https://${municipio}.atende.net/?pg=rest&service=WNERestServiceNFSe`,
+    `https://ws-${municipio}.atende.net:7443/?pg=rest&service=WNERestServiceNFSe`,
+  ];
+}
+
+// Resposta {"retorno":{"msg":"Acesso Negado!","sis":"EST","code":401}}: a própria plataforma
+// Atende.Net recusou o login (antes de chegar no módulo de NFS-e).
+function acessoNegadoIpm(texto, http) {
+  const t = String(texto || "").trim();
+  if (t.startsWith("{")) {
+    try {
+      const r = JSON.parse(t).retorno || {};
+      if (Number(r.code) === 401 || /acesso negado/i.test(r.msg || "")) return { codigo: 401, texto: r.msg || "Acesso Negado!" };
+    } catch {}
+  }
+  if (http === 401 || /acesso negado/i.test(t.slice(0, 300))) return { codigo: 401, texto: "Acesso Negado!" };
+  return null;
 }
 
 function tagXml(xml, tag) {
@@ -734,6 +755,7 @@ function mensagensIpm(xml) {
 }
 
 function dicaErroIpm(codigo, texto) {
+  if (codigo === 401) return "A prefeitura recusou o login antes de olhar as notas. Confira, nesta ordem: (1) entre em campomourao.atende.net com o mesmo login e a mesma senha cadastrados aqui (login = CNPJ só com números, ou o campo “Login prefeitura” se a empresa entra com CPF); se não entrar, a senha está errada ou vencida; (2) no Autoatendimento, menu Empresa → “Emissão de NFS-e por WebService” → Acessar → marque “Liberar Acesso ao Usuário” e confirme (se já estava marcado, desmarque, confirme e marque de novo); (3) se trocou a senha do portal, atualize também aqui.";
   if (codigo === 132) return "Usuário ou senha inválidos. O login é o CNPJ da empresa e a senha é a do portal da prefeitura (campo “Senha Prefeitura”).";
   if (codigo === 133) return "O usuário dessa empresa está desativado no portal da prefeitura.";
   if ([137, 138, 139].includes(codigo)) return "O webservice não está liberado para essa empresa. No Portal do Cidadão de Campo Mourão, abra o serviço “Emissão de NFS-e por WebService”, marque “Liberar Acesso ao Usuário” e confirme.";
@@ -771,13 +793,13 @@ function lerNotaIpm(xml) {
   };
 }
 
-async function consultarNotaIpm(env, { login, senha, cadastro, serie, numero, cookie }) {
+async function consultarNotaIpm(env, { url, login, senha, cadastro, serie, numero, cookie }) {
   const xmlPesquisa = `<?xml version="1.0" encoding="ISO-8859-1"?><nfse><pesquisa><numero>${numero}</numero><serie_nfse>${serie}</serie_nfse><cadastro>${cadastro}</cadastro></pesquisa></nfse>`;
   const form = new FormData();
   form.append("xml", new Blob([xmlPesquisa], { type: "text/xml" }), "consulta.xml");
   const headers = { Authorization: "Basic " + Buffer.from(`${login}:${senha}`, "utf8").toString("base64") };
   if (cookie) headers.Cookie = cookie;
-  const resp = await fetch(urlWebserviceIpm(env), { method: "POST", headers, body: form, signal: AbortSignal.timeout(25000) });
+  const resp = await fetch(url, { method: "POST", headers, body: form, signal: AbortSignal.timeout(25000) });
   const sessao = /PHPSESSID=[^;,\s]+/.exec(resp.headers.get("set-cookie") || "");
   const bytes = new Uint8Array(await resp.arrayBuffer());
   const texto = decodificarRespostaIpm(bytes, resp.headers.get("content-type"));
@@ -1363,7 +1385,7 @@ export default {
       // ---------- NFS-e IPM (Atende.Net): consulta várias notas de uma empresa numa chamada ----------
       if (pathname === "/api/ipm/consultar" && request.method === "POST") {
         const corpo = await request.json().catch(() => ({}));
-        const login = limparNumeroDoc(corpo.cnpj);
+        const login = limparNumeroDoc(corpo.login || corpo.cnpj);
         const senha = String(corpo.senha || "");
         const cadastro = limparNumeroDoc(corpo.cadastro);
         const serie = limparNumeroDoc(corpo.serie) || "1";
@@ -1375,12 +1397,30 @@ export default {
 
         let cookie = null;
         const notas = [];
+        const urls = urlsWebserviceIpm(env);
+        let url = urls.includes(corpo.url) ? corpo.url : urls[0]; // o navegador lembra qual endereço funcionou
+        let negado = null;
         for (const numero of numeros) {
           let r;
           try {
-            r = await consultarNotaIpm(env, { login, senha, cadastro, serie, numero, cookie });
+            r = await consultarNotaIpm(env, { url, login, senha, cadastro, serie, numero, cookie });
+            // Acesso negado no primeiro pedido: tenta o outro endereço uma vez
+            const recusa = !notas.length && acessoNegadoIpm(r.texto, r.http);
+            if (recusa) {
+              negado = recusa;
+              for (const alternativa of urls.filter((u) => u !== url)) {
+                try {
+                  const r2 = await consultarNotaIpm(env, { url: alternativa, login, senha, cadastro, serie, numero, cookie: null });
+                  if (!acessoNegadoIpm(r2.texto, r2.http)) { r = r2; url = alternativa; negado = null; break; }
+                } catch { /* endereço alternativo não respondeu: fica com o erro do primeiro */ }
+              }
+            }
           } catch (err) {
             return json({ erro: "Não consegui falar com o servidor da prefeitura: " + (err && err.message ? err.message : err), etapa: "conexao", notas }, 502);
+          }
+          if (negado || acessoNegadoIpm(r.texto, r.http)) {
+            const recusa = negado || acessoNegadoIpm(r.texto, r.http);
+            return json({ erro: `Prefeitura respondeu: acesso negado (login ${login.length === 14 ? "CNPJ" : "CPF"} ${login})`, codigo: 401, dica: dicaErroIpm(401, recusa.texto), etapa: "prefeitura", notas, url }, 502);
           }
           cookie = r.cookie;
           const mensagens = mensagensIpm(r.texto);
@@ -1399,9 +1439,10 @@ export default {
             dica: dicaErroIpm(principal.codigo, principal.texto),
             etapa: "prefeitura",
             notas,
+            url,
           }, 502);
         }
-        return json({ notas });
+        return json({ notas, url });
       }
 
       // ---------- ANEXOS (upload/download/exclusão reais, guardados no bucket R2) ----------

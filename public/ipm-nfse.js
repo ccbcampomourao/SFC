@@ -27,6 +27,7 @@ function _pontosEntre(lo, hi, qtd) { // até "qtd" inteiros espalhados em (lo, h
 }
 const _brl = (v) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+let _ipmUrl = null;
 class BuscaNfseIpm {
   constructor(empresa) {
     this.e = empresa;
@@ -43,8 +44,9 @@ class BuscaNfseIpm {
       this.chamadas++;
       const r = await api("/api/ipm/consultar", {
         method: "POST",
-        body: JSON.stringify({ cnpj: this.e.cnpj, senha: this.e.senhaPrefeitura, cadastro: this.e.cadastroMunicipal, serie: this.e.nfseSerie || "1", numeros: lote, comXml: true }),
+        body: JSON.stringify({ cnpj: this.e.cnpj, login: limparDigitos(this.e.loginPrefeitura) || undefined, senha: this.e.senhaPrefeitura, cadastro: this.e.cadastroMunicipal, serie: this.e.nfseSerie || "1", numeros: lote, comXml: true, url: _ipmUrl || undefined }),
       });
+      if (r.url) _ipmUrl = r.url; // endereço do webservice que funcionou: as próximas chamadas já vão direto nele
       for (const nota of r.notas) this.cache.set(nota.numero, nota);
     }
     return numeros.map((n) => this.cache.get(n) || { numero: n, existe: false });
