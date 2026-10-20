@@ -707,7 +707,7 @@ function urlsWebserviceIpm(env) {
   const municipio = String(env.IPM_MUNICIPIO || IPM_MUNICIPIO_PADRAO).toLowerCase().replace(/[^a-z0-9]/g, "");
   return [
     `https://${municipio}.atende.net/?pg=rest&service=WNERestServiceNFSe`,
-    `https://ws-${municipio}.atende.net:7443/?pg=rest&service=WNERestServiceNFSe`,
+    `https://ws-${municipio}.atende.net/?pg=rest&service=WNERestServiceNFSe`,
   ];
 }
 
