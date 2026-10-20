@@ -711,6 +711,11 @@ function urlsWebserviceIpm(env) {
   ];
 }
 
+// Resposta que veio mesmo do webservice: XML com nota ou com mensagem de erro da IPM.
+function respostaValidaIpm(r) {
+  return r && r.http < 500 && /<(nfse|retorno|mensagem|numero_nfse)[\s>]/i.test(r.texto || "");
+}
+
 // Resposta {"retorno":{"msg":"Acesso Negado!","sis":"EST","code":401}}: a própria plataforma
 // Atende.Net recusou o login (antes de chegar no módulo de NFS-e).
 function acessoNegadoIpm(texto, http) {
@@ -1411,12 +1416,17 @@ export default {
               for (const alternativa of urls.filter((u) => u !== url)) {
                 try {
                   const r2 = await consultarNotaIpm(env, { url: alternativa, login, senha, cadastro, serie, numero, cookie: null });
-                  if (!acessoNegadoIpm(r2.texto, r2.http)) { r = r2; url = alternativa; negado = null; break; }
+                  // só aceita se for uma resposta de verdade do webservice (XML da IPM);
+                  // erro de conexão da Cloudflare (522, 52x) ou página qualquer não conta
+                  if (respostaValidaIpm(r2) && !acessoNegadoIpm(r2.texto, r2.http)) { r = r2; url = alternativa; negado = null; break; }
                 } catch { /* endereço alternativo não respondeu: fica com o erro do primeiro */ }
               }
             }
           } catch (err) {
             return json({ erro: "Não consegui falar com o servidor da prefeitura: " + (err && err.message ? err.message : err), etapa: "conexao", notas }, 502);
+          }
+          if (!negado && r.http >= 500) {
+            return json({ erro: `O servidor da prefeitura não respondeu (HTTP ${r.http}${r.http >= 520 && r.http <= 526 ? " — a Cloudflare não conseguiu conectar" : ""}).`, codigo: r.http, dica: "Pode ser instabilidade no Atende.Net. Tente de novo em alguns minutos.", etapa: "conexao", notas, url }, 502);
           }
           if (negado || acessoNegadoIpm(r.texto, r.http)) {
             const recusa = negado || acessoNegadoIpm(r.texto, r.http);
