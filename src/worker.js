@@ -691,6 +691,99 @@ async function criarLinkCompartilhado(env, { ids, titulo, expiraMs, username, or
   return { url: `${origem}/d/${token}`, expiraEm, arquivos: arquivos.length };
 }
 
+// ---------------------------------------------------------------------------
+// NFS-e — IPM / Atende.Net (Campo Mourão). Manual: NTE 35/2021 v2.9.
+// Consulta por número + série + cadastro econômico; login = CPF/CNPJ do emissor + senha
+// do portal; o webservice é síncrono (uma requisição por vez) e reaproveita a sessão (PHPSESSID).
+// ---------------------------------------------------------------------------
+const IPM_MUNICIPIO_PADRAO = "campomourao";
+const IPM_MAX_NOTAS_POR_CHAMADA = 15; // o plano gratuito permite 50 consultas externas por chamada
+
+function urlWebserviceIpm(env) {
+  const municipio = String(env.IPM_MUNICIPIO || IPM_MUNICIPIO_PADRAO).toLowerCase().replace(/[^a-z0-9]/g, "");
+  return `https://${municipio}.atende.net/?pg=rest&service=WNERestServiceNFSe`;
+}
+
+function tagXml(xml, tag) {
+  const m = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}\\s*>`, "i").exec(xml || "");
+  return m ? m[1].trim() : "";
+}
+function blocosXml(xml, tag) {
+  return [...String(xml || "").matchAll(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}\\s*>`, "gi"))].map((m) => m[1]);
+}
+function valorIpm(s) {
+  const t = String(s || "").trim();
+  if (!t) return 0;
+  // o manual usa vírgula como decimal ("1.234,56"); aceita também "1234.56"
+  const n = t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t;
+  return Number(n) || 0;
+}
+
+function decodificarRespostaIpm(bytes, contentType) {
+  const cabeca = new TextDecoder("latin1").decode(bytes.slice(0, 200));
+  const charset = (/charset=([\w-]+)/i.exec(contentType || "") || /encoding=["']([\w-]+)["']/i.exec(cabeca) || [])[1] || "utf-8";
+  const rotulo = /8859-1|latin/i.test(charset) ? "windows-1252" : charset;
+  try { return new TextDecoder(rotulo).decode(bytes); } catch { return new TextDecoder("utf-8").decode(bytes); }
+}
+
+function mensagensIpm(xml) {
+  return blocosXml(xml, "mensagem").flatMap((b) => blocosXml(b, "codigo")).map((c) => {
+    const m = /^\s*0*(\d+)\s*-\s*([\s\S]*)$/.exec(c);
+    return m ? { codigo: Number(m[1]), texto: m[2].trim() } : { codigo: null, texto: c.trim() };
+  });
+}
+
+function dicaErroIpm(codigo, texto) {
+  if (codigo === 132) return "Usuário ou senha inválidos. O login é o CNPJ da empresa e a senha é a do portal da prefeitura (campo “Senha Prefeitura”).";
+  if (codigo === 133) return "O usuário dessa empresa está desativado no portal da prefeitura.";
+  if ([137, 138, 139].includes(codigo)) return "O webservice não está liberado para essa empresa. No Portal do Cidadão de Campo Mourão, abra o serviço “Emissão de NFS-e por WebService”, marque “Liberar Acesso ao Usuário” e confirme.";
+  if ([134, 135, 4, 41, 111].includes(codigo)) return "A prefeitura não encontrou o cadastro econômico dessa empresa. Confira o número do cadastro econômico (inscrição municipal) nos dados da empresa.";
+  if ([5, 207].includes(codigo)) return "Esse usuário não tem permissão para consultar as notas desse cadastro. Use o login da própria empresa e confira o cadastro econômico.";
+  if (codigo === 144) return "O login precisa ter só números (o CNPJ sem pontos).";
+  if (codigo === 6) return "A empresa está baixada no cadastro da prefeitura.";
+  if (/senha|usu[áa]rio/i.test(texto || "")) return "Confira o CNPJ e a senha do portal da prefeitura.";
+  return null;
+}
+
+// Lê os campos que interessam do XML completo da nota (layout 4.1 + tags do item 4.7 do manual).
+function lerNotaIpm(xml) {
+  const nf = tagXml(xml, "nf") || xml;
+  const tomador = tagXml(xml, "tomador");
+  const prestador = tagXml(xml, "prestador");
+  const itens = blocosXml(xml, "item");
+  const somaItens = (tag) => itens.reduce((s, it) => s + valorIpm(tagXml(it, tag)), 0);
+  return {
+    numero: tagXml(xml, "numero_nfse"),
+    serie: tagXml(xml, "serie_nfse"),
+    data: tagXml(xml, "data_nfse"),
+    hora: tagXml(xml, "hora_nfse"),
+    cancelada: tagXml(xml, "situacao_codigo_nfse") === "2" || /cancelad/i.test(tagXml(xml, "situacao_descricao_nfse")),
+    situacao: tagXml(xml, "situacao_descricao_nfse"),
+    valorTotal: valorIpm(tagXml(nf, "valor_total")),
+    issRetido: somaItens("valor_issrf"),
+    valorTributavel: somaItens("valor_tributavel"),
+    servicos: [...new Set(itens.map((it) => tagXml(it, "codigo_item_lista_servico")).filter(Boolean))],
+    prestadorCnpj: tagXml(prestador, "cpfcnpj"),
+    tomadorCnpj: tagXml(tomador, "cpfcnpj"),
+    tomadorNome: tagXml(tomador, "nome_razao_social"),
+    codigoVerificador: tagXml(xml, "cod_verificador_autenticidade"),
+    link: tagXml(xml, "link_nfse"),
+  };
+}
+
+async function consultarNotaIpm(env, { login, senha, cadastro, serie, numero, cookie }) {
+  const xmlPesquisa = `<?xml version="1.0" encoding="ISO-8859-1"?><nfse><pesquisa><numero>${numero}</numero><serie_nfse>${serie}</serie_nfse><cadastro>${cadastro}</cadastro></pesquisa></nfse>`;
+  const form = new FormData();
+  form.append("xml", new Blob([xmlPesquisa], { type: "text/xml" }), "consulta.xml");
+  const headers = { Authorization: "Basic " + Buffer.from(`${login}:${senha}`, "utf8").toString("base64") };
+  if (cookie) headers.Cookie = cookie;
+  const resp = await fetch(urlWebserviceIpm(env), { method: "POST", headers, body: form, signal: AbortSignal.timeout(25000) });
+  const sessao = /PHPSESSID=[^;,\s]+/.exec(resp.headers.get("set-cookie") || "");
+  const bytes = new Uint8Array(await resp.arrayBuffer());
+  const texto = decodificarRespostaIpm(bytes, resp.headers.get("content-type"));
+  return { http: resp.status, cookie: sessao ? sessao[0] : cookie, texto, bytes };
+}
+
 // Página pública que o cliente abre pelo link do WhatsApp (sem login).
 function paginaDownload(registro, token) {
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -1110,21 +1203,15 @@ export default {
         const estado = await lerDadosCompletos(env);
         const novosGrupos = estado.grupos.map((g) => ({
           nome: g.nome,
+          // Mantém todos os dados cadastrais (CNPJ, senhas, e-mail, WhatsApp, cadastro econômico...)
+          // e zera só o que é do mês: status, checkboxes, comentários e anexos.
           empresas: g.empresas.map((e) => ({
-            id: e.id,
-            nome: e.nome,
+            ...e,
             status: "SEM",
             nfs: false,
             nfe: false,
             nfc: false,
             fechado: false,
-            cnpj: e.cnpj,
-            cpf: e.cpf,
-            senhaPrefeitura: e.senhaPrefeitura,
-            senhaRegularize: e.senhaRegularize,
-            inscricaoEstadual: e.inscricaoEstadual,
-            email: e.email,
-            whatsapp: e.whatsapp || "",
             comentarios: [],
             anexos: [],
           })),
@@ -1271,6 +1358,50 @@ export default {
           resultados.push({ chave: item && item.chave, ...(r.erro ? { erro: r.erro } : r) });
         }
         return json({ resultados, expiraEm: new Date(validade.expiraMs).toISOString() });
+      }
+
+      // ---------- NFS-e IPM (Atende.Net): consulta várias notas de uma empresa numa chamada ----------
+      if (pathname === "/api/ipm/consultar" && request.method === "POST") {
+        const corpo = await request.json().catch(() => ({}));
+        const login = limparNumeroDoc(corpo.cnpj);
+        const senha = String(corpo.senha || "");
+        const cadastro = limparNumeroDoc(corpo.cadastro);
+        const serie = limparNumeroDoc(corpo.serie) || "1";
+        const numeros = [...new Set((Array.isArray(corpo.numeros) ? corpo.numeros : []).map(Number).filter((n) => Number.isInteger(n) && n > 0 && n < 1e9))];
+        if (!login || !senha) return json({ erro: "Faltam o CNPJ ou a senha do portal da prefeitura da empresa." }, 400);
+        if (!cadastro) return json({ erro: "Falta o cadastro econômico (inscrição municipal) da empresa." }, 400);
+        if (!numeros.length) return json({ erro: "Nenhum número de nota informado." }, 400);
+        if (numeros.length > IPM_MAX_NOTAS_POR_CHAMADA) return json({ erro: `Máximo de ${IPM_MAX_NOTAS_POR_CHAMADA} notas por chamada.` }, 400);
+
+        let cookie = null;
+        const notas = [];
+        for (const numero of numeros) {
+          let r;
+          try {
+            r = await consultarNotaIpm(env, { login, senha, cadastro, serie, numero, cookie });
+          } catch (err) {
+            return json({ erro: "Não consegui falar com o servidor da prefeitura: " + (err && err.message ? err.message : err), etapa: "conexao", notas }, 502);
+          }
+          cookie = r.cookie;
+          const mensagens = mensagensIpm(r.texto);
+          const existe = /<numero_nfse>/i.test(r.texto) && !mensagens.some((m) => m.codigo === 142);
+          if (existe) {
+            notas.push({ numero, existe: true, dados: lerNotaIpm(r.texto), ...(corpo.comXml ? { xmlBase64: Buffer.from(r.bytes).toString("base64") } : {}) });
+            continue;
+          }
+          const naoEncontrada = mensagens.some((m) => m.codigo === 142 || /n[ãa]o encontrad/i.test(m.texto));
+          if (naoEncontrada) { notas.push({ numero, existe: false }); continue; }
+          // Qualquer outro erro (login, permissão, cadastro) vale para todas as notas: para aqui.
+          const principal = mensagens.find((m) => m.codigo !== 1) || { codigo: null, texto: r.texto.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300) || `HTTP ${r.http}` };
+          return json({
+            erro: `Prefeitura respondeu: ${principal.codigo ? `[${principal.codigo}] ` : ""}${principal.texto}`,
+            codigo: principal.codigo,
+            dica: dicaErroIpm(principal.codigo, principal.texto),
+            etapa: "prefeitura",
+            notas,
+          }, 502);
+        }
+        return json({ notas });
       }
 
       // ---------- ANEXOS (upload/download/exclusão reais, guardados no bucket R2) ----------

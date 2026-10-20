@@ -666,3 +666,64 @@ body.dados-prontos .so-carregando { display: none !important; }
 .wl-fim .ico { width: 28px; height: 28px; }
 .wl-fim b { display: block; font-size: 15px; }
 .wl-fim small { display: block; color: var(--ink-soft); font-size: 12.5px; }
+
+/* ---------- NFS-e DA PREFEITURA (IPM) ---------- */
+.nf-estado { flex-shrink: 0; max-width: 55%; }
+.nf-estado .etiqueta { white-space: normal; text-align: right; }
+.nf-erro { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px 10px 38px; font-size: 12.5px; color: var(--vermelho-escuro); background: var(--vermelho-bg); border-bottom: 1px solid var(--line); }
+.nf-erro span { display: flex; gap: 6px; color: var(--ink); }
+.nf-erro .ico { color: var(--amber-vivo); margin-top: 2px; }
+.nf-opcoes { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; margin: 14px 0 4px; }
+.nf-total { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-top: 14px; }
+.nf-total > div { border: 1.3px solid var(--line); border-radius: var(--raio-sm); padding: 10px 12px; }
+.nf-total b { display: block; font-family: "Sora", sans-serif; font-size: 17px; font-variant-numeric: tabular-nums; }
+.nf-total small { color: var(--ink-soft); font-size: 12px; }
+.nf-total .nf-total-erro b { color: var(--vermelho); }
+
+/* ===== Página XML NFS-e ===== */
+a.btn-ghost, a.btn-secundario { text-decoration: none; }
+.xml-controles { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 22px; }
+.xml-controles .campo-form { margin: 0; min-width: 200px; }
+.xml-controles .nf-opcoes { margin: 0; flex: 1 1 300px; }
+.xml-botoes { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+.xml-kpi-sub { font-size: 12px; color: var(--ink-soft); font-weight: 550; }
+.kpi-card.destaque .xml-kpi-sub { color: #B9D3E8; }
+.xml-kpi-erro { color: var(--vermelho); font-weight: 700; }
+.xml-lista { display: flex; flex-direction: column; border: 1.3px solid var(--line); border-radius: var(--raio-sm); overflow: hidden; }
+.xml-lista > .esqueleto { margin: 10px; }
+.xml-item + .xml-item { border-top: 1px solid var(--line); }
+.xml-item.aberta { background: #FBFCFE; }
+.xml-linha { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 14px; padding: 10px 14px; transition: background-color .12s ease; }
+.xml-linha:hover { background: var(--paper); }
+.xml-check { display: flex; cursor: pointer; }
+.xml-check input { width: 16px; height: 16px; accent-color: var(--blue); cursor: pointer; }
+.xml-nome { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.xml-nome b { font-size: 13.5px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xml-nome small { font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xml-estado { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; min-width: 0; }
+.xml-estado small { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.xml-acoes { display: flex; gap: 4px; justify-content: flex-end; }
+.xml-item .nf-erro { padding-left: 44px; border-bottom: 0; }
+.xml-detalhe { padding: 2px 14px 14px 44px; }
+.xml-aviso { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-soft); padding: 10px 12px; background: var(--paper); border-radius: var(--raio-sm); }
+.xml-tabela-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--raio-sm); background: #fff; max-height: 460px; overflow-y: auto; scrollbar-width: thin; }
+.xml-tabela { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.xml-tabela th { position: sticky; top: 0; text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); background: var(--paper); padding: 8px 10px; font-weight: 700; white-space: nowrap; z-index: 1; }
+.xml-tabela td { padding: 7px 10px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; vertical-align: middle; }
+.xml-tabela tbody tr:hover td { background: var(--paper); }
+.xml-tabela .num { text-align: right; white-space: nowrap; }
+.xml-tabela .num-nota { font-weight: 700; }
+.xml-tabela .tomador { max-width: 340px; }
+.xml-tabela td small { display: block; color: var(--ink-3); font-size: 11px; }
+.xml-tabela tr.cancelada .num, .xml-tabela tr.cancelada .num-nota { color: var(--ink-3); text-decoration: line-through; }
+.xml-tabela .acoes-nota { white-space: nowrap; text-align: right; }
+@media (max-width: 760px) {
+  .xml-linha { grid-template-columns: auto minmax(0, 1fr); row-gap: 8px; }
+  .xml-estado, .xml-acoes { grid-column: 2; align-items: flex-start; justify-content: flex-start; }
+  .xml-detalhe, .xml-item .nf-erro { padding-left: 14px; }
+  .xml-botoes { margin-left: 0; width: 100%; }
+  .xml-botoes button { flex: 1; }
+  .xml-acoes { flex-wrap: wrap; }
+  #xml-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #xml-kpis .kpi-numero { font-size: 19px; overflow-wrap: anywhere; }
+}

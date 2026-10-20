@@ -198,3 +198,23 @@ Na página Empresas, botão **WhatsApp em lote** (no painel "Grupos e empresas")
 4. Na fila, **Abrir no WhatsApp** abre a primeira conversa já preenchida. No WhatsApp, aperte Enter para enviar e volte: **Enviado, abrir o próximo** registra o envio (empresa fica OK + comentário) e abre o cliente seguinte. Também dá para **Pular** ou **Abrir de novo**.
 
 Sem a API paga do WhatsApp não existe envio 100% automático: cada mensagem precisa do "enviar" no próprio WhatsApp. Dica: o **aplicativo do WhatsApp para computador** troca de conversa mais rápido que o WhatsApp Web.
+
+## XML NFS-e (IPM / Atende.Net) — página própria
+
+Página **"XML NFS-e"** no menu lateral (também há um atalho na página Empresas). Ela usa as **mesmas empresas** cadastradas em Empresas: não precisa cadastrar nada de novo nela.
+
+Escolha o mês, marque as empresas e clique em **Buscar**. Para cada empresa o sistema baixa o XML de cada NFS-e **emitida** no mês, direto do webservice da prefeitura (manual IPM NTE 35/2021), e:
+- mostra a lista de notas (nº, data, tomador, valor, ISS retido, situação), com download de cada XML e link para a nota no site da prefeitura;
+- anexa um ZIP nos documentos da empresa (buscar de novo o mesmo mês substitui o ZIP e apaga o antigo do armazenamento);
+- anota o resumo nos comentários (uma anotação por mês);
+- guarda o resumo do mês na empresa (últimos 24 meses) e salva sozinho no fim da busca.
+
+Ao reabrir a página, o que já foi buscado aparece de novo sem consultar a prefeitura: a lista de notas é lida do ZIP anexado. "Só as pendentes" seleciona as empresas que ainda não foram buscadas no mês ou que deram erro. "ZIP de todas" junta os XML do mês, com uma pasta por empresa.
+
+**Para cada empresa funcionar:**
+1. No **Portal do Cidadão** de Campo Mourão (logado como a empresa), abra o serviço **"Emissão de NFS-e por WebService"** e clique em **"Liberar Acesso ao Usuário"**.
+2. Em Empresas, preencha **CNPJ**, **Senha Prefeitura** (a senha do Atende.Net; o login é o CNPJ), **Cadastro econômico (prefeitura)** e **Série da NFS-e** (normalmente 1).
+
+**Limites:** só notas emitidas pela empresa (o webservice não lista notas tomadas). A primeira busca de cada empresa gasta mais consultas; depois o sistema guarda o último número e fica mais rápido. Há uma chamada ao Worker a cada 15 consultas, longe dos limites do plano gratuito.
+
+Outro município IPM: crie a variável `IPM_MUNICIPIO` no Worker (ex.: `maringa`). O padrão é `campomourao`.

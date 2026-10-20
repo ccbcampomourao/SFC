@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FZCONT · XML NFS-e</title>
+<link rel="icon" href="/img/logo-mark.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <script src="/icones.js"></script>
+
+  <div id="app" class="app-shell">
+    <aside class="app-sidebar" id="barra-lateral">
+      <div class="app-sidebar-inner">
+        <div class="app-sidebar-brand">
+          <img src="/img/logo-mark.png" alt="" width="36" height="36" />
+          <div><h1>FZCONT</h1><small>Sistema Fiscal Contábil</small></div>
+        </div>
+        <nav class="app-nav" aria-label="Páginas">
+            <a href="/empresas.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-empresas"/></svg><span>Empresas</span></a>
+            <a href="/parcelamentos.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-parcelamentos"/></svg><span>Parcelamentos</span></a>
+            <a href="/situacao-fiscal.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-situacao"/></svg><span>Situação Fiscal</span></a>
+            <a href="/xml-nfse.html" class="app-nav-link ativo" aria-current="page"><svg class="ico " aria-hidden="true"><use href="#i-xml"/></svg><span>XML NFS-e</span></a>
+            <a href="/integracontador.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-governo"/></svg><span>IntegraContador</span></a>
+        </nav>
+
+          <div class="app-sidebar-titulo">Conta</div>
+          <div class="app-sidebar-acoes">
+            <button class="btn-ghost-side" id="btn-usuarios"><svg class="ico " aria-hidden="true"><use href="#i-usuarios"/></svg><span>Usuários</span></button>
+          </div>
+        <div class="usuario-chip">
+          <span class="avatar-mini" id="usuario-avatar">·</span>
+          <span class="usuario-nome"><span id="usuario-logado">&nbsp;</span><small>Conectado</small></span>
+          <button class="btn-icone-side" id="btn-sair" title="Sair"><svg class="ico " aria-hidden="true"><use href="#i-sair"/></svg></button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="app-conteudo">
+      <header class="faixa-superior">
+        <button class="btn-toggle-sidebar" id="btn-toggle-sidebar" title="Abrir/fechar menu" aria-label="Abrir/fechar menu"><svg class="ico " aria-hidden="true"><use href="#i-menu"/></svg></button>
+        <div class="faixa-titulo">
+          <h1>XML NFS-e</h1>
+          <span>Notas de serviço emitidas no Atende.Net (IPM) de Campo Mourão — usa os dados cadastrados em Empresas</span>
+        </div>
+        <div class="faixa-direita"><label class="campo-busca"><svg class="ico " aria-hidden="true"><use href="#i-busca"/></svg><input type="search" id="busca" placeholder="Filtrar empresa ou CNPJ..." autocomplete="off" /><kbd>/</kbd></label><button class="btn-primario" id="btn-salvar" title="Salvar (Ctrl+S)"><svg class="ico " aria-hidden="true"><use href="#i-salvar"/></svg><span>Salvar</span></button></div>
+      </header>
+
+      <main class="conteudo conteudo-coluna">
+        <section class="painel-esquerdo largura-total">
+          <div class="xml-controles">
+            <div class="campo-form"><label for="xml-mes">Competência (mês de emissão)</label><input type="month" id="xml-mes"></div>
+            <div class="nf-opcoes">
+              <label class="chip-check azul"><input type="checkbox" id="xml-anexar" checked><span class="caixa"><svg class="ico " aria-hidden="true"><use href="#i-check"/></svg></span>Anexar o ZIP nos documentos da empresa</label>
+              <label class="chip-check azul"><input type="checkbox" id="xml-comentar" checked><span class="caixa"><svg class="ico " aria-hidden="true"><use href="#i-check"/></svg></span>Anotar o resumo nos comentários</label>
+              <label class="chip-check azul"><input type="checkbox" id="xml-marcar"><span class="caixa"><svg class="ico " aria-hidden="true"><use href="#i-check"/></svg></span>Marcar “NFS” nas empresas com notas</label>
+            </div>
+            <div class="xml-botoes">
+              <button class="btn-secundario" id="xml-zip-todas"><svg class="ico " aria-hidden="true"><use href="#i-baixar"/></svg><span>ZIP de todas</span></button>
+              <button class="btn-primario" id="xml-buscar"><svg class="ico " aria-hidden="true"><use href="#i-busca"/></svg><span>Buscar notas</span></button>
+            </div>
+          </div>
+        </section>
+
+        <div id="xml-kpis" class="dashboard">
+          <div class="kpi-card esqueleto esqueleto-kpi so-carregando"></div>
+          <div class="kpi-card esqueleto esqueleto-kpi so-carregando"></div>
+          <div class="kpi-card esqueleto esqueleto-kpi so-carregando"></div>
+          <div class="kpi-card esqueleto esqueleto-kpi so-carregando"></div>
+        </div>
+
+        <section class="painel-esquerdo largura-total">
+          <div class="painel-cabecalho">
+            <h2><svg class="ico " aria-hidden="true"><use href="#i-empresas"/></svg>Empresas <span class="contador-pilula" id="xml-contador"></span></h2>
+            <div class="painel-acoes">
+              <button class="btn-ghost btn-sm" id="xml-nao-buscadas" title="Seleciona só as que ainda não foram buscadas neste mês (ou deram erro)"><svg class="ico " aria-hidden="true"><use href="#i-relogio"/></svg>Só as pendentes</button>
+              <button class="btn-ghost btn-sm" id="xml-todas"><svg class="ico " aria-hidden="true"><use href="#i-check"/></svg>Todas</button>
+              <button class="btn-ghost btn-sm" id="xml-nenhuma"><svg class="ico " aria-hidden="true"><use href="#i-x"/></svg>Nenhuma</button>
+            </div>
+          </div>
+          <div id="xml-lista" class="xml-lista">
+            <div class="esqueleto esqueleto-linha so-carregando"></div>
+            <div class="esqueleto esqueleto-linha so-carregando"></div>
+            <div class="esqueleto esqueleto-linha so-carregando"></div>
+            <div class="esqueleto esqueleto-linha so-carregando"></div>
+            <div class="esqueleto esqueleto-linha so-carregando"></div>
+          </div>
+          <div id="xml-fora"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div id="modal-fundo" class="modal-fundo oculto">
+    <div id="modal-conteudo" class="modal-conteudo" role="dialog" aria-modal="true"></div>
+  </div>
+
+  <script src="/common.js"></script>
+  <script src="/ipm-nfse.js"></script>
+</body>
+</html>
