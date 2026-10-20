@@ -971,6 +971,233 @@ function enviarWhatsAppEmpresa(empresa) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// WHATSAPP EM LOTE — uma fila: o sistema prepara todos os links e mensagens, e
+// cada clique em "Enviado, abrir o próximo" registra o envio e abre o próximo
+// cliente já com a mensagem pronta (o WhatsApp exige apertar "enviar" em cada um).
+// ---------------------------------------------------------------------------
+const MODELO_WA_LOTE_PADRAO =
+  "Olá, tudo bem?\n\nSegue os documentos do setor Fiscal referente à competência {competencia}.\n\n" +
+  "Para baixar os arquivos, acesse:\n{link}\n(link disponível até {validade})\n\nAtenciosamente,\nFZ CONT";
+
+function _isoLocal(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+function _brDeIso(iso) { return iso.split("-").reverse().join("/"); }
+
+function empresasParaWhatsApp() {
+  const aptas = [], fora = [];
+  ESTADO.grupos.forEach((g) => g.empresas.forEach((e) => {
+    const numero = normalizarWhatsapp(e.whatsapp);
+    if (!e.whatsapp) fora.push({ e, motivo: "sem WhatsApp cadastrado" });
+    else if (!numero) fora.push({ e, motivo: "WhatsApp inválido" });
+    else if (!(e.anexos || []).length) fora.push({ e, motivo: "sem documentos anexados" });
+    else aptas.push({ e, numero, grupo: g.nome });
+  }));
+  return { aptas, fora };
+}
+
+$("#btn-whatsapp-lote")?.addEventListener("click", () => abrirWhatsAppLote());
+
+function abrirWhatsAppLote() {
+  const { aptas, fora } = empresasParaWhatsApp();
+  const hoje = new Date();
+  const dias = Math.min(Math.max(Number(_lerPref("fzcont_wa_dias", "7")) || 7, 0), 365);
+  const padrao = new Date(hoje); padrao.setDate(padrao.getDate() + dias);
+  const max = new Date(hoje); max.setDate(max.getDate() + 365);
+  const modo = _lerPref("fzcont_wa_modo", "web");
+  const modelo = _lerPref("fzcont_wa_modelo_lote", MODELO_WA_LOTE_PADRAO);
+
+  abrirModal(`
+    <h2>Enviar WhatsApp em lote</h2>
+    <p class="modal-sub">Escolha as empresas. O sistema prepara os links e as mensagens de todas de uma vez; depois você só confirma o envio de cada uma no WhatsApp.</p>
+    <div class="wl-topo">
+      <span class="bloco-titulo">${icone("empresas", "ico-sm")}Empresas prontas para envio <span class="contador-pilula" id="wl-contador"></span></span>
+      <span class="painel-acoes">
+        <button type="button" class="btn-ghost btn-sm" id="wl-todas">${icone("check")}Todas</button>
+        <button type="button" class="btn-ghost btn-sm" id="wl-pendentes">${icone("relogio")}Só as não enviadas</button>
+        <button type="button" class="btn-ghost btn-sm" id="wl-nenhuma">${icone("x")}Nenhuma</button>
+      </span>
+    </div>
+    <div class="wl-lista" id="wl-lista">
+      ${aptas.length ? aptas.map(({ e, numero }, i) => `
+        <label class="wl-item">
+          <input type="checkbox" data-i="${i}" ${e.status === "VERDE" ? "" : "checked"}>
+          <span class="wl-nome"><b>${escaparHtml(e.nome)}</b><small>${escaparHtml(formatarTelefone(numero))} · ${e.anexos.length} documento(s)</small></span>
+          ${e.status === "VERDE" ? '<span class="etiqueta etiqueta-ok">Já está OK</span>' : ""}
+        </label>`).join("") : `<div class="vazio">${icone("conversa", "ico-xl")}<p>Nenhuma empresa tem WhatsApp cadastrado e documentos anexados ao mesmo tempo.</p></div>`}
+    </div>
+    ${fora.length ? `<details class="wl-fora"><summary>${fora.length} empresa(s) fora do lote</summary>
+      ${fora.map(({ e, motivo }) => `<div class="wl-fora-item"><span>${escaparHtml(e.nome)}</span><small>${motivo}</small></div>`).join("")}</details>` : ""}
+    <div class="linha-dois-campos" style="margin-top:14px">
+      <div class="campo-form"><label>Arquivos disponíveis até</label>
+        <input type="date" id="wl-ate" value="${_isoLocal(padrao)}" min="${_isoLocal(hoje)}" max="${_isoLocal(max)}">
+      </div>
+      <div class="campo-form"><label>Abrir no</label>
+        <select id="wl-modo">
+          <option value="app"${modo === "app" ? " selected" : ""}>Aplicativo do computador (mais rápido)</option>
+          <option value="web"${modo === "web" ? " selected" : ""}>WhatsApp Web (navegador)</option>
+        </select>
+      </div>
+    </div>
+    <div class="campo-form"><label>Mensagem <small class="wl-marcadores">use {empresa}, {competencia}, {link} e {validade}</small></label>
+      <textarea id="wl-modelo" rows="7">${escaparHtml(modelo)}</textarea>
+    </div>
+    <label class="chip-check azul"><input type="checkbox" id="wl-registrar" checked><span class="caixa">${icone("check")}</span>Ao confirmar cada envio, marcar a empresa como OK e anotar nos comentários</label>
+    <div class="modal-rodape">
+      <button type="button" class="btn-ghost" id="wl-cancelar">Cancelar</button>
+      <button type="button" class="btn-primario btn-whatsapp" id="wl-preparar">${icone("conversa")}<span>Preparar envios</span></button>
+    </div>`);
+
+  const caixas = () => $$("#wl-lista input[type=checkbox]");
+  const atualizarContador = () => {
+    const n = caixas().filter((c) => c.checked).length;
+    $("#wl-contador").textContent = `${n} de ${aptas.length}`;
+    $("#wl-preparar span").textContent = n ? `Preparar ${n} envio${n > 1 ? "s" : ""}` : "Preparar envios";
+    $("#wl-preparar").disabled = !n;
+  };
+  $("#wl-lista").addEventListener("change", atualizarContador);
+  $("#wl-todas").addEventListener("click", () => { caixas().forEach((c) => (c.checked = true)); atualizarContador(); });
+  $("#wl-nenhuma").addEventListener("click", () => { caixas().forEach((c) => (c.checked = false)); atualizarContador(); });
+  $("#wl-pendentes").addEventListener("click", () => { caixas().forEach((c) => (c.checked = aptas[+c.dataset.i].e.status !== "VERDE")); atualizarContador(); });
+  $("#wl-cancelar").addEventListener("click", fecharModal);
+  atualizarContador();
+
+  $("#wl-preparar").addEventListener("click", (ev) => comCarregando(ev.currentTarget, async () => {
+    const selecionadas = caixas().filter((c) => c.checked).map((c) => aptas[+c.dataset.i]);
+    const ate = $("#wl-ate").value;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ate) || ate < _isoLocal(hoje)) return notificar("Escolha uma data de validade de hoje em diante.", "aviso");
+    const textoModelo = $("#wl-modelo").value;
+    if (!textoModelo.includes("{link}")) {
+      const ok = await confirmar("A mensagem não tem {link} — o cliente não vai receber o link para baixar os documentos. Continuar mesmo assim?", { titulo: "Mensagem sem link", textoOk: "Continuar" });
+      if (!ok) return;
+    }
+    const modoEscolhido = $("#wl-modo").value;
+    const registrar = $("#wl-registrar").checked;
+    _gravarPref("fzcont_wa_modo", modoEscolhido);
+    _gravarPref("fzcont_wa_modelo_lote", textoModelo);
+    const [a, m, d] = ate.split("-").map(Number);
+    _gravarPref("fzcont_wa_dias", String(Math.round((new Date(a, m - 1, d) - new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate())) / 86400000)));
+    const competencia = competenciaMesAnterior();
+    try {
+      const r = await api("/api/compartilhar-lote", {
+        method: "POST",
+        body: JSON.stringify({
+          ate,
+          itens: selecionadas.map(({ e }) => ({ chave: e.id, anexoIds: e.anexos.map((x) => x.id), titulo: `${e.nome} — documentos do setor Fiscal, competência ${competencia}` })),
+        }),
+      });
+      const porChave = new Map(r.resultados.map((x) => [x.chave, x]));
+      const fila = selecionadas.map(({ e, numero }) => {
+        const res = porChave.get(e.id) || { erro: "Sem resposta do servidor." };
+        const mensagem = res.url
+          ? textoModelo.split("{empresa}").join(e.nome).split("{competencia}").join(competencia).split("{link}").join(res.url).split("{validade}").join(_brDeIso(ate))
+          : "";
+        return { e, numero, url: res.url, erro: res.erro, mensagem, estado: res.url ? "fila" : "erro" };
+      });
+      mostrarFilaWhatsApp(fila, { modo: modoEscolhido, registrar, competencia });
+    } catch (err) {
+      notificar("Erro ao preparar os envios: " + err.message, "erro");
+    }
+  }));
+}
+
+function mostrarFilaWhatsApp(fila, { modo, registrar, competencia }) {
+  const ROTULO = { fila: ["Na fila", "neutra"], aberto: ["Aberto no WhatsApp", "info"], enviado: ["Enviado", "ok"], pulado: ["Pulado", "aviso"], erro: ["Erro", "erro"] };
+  let atual = -1; // índice da conversa aberta agora
+
+  abrirModal(`
+    <h2>Fila de envio pelo WhatsApp</h2>
+    <p class="modal-sub">${modo === "app" ? "Cada conversa abre no aplicativo do WhatsApp" : "Cada conversa abre na mesma aba do WhatsApp Web"}. Lá, aperte <b>Enter</b> para enviar e volte aqui.</p>
+    <div class="wl-painel" id="wl-painel"></div>
+    <div class="ic-progresso" style="margin:12px 0">
+      <span id="wl-prog-texto"></span>
+      <div class="ic-progresso-barra"><span id="wl-prog-barra"></span></div>
+    </div>
+    <div class="wl-lista wl-fila" id="wl-fila"></div>
+    <div class="modal-rodape"><button type="button" class="btn-ghost" id="wl-fechar">Fechar</button></div>`);
+
+  const proximoIndice = (depois) => fila.findIndex((x, i) => i > depois && x.estado === "fila");
+
+  function abrir(i) {
+    const item = fila[i];
+    const texto = encodeURIComponent(item.mensagem);
+    if (modo === "app") window.location.href = `whatsapp://send?phone=${item.numero}&text=${texto}`;
+    else window.open(`https://web.whatsapp.com/send?phone=${item.numero}&text=${texto}`, "fzcont_whatsapp");
+    item.estado = "aberto";
+    atual = i;
+  }
+
+  function registrarEnvio(item) {
+    item.estado = "enviado";
+    if (!registrar) return;
+    const e = item.e;
+    e.status = "VERDE";
+    e.comentarios = e.comentarios || [];
+    e.comentarios.push(`Documentos enviados pelo WhatsApp para ${formatarTelefone(item.numero)} (competência ${competencia})\n${agora()}`);
+    mudouStatus(e);
+    const wrap = EL_EMPRESA.get(e.id);
+    if (wrap && wrap.classList.contains("aberto")) { wrap.querySelector(".empresa-corpo")?.remove(); wrap.appendChild(criarCorpoEmpresa(e)); }
+  }
+
+  function desenhar() {
+    const total = fila.length;
+    const enviados = fila.filter((x) => x.estado === "enviado").length;
+    const resolvidos = fila.filter((x) => x.estado !== "fila" && x.estado !== "aberto").length;
+    $("#wl-prog-texto").textContent = `${enviados} enviado(s) de ${total}` + (fila.some((x) => x.estado === "pulado") ? ` · ${fila.filter((x) => x.estado === "pulado").length} pulado(s)` : "") + (fila.some((x) => x.estado === "erro") ? ` · ${fila.filter((x) => x.estado === "erro").length} com erro` : "");
+    $("#wl-prog-barra").style.transform = `scaleX(${total ? resolvidos / total : 0})`;
+
+    const painel = $("#wl-painel");
+    const prox = proximoIndice(atual);
+    const corrente = atual >= 0 && fila[atual].estado === "aberto" ? fila[atual] : null;
+    if (corrente) {
+      const seguinte = proximoIndice(atual);
+      painel.innerHTML = `
+        <div class="wl-agora"><small>Conversa aberta</small><b>${escaparHtml(corrente.e.nome)}</b><span>${escaparHtml(formatarTelefone(corrente.numero))}</span></div>
+        <div class="wl-botoes">
+          <button type="button" class="btn-primario btn-whatsapp btn-grande" id="wl-enviado">${icone("check")}<span>${seguinte >= 0 ? "Enviado, abrir o próximo" : "Enviado, concluir"}</span></button>
+          <button type="button" class="btn-secundario" id="wl-reabrir">${icone("atualizar")}Abrir de novo</button>
+          <button type="button" class="btn-ghost" id="wl-pular">${icone("seta")}Pular</button>
+        </div>
+        ${seguinte >= 0 ? `<div class="wl-seguinte">Próximo: ${escaparHtml(fila[seguinte].e.nome)}</div>` : ""}`;
+    } else if (prox >= 0) {
+      painel.innerHTML = `
+        <div class="wl-agora"><small>${resolvidos ? "Continuar" : "Pronto para começar"}</small><b>${escaparHtml(fila[prox].e.nome)}</b><span>${escaparHtml(formatarTelefone(fila[prox].numero))}</span></div>
+        <div class="wl-botoes"><button type="button" class="btn-primario btn-whatsapp btn-grande" id="wl-comecar">${icone("conversa")}<span>Abrir no WhatsApp</span></button></div>`;
+    } else {
+      painel.innerHTML = `<div class="wl-fim">${icone("ok")}<span><b>Fila concluída</b><small>${enviados} envio(s) registrado(s).${registrar && enviados ? " Clique em Salvar para gravar os status e comentários." : ""}</small></span></div>`;
+    }
+
+    $("#wl-fila").innerHTML = fila.map((x, i) => `
+      <div class="wl-item ${i === atual && x.estado === "aberto" ? "wl-ativo" : ""}">
+        <span class="wl-num">${i + 1}</span>
+        <span class="wl-nome"><b>${escaparHtml(x.e.nome)}</b><small>${escaparHtml(formatarTelefone(x.numero))}${x.erro ? " · " + escaparHtml(x.erro) : ""}</small></span>
+        <span class="etiqueta etiqueta-${ROTULO[x.estado][1]}">${ROTULO[x.estado][0]}</span>
+        ${x.url && x.estado !== "aberto" ? `<button type="button" class="btn-icone neutro" data-abrir="${i}" title="Abrir esta conversa agora">${icone("conversa")}</button>` : '<span style="width:30px"></span>'}
+      </div>`).join("");
+  }
+
+  $("#wl-painel").addEventListener("click", (e) => {
+    const id = e.target.closest("button")?.id;
+    if (id === "wl-comecar") { abrir(proximoIndice(atual)); desenhar(); }
+    else if (id === "wl-enviado" || id === "wl-pular") {
+      const item = fila[atual];
+      if (id === "wl-enviado") registrarEnvio(item); else item.estado = "pulado";
+      const prox = proximoIndice(atual);
+      if (prox >= 0) abrir(prox); // abre na hora, no mesmo clique (o navegador não bloqueia)
+      desenhar();
+      if (prox < 0) notificar("Fila concluída", "ok");
+    } else if (id === "wl-reabrir") { abrir(atual); desenhar(); }
+  });
+  $("#wl-fila").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-abrir]");
+    if (!b) return;
+    if (atual >= 0 && fila[atual].estado === "aberto") fila[atual].estado = "fila"; // volta pra fila sem marcar
+    abrir(+b.dataset.abrir);
+    desenhar();
+  });
+  $("#wl-fechar").addEventListener("click", fecharModal);
+  desenhar();
+}
+
 $("#btn-nova-tarefa").addEventListener("click", async () => {
   const texto = await perguntar("Nova tarefa", { placeholder: "Descreva a tarefa", textoOk: "Adicionar" });
   if (!texto || !texto.trim()) return;

@@ -141,11 +141,21 @@ async function gravarDadosCompletos(env, estado, prefixo = "") {
     return { ...resto, id };
   });
 
-  await env.KV_EMPRESAS.put(`${prefixo}dados`, JSON.stringify({ grupos }));
-  await env.KV_EMPRESAS.put(`${prefixo}parcelamentos`, JSON.stringify({ parcelamentos }));
-  await env.KV_COMENTARIOS.put(`${prefixo}checklist`, JSON.stringify(estado.checklist || []));
-  await env.KV_COMENTARIOS.put(`${prefixo}comentariosEmpresas`, JSON.stringify(comentariosEmpresas));
-  await env.KV_COMENTARIOS.put(`${prefixo}comentariosParcelamentos`, JSON.stringify(comentariosParcelamentos));
+  // O plano gratuito do KV permite só 1.000 gravações por dia: cada chave só é regravada se
+  // o conteúdo realmente mudou (ler é barato — 100.000 leituras/dia).
+  const gravarSeMudou = async (kv, chave, valor) => {
+    const atual = await kv.get(chave);
+    if (atual === valor) return false;
+    await kv.put(chave, valor);
+    return true;
+  };
+  await Promise.all([
+    gravarSeMudou(env.KV_EMPRESAS, `${prefixo}dados`, JSON.stringify({ grupos })),
+    gravarSeMudou(env.KV_EMPRESAS, `${prefixo}parcelamentos`, JSON.stringify({ parcelamentos })),
+    gravarSeMudou(env.KV_COMENTARIOS, `${prefixo}checklist`, JSON.stringify(estado.checklist || [])),
+    gravarSeMudou(env.KV_COMENTARIOS, `${prefixo}comentariosEmpresas`, JSON.stringify(comentariosEmpresas)),
+    gravarSeMudou(env.KV_COMENTARIOS, `${prefixo}comentariosParcelamentos`, JSON.stringify(comentariosParcelamentos)),
+  ]);
 
   return { grupos, checklist: estado.checklist || [], parcelamentos };
 }
@@ -584,10 +594,13 @@ const PROVEDORES_CNPJ = [
 ];
 
 async function consultarCnpjPublico(env, cnpj) {
-  const chaveCache = `cnpj_cache:v2:${cnpj}`;
+  // Cache de 24h no cache da própria Cloudflare (gratuito e sem limite diário), em vez do KV —
+  // assim "Verificar exclusões" de muitas empresas não gasta as 1.000 gravações/dia do KV.
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const chaveCache = new Request(`https://cache.fzcont.interno/cnpj/v2/${cnpj}`);
   try {
-    const emCache = await env.KV_EMPRESAS.get(chaveCache, "json");
-    if (emCache) return { ok: true, ...emCache, doCache: true };
+    const emCache = cache && (await cache.match(chaveCache));
+    if (emCache) return { ok: true, ...(await emCache.json()), doCache: true };
   } catch {}
 
   let viu429 = false;
@@ -608,7 +621,11 @@ async function consultarCnpjPublico(env, cnpj) {
 
       resultado.consultadoEm = new Date().toISOString();
       try {
-        await env.KV_EMPRESAS.put(chaveCache, JSON.stringify(resultado), { expirationTtl: CNPJ_CACHE_TTL_SEGUNDOS });
+        if (cache) {
+          await cache.put(chaveCache, new Response(JSON.stringify(resultado), {
+            headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${CNPJ_CACHE_TTL_SEGUNDOS}` },
+          }));
+        }
       } catch {}
       return { ok: true, ...resultado, doCache: false };
     } catch {
@@ -634,6 +651,45 @@ async function consultarCnpjPublico(env, cnpj) {
 // ---------------------------------------------------------------------------
 // Handler principal
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// LINKS DE DOWNLOAD PARA O CLIENTE (WhatsApp)
+// ---------------------------------------------------------------------------
+// Validade: até o FIM do dia escolhido (23:59:59, horário de Brasília). "dias" fica por compatibilidade.
+function calcularValidadeLink(ate, dias) {
+  if (typeof ate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(ate)) {
+    const expiraMs = Date.parse(`${ate}T23:59:59-03:00`);
+    if (!Number.isFinite(expiraMs)) return { erro: "Data de validade inválida." };
+    if (expiraMs <= Date.now()) return { erro: "A data de validade precisa ser hoje ou depois." };
+    if (expiraMs - Date.now() > 366 * 86400000) return { erro: "A validade máxima é de 1 ano." };
+    return { expiraMs };
+  }
+  return { expiraMs: Date.now() + Math.min(Math.max(Number(dias) || 7, 1), 366) * 86400000 };
+}
+
+function idsAnexosValidos(anexoIds) {
+  return Array.isArray(anexoIds) ? [...new Set(anexoIds.filter((x) => typeof x === "string" && /^[\w-]{8,64}$/.test(x)))] : [];
+}
+
+async function criarLinkCompartilhado(env, { ids, titulo, expiraMs, username, origem }) {
+  if (!ids.length) return { erro: "Nenhum arquivo para compartilhar.", status: 400 };
+  if (ids.length > 50) return { erro: "Máximo de 50 arquivos por link.", status: 400 };
+  const arquivos = [];
+  for (const id of ids) {
+    const head = await env.ANEXOS_R2.head(`anexos/${id}`);
+    if (head) arquivos.push({ id, nome: head.customMetadata?.nome || id, tamanho: head.size || 0 });
+  }
+  if (!arquivos.length) return { erro: "Os arquivos não foram encontrados no armazenamento (talvez tenham sido apagados).", status: 404 };
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  const token = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join(""); // 48 caracteres, impossível de adivinhar
+  const expiraEm = new Date(expiraMs).toISOString();
+  await env.SFC_KV.put(
+    `link:${token}`,
+    JSON.stringify({ titulo: String(titulo || "").slice(0, 200), arquivos, criadoEm: new Date().toISOString(), criadoPor: username, expiraEm }),
+    { expirationTtl: Math.max(60, Math.ceil((expiraMs - Date.now()) / 1000)) }
+  );
+  return { url: `${origem}/d/${token}`, expiraEm, arquivos: arquivos.length };
+}
 
 // Página pública que o cliente abre pelo link do WhatsApp (sem login).
 function paginaDownload(registro, token) {
@@ -1191,35 +1247,30 @@ export default {
       // ---------- CRIAR LINK DE DOWNLOAD PARA O CLIENTE (WhatsApp) ----------
       if (pathname === "/api/compartilhar" && request.method === "POST") {
         const { anexoIds, titulo, dias, ate } = await request.json().catch(() => ({}));
-        const ids = Array.isArray(anexoIds) ? [...new Set(anexoIds.filter((x) => typeof x === "string" && /^[\w-]{8,64}$/.test(x)))] : [];
-        if (!ids.length) return json({ erro: "Nenhum arquivo para compartilhar." }, 400);
-        if (ids.length > 50) return json({ erro: "Máximo de 50 arquivos por link." }, 400);
-        // Validade: até o FIM do dia escolhido (23:59:59, horário de Brasília). "dias" fica por compatibilidade.
-        let expiraMs;
-        if (typeof ate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(ate)) {
-          expiraMs = Date.parse(`${ate}T23:59:59-03:00`);
-          if (!Number.isFinite(expiraMs)) return json({ erro: "Data de validade inválida." }, 400);
-          if (expiraMs <= Date.now()) return json({ erro: "A data de validade precisa ser hoje ou depois." }, 400);
-          if (expiraMs - Date.now() > 366 * 86400000) return json({ erro: "A validade máxima é de 1 ano." }, 400);
-        } else {
-          expiraMs = Date.now() + Math.min(Math.max(Number(dias) || 7, 1), 366) * 86400000;
+        const validade = calcularValidadeLink(ate, dias);
+        if (validade.erro) return json({ erro: validade.erro }, 400);
+        const r = await criarLinkCompartilhado(env, { ids: idsAnexosValidos(anexoIds), titulo, expiraMs: validade.expiraMs, username, origem: url.origin });
+        if (r.erro) return json({ erro: r.erro }, r.status);
+        return json(r);
+      }
+
+      // ---------- VÁRIOS LINKS DE UMA VEZ (envio em lote pelo WhatsApp) ----------
+      // Uma chamada só para a fila inteira; cada item vira um link independente.
+      if (pathname === "/api/compartilhar-lote" && request.method === "POST") {
+        const { itens, dias, ate } = await request.json().catch(() => ({}));
+        if (!Array.isArray(itens) || !itens.length) return json({ erro: "Nenhuma empresa selecionada." }, 400);
+        if (itens.length > 100) return json({ erro: "Máximo de 100 empresas por lote." }, 400);
+        const validade = calcularValidadeLink(ate, dias);
+        if (validade.erro) return json({ erro: validade.erro }, 400);
+        const resultados = [];
+        for (const item of itens) {
+          const r = await criarLinkCompartilhado(env, {
+            ids: idsAnexosValidos(item && item.anexoIds), titulo: item && item.titulo,
+            expiraMs: validade.expiraMs, username, origem: url.origin,
+          });
+          resultados.push({ chave: item && item.chave, ...(r.erro ? { erro: r.erro } : r) });
         }
-        const ttlSegundos = Math.max(60, Math.ceil((expiraMs - Date.now()) / 1000));
-        const arquivos = [];
-        for (const id of ids) {
-          const head = await env.ANEXOS_R2.head(`anexos/${id}`);
-          if (head) arquivos.push({ id, nome: head.customMetadata?.nome || id, tamanho: head.size || 0 });
-        }
-        if (!arquivos.length) return json({ erro: "Os arquivos não foram encontrados no armazenamento (talvez tenham sido apagados)." }, 404);
-        const bytes = crypto.getRandomValues(new Uint8Array(24));
-        const token = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join(""); // 48 caracteres, impossível de adivinhar
-        const expiraEm = new Date(expiraMs).toISOString();
-        await env.SFC_KV.put(
-          `link:${token}`,
-          JSON.stringify({ titulo: String(titulo || "").slice(0, 200), arquivos, criadoEm: new Date().toISOString(), criadoPor: username, expiraEm }),
-          { expirationTtl: ttlSegundos }
-        );
-        return json({ url: `${url.origin}/d/${token}`, expiraEm, arquivos: arquivos.length });
+        return json({ resultados, expiraEm: new Date(validade.expiraMs).toISOString() });
       }
 
       // ---------- ANEXOS (upload/download/exclusão reais, guardados no bucket R2) ----------

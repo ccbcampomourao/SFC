@@ -188,3 +188,13 @@ O leitor (`public/sitfis-parser.js`) segue as seções do próprio relatório da
 - O link leva a uma página com a marca FZ CONT onde o cliente baixa os arquivos, sem login. Ele **expira sozinho** no fim do dia que você escolher no calendário (até 1 ano), tem um código impossível de adivinhar, não aparece em buscadores e só dá acesso aos arquivos daquele envio.
 - Depois de enviar, o sistema pergunta se quer registrar o envio: na empresa, marca como OK e anota nos comentários (como o e-mail faz).
 - Não usa API do WhatsApp: são os links oficiais "clique para conversar" — sem custo, sem cadastro e sem risco de bloqueio do número.
+
+### WhatsApp em lote
+
+Na página Empresas, botão **WhatsApp em lote** (no painel "Grupos e empresas"):
+1. Mostra as empresas que têm WhatsApp e documentos anexados (as que faltam algo aparecem em "fora do lote", com o motivo). "Só as não enviadas" desmarca as que já estão OK.
+2. Escolha a data de validade dos links e ajuste a mensagem — `{empresa}`, `{competencia}`, `{link}` e `{validade}` são trocados para cada cliente. A mensagem fica guardada para a próxima vez.
+3. **Preparar envios** gera todos os links numa chamada só.
+4. Na fila, **Abrir no WhatsApp** abre a primeira conversa já preenchida. No WhatsApp, aperte Enter para enviar e volte: **Enviado, abrir o próximo** registra o envio (empresa fica OK + comentário) e abre o cliente seguinte. Também dá para **Pular** ou **Abrir de novo**.
+
+Sem a API paga do WhatsApp não existe envio 100% automático: cada mensagem precisa do "enviar" no próprio WhatsApp. Dica: o **aplicativo do WhatsApp para computador** troca de conversa mais rápido que o WhatsApp Web.

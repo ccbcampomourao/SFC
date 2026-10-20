@@ -637,3 +637,32 @@ body.dados-prontos .so-carregando { display: none !important; }
 .wa-arquivo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wa-status { float: right; display: inline-flex; align-items: center; gap: 5px; font-weight: 500; color: var(--ink-3); }
 #wa-mensagem { resize: vertical; line-height: 1.5; font-size: 13px; }
+
+/* ---------- WHATSAPP EM LOTE ---------- */
+.wl-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.wl-lista { border: 1.3px solid var(--line); border-radius: var(--raio-sm); max-height: 34vh; overflow-y: auto; scrollbar-width: thin; }
+.wl-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background-color .12s ease; }
+.wl-item:last-child { border-bottom: none; }
+.wl-item:hover { background: var(--paper-2); }
+.wl-item input { width: 16px; height: 16px; accent-color: #1DA851; flex-shrink: 0; }
+.wl-nome { flex: 1; min-width: 0; }
+.wl-nome b { display: block; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wl-nome small { display: block; font-size: 11.5px; color: var(--ink-soft); }
+.wl-fora { margin-top: 8px; font-size: 12.5px; color: var(--ink-soft); }
+.wl-fora summary { cursor: pointer; padding: 4px 0; }
+.wl-fora-item { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0 4px 14px; border-bottom: 1px dashed var(--line); }
+.wl-fora-item small { color: var(--ink-3); white-space: nowrap; }
+.wl-marcadores { float: right; font-weight: 500; color: var(--ink-3); }
+.wl-fila .wl-item { cursor: default; }
+.wl-fila .wl-ativo { background: #E7F8EE; }
+.wl-num { width: 24px; height: 24px; border-radius: 50%; background: var(--paper); color: var(--ink-soft); font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.wl-painel { border: 1.5px solid #A8E3C0; background: #F2FBF6; border-radius: 14px; padding: 16px; }
+.wl-agora small { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #128C4B; font-weight: 700; }
+.wl-agora b { display: block; font-size: 17px; font-family: "Sora", sans-serif; margin: 2px 0; }
+.wl-agora span { font-size: 13px; color: var(--ink-soft); }
+.wl-botoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.wl-seguinte { margin-top: 10px; font-size: 12px; color: var(--ink-soft); }
+.wl-fim { display: flex; align-items: center; gap: 12px; color: var(--verde); }
+.wl-fim .ico { width: 28px; height: 28px; }
+.wl-fim b { display: block; font-size: 15px; }
+.wl-fim small { display: block; color: var(--ink-soft); font-size: 12.5px; }
