@@ -52,16 +52,28 @@ class BuscaNfseIpm {
     return numeros.map((n) => this.cache.get(n) || { numero: n, existe: false });
   }
 
+  menorExistente() {
+    let m = Infinity;
+    for (const r of this.cache.values()) if (r.existe && r.numero < m) m = r.numero;
+    return m;
+  }
+
   async ultimaNota() {
     let base = Number(this.e.nfseIpm && this.e.nfseIpm.ultimo) || 0;
     if (base > 0 && !(await this.consultar([base]))[0].existe) base = 0;
     if (base === 0) {
-      if (!(await this.consultar([1]))[0].existe) {
-        throw Object.assign(new Error("A prefeitura não encontrou a nota nº 1 nessa série."), {
-          dica: "Confira a série da NFS-e nos dados da empresa (normalmente 1). Se a empresa ainda não emitiu nenhuma nota, isso é normal.",
+      // A numeração normalmente começa em 1, mas empresas que vieram de outro sistema
+      // podem começar mais adiante: testa alguns pontos e parte do maior que existir.
+      const pontos = [1, 2, 3, 5, 10, 20, 30, 50, 75, 100, 150, 200, 300, 500, 750, 1000, 1500, 2000, 3000, 5000, 7500, 10000, 20000, 50000];
+      const res = await this.consultar(pontos);
+      const achados = pontos.filter((_, i) => res[i].existe);
+      if (!achados.length) {
+        throw Object.assign(new Error("A prefeitura não encontrou nenhuma NFS-e dessa empresa com esse cadastro e essa série."), {
+          dica: "Confira nos dados da empresa: (1) “Cadastro econômico (prefeitura)” — o número do cadastro econômico/inscrição municipal como aparece no Atende.Net (se tiver um dígito depois do traço, tente sem ele); (2) “Série da NFS-e” — veja a série impressa numa nota emitida (normalmente 1). Se a empresa ainda não emitiu nenhuma nota no Atende.Net, isso é normal. Se o cadastro e a série estão certos, a numeração pode começar num número alto: informe abaixo o nº de uma nota que você sabe que existe.",
+          pedirNumero: true,
         });
       }
-      base = 1;
+      base = achados[achados.length - 1];
     }
     // Saltos: base+1, +2, +4 ... até achar um número que não existe
     let lo = base, hi = null, expoente = 0;
@@ -94,7 +106,12 @@ class BuscaNfseIpm {
       let mudou = false;
       for (const [k, p] of pts.entries()) {
         const d = dataDe(res[k]);
-        if (d === null) continue; // número pulado: ignora
+        if (d === null) {
+          // Abaixo da menor nota conhecida: a numeração ainda não tinha começado (conta como "antes do mês").
+          // Acima dela: é um número pulado, ignora.
+          if (p < this.menorExistente()) { lo = p; mudou = true; }
+          continue;
+        }
         if (d >= inicio) { hi = p; mudou = true; break; }
         lo = p; mudou = true;
       }
@@ -373,7 +390,8 @@ function _htmlItem(e) {
           <button type="button" class="btn-secundario btn-sm" data-acao="buscar"${XMLP.ocupado || ocupada ? " disabled" : ""} title="Buscar só esta empresa">${icone("atualizar")}${h ? "Buscar de novo" : "Buscar"}</button>
         </div>
       </div>
-      ${err ? `<div class="nf-erro"><b>${escaparHtml(err.message)}</b>${err.dica ? `<span>${icone("lampada", "ico-sm")}${escaparHtml(err.dica)}</span>` : ""}</div>` : ""}
+      ${err ? `<div class="nf-erro"><b>${escaparHtml(err.message)}</b>${err.dica ? `<span>${icone("lampada", "ico-sm")}${escaparHtml(err.dica)}</span>` : ""}${err.pedirNumero ? `
+        <form class="xml-numero" data-numero="${e.id}"><input type="number" min="1" step="1" placeholder="nº de uma NFS-e emitida" required><button type="submit" class="btn-secundario btn-sm">${icone("busca")}Buscar a partir dela</button></form>` : ""}</div>` : ""}
       ${aberta ? `<div class="xml-detalhe" data-detalhe="${e.id}">${_htmlDetalhe(e)}</div>` : ""}
     </div>`;
 }
@@ -462,6 +480,17 @@ $("#xml-nenhuma")?.addEventListener("click", () => { empresasParaNfse().aptas.fi
 $("#xml-nao-buscadas")?.addEventListener("click", () => {
   XMLP.selecionadas = new Set(empresasParaNfse().aptas.filter((e) => !_hist(e) || XMLP.erros.has(_chave(e))).map((e) => e.id));
   renderizarLista();
+});
+
+$("#xml-lista")?.addEventListener("submit", (ev) => {
+  const form = ev.target.closest("[data-numero]");
+  if (!form) return;
+  ev.preventDefault();
+  const e = empresasParaNfse().aptas.find((x) => x.id === form.dataset.numero);
+  const n = Number(form.querySelector("input").value);
+  if (!e || !Number.isInteger(n) || n < 1) return;
+  e.nfseIpm = { ...(e.nfseIpm || {}), ultimo: n }; // a busca começa por esse número
+  buscarEmpresas([e]);
 });
 
 $("#xml-lista")?.addEventListener("change", (ev) => {

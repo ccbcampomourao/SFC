@@ -217,6 +217,6 @@ Ao reabrir a página, o que já foi buscado aparece de novo sem consultar a pref
 
 **Limites:** só notas emitidas pela empresa (o webservice não lista notas tomadas). A primeira busca de cada empresa gasta mais consultas; depois o sistema guarda o último número e fica mais rápido. Há uma chamada ao Worker a cada 15 consultas, longe dos limites do plano gratuito.
 
-**Erro "Acesso Negado" (401):** a prefeitura recusou o login antes de chegar nas notas. Confira se o login e a senha entram em campomourao.atende.net, e se o serviço "Emissão de NFS-e por WebService" está com "Liberar Acesso ao Usuário" marcado. Se a empresa entra no portal com CPF, preencha o campo "Login prefeitura (se não for o CNPJ)". O sistema tenta sozinho também o endereço alternativo `ws-campomourao.atende.net:7443`.
+**Erro "Acesso Negado" (401):** a prefeitura recusou o login antes de chegar nas notas. Confira se o login e a senha entram em campomourao.atende.net, e se o serviço "Emissão de NFS-e por WebService" está com "Liberar Acesso ao Usuário" marcado. Se a empresa entra no portal com CPF, preencha o campo "Login prefeitura (se não for o CNPJ)". O sistema tenta sozinho também o endereço alternativo `ws-campomourao.atende.net`.
 
 Outro município IPM: crie a variável `IPM_MUNICIPIO` no Worker (ex.: `maringa`). O padrão é `campomourao`. Para fixar o endereço exato do webservice, use a variável `IPM_URL`.

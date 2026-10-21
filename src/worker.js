@@ -700,14 +700,14 @@ const IPM_MUNICIPIO_PADRAO = "campomourao";
 const IPM_MAX_NOTAS_POR_CHAMADA = 15; // o plano gratuito permite 50 consultas externas por chamada
 
 // Endereços do webservice. O manual traz o primeiro; em algumas cidades a IPM usa o segundo
-// (ws-cidade.atende.net:7443). Se o primeiro negar o acesso, o sistema tenta o outro.
+// (ws-cidade.atende.net). Se o primeiro negar o acesso, o sistema tenta o outro.
 // Para fixar um endereço, crie a variável IPM_URL no Worker.
 function urlsWebserviceIpm(env) {
   if (env.IPM_URL) return [String(env.IPM_URL)];
   const municipio = String(env.IPM_MUNICIPIO || IPM_MUNICIPIO_PADRAO).toLowerCase().replace(/[^a-z0-9]/g, "");
   return [
     `https://${municipio}.atende.net/?pg=rest&service=WNERestServiceNFSe`,
-    `https://ws-${municipio}.atende.net:7443/?pg=rest&service=WNERestServiceNFSe`,
+    `https://ws-${municipio}.atende.net/?pg=rest&service=WNERestServiceNFSe`,
   ];
 }
 
@@ -1405,6 +1405,7 @@ export default {
         const urls = urlsWebserviceIpm(env);
         let url = urls.includes(corpo.url) ? corpo.url : urls[0]; // o navegador lembra qual endereço funcionou
         let negado = null;
+        const tentativas = [];
         for (const numero of numeros) {
           let r;
           try {
@@ -1413,13 +1414,16 @@ export default {
             const recusa = !notas.length && acessoNegadoIpm(r.texto, r.http);
             if (recusa) {
               negado = recusa;
+              tentativas.push(`${new URL(url).host} → acesso negado`);
               for (const alternativa of urls.filter((u) => u !== url)) {
+                const host = new URL(alternativa).host;
                 try {
                   const r2 = await consultarNotaIpm(env, { url: alternativa, login, senha, cadastro, serie, numero, cookie: null });
+                  tentativas.push(`${host} → ${acessoNegadoIpm(r2.texto, r2.http) ? "acesso negado" : respostaValidaIpm(r2) ? "respondeu" : `não é o webservice (HTTP ${r2.http})`}`);
                   // só aceita se for uma resposta de verdade do webservice (XML da IPM);
                   // erro de conexão da Cloudflare (522, 52x) ou página qualquer não conta
                   if (respostaValidaIpm(r2) && !acessoNegadoIpm(r2.texto, r2.http)) { r = r2; url = alternativa; negado = null; break; }
-                } catch { /* endereço alternativo não respondeu: fica com o erro do primeiro */ }
+                } catch (e) { tentativas.push(`${host} → sem conexão`); /* fica com o erro do primeiro */ }
               }
             }
           } catch (err) {
@@ -1430,16 +1434,17 @@ export default {
           }
           if (negado || acessoNegadoIpm(r.texto, r.http)) {
             const recusa = negado || acessoNegadoIpm(r.texto, r.http);
-            return json({ erro: `Prefeitura respondeu: acesso negado (login ${login.length === 14 ? "CNPJ" : "CPF"} ${login})`, codigo: 401, dica: dicaErroIpm(401, recusa.texto), etapa: "prefeitura", notas, url }, 502);
+            return json({ erro: `Prefeitura respondeu: acesso negado (login ${login.length === 14 ? "CNPJ" : "CPF"} ${login})${tentativas.length ? ` — endereços testados: ${tentativas.join("; ")}` : ""}`, codigo: 401, dica: dicaErroIpm(401, recusa.texto), etapa: "prefeitura", notas, url }, 502);
           }
           cookie = r.cookie;
           const mensagens = mensagensIpm(r.texto);
-          const existe = /<numero_nfse>/i.test(r.texto) && !mensagens.some((m) => m.codigo === 142);
+          const existe = /<numero_nfse>/i.test(r.texto) && !mensagens.some((m) => m.codigo === 142 || m.codigo === 206);
           if (existe) {
             notas.push({ numero, existe: true, dados: lerNotaIpm(r.texto), ...(corpo.comXml ? { xmlBase64: Buffer.from(r.bytes).toString("base64") } : {}) });
             continue;
           }
-          const naoEncontrada = mensagens.some((m) => m.codigo === 142 || /n[ãa]o encontrad/i.test(m.texto));
+          // 142 (manual) e 206 (Campo Mourão responde assim): não existe nota com esse número
+          const naoEncontrada = mensagens.some((m) => m.codigo === 142 || m.codigo === 206 || /n[ãa]o encontrad|nenhuma nfs-?e foi encontrada/i.test(m.texto));
           if (naoEncontrada) { notas.push({ numero, existe: false }); continue; }
           // Qualquer outro erro (login, permissão, cadastro) vale para todas as notas: para aqui.
           const principal = mensagens.find((m) => m.codigo !== 1) || { codigo: null, texto: r.texto.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300) || `HTTP ${r.http}` };
