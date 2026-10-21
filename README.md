@@ -211,8 +211,16 @@ Escolha o mês, marque as empresas e clique em **Buscar**. Para cada empresa o s
 
 Ao reabrir a página, o que já foi buscado aparece de novo sem consultar a prefeitura: a lista de notas é lida do ZIP anexado. "Só as pendentes" seleciona as empresas que ainda não foram buscadas no mês ou que deram erro. "ZIP de todas" junta os XML do mês, com uma pasta por empresa.
 
+**Município de cada empresa:** no cadastro da empresa, o campo **"Município da NFS-e"** define de qual prefeitura buscar. Quando fica em branco, vale Campo Mourão.
+
+| Município | Sistema | Situação |
+|---|---|---|
+| Campo Mourão, Cascavel | IPM / Atende.Net | funcionando |
+| Farol, Icaraíma, Foz do Iguaçu | Elotech | em preparação |
+| Maringá, Itajaí | NFS-e Nacional | em preparação |
+
 **Para cada empresa funcionar:**
-1. No **Portal do Cidadão** de Campo Mourão (logado como a empresa), abra o serviço **"Emissão de NFS-e por WebService"** e clique em **"Liberar Acesso ao Usuário"**.
+1. No **Portal do Cidadão** da prefeitura (logado como a empresa), abra o serviço **"Emissão de NFS-e por WebService"** e clique em **"Liberar Acesso ao Usuário"**.
 2. Em Empresas, preencha **CNPJ**, **Senha Prefeitura** (a senha do Atende.Net; o login é o CNPJ), **Cadastro econômico (prefeitura)** e **Série da NFS-e** (normalmente 1).
 
 **Limites:** só notas emitidas pela empresa (o webservice não lista notas tomadas). A primeira busca de cada empresa gasta mais consultas; depois o sistema guarda o último número e fica mais rápido. Há uma chamada ao Worker a cada 15 consultas, longe dos limites do plano gratuito.

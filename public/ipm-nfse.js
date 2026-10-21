@@ -27,10 +27,11 @@ function _pontosEntre(lo, hi, qtd) { // até "qtd" inteiros espalhados em (lo, h
 }
 const _brl = (v) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-let _ipmUrl = null;
+const _ipmUrl = {}; // por município: endereço do webservice que funcionou
 class BuscaNfseIpm {
   constructor(empresa) {
     this.e = empresa;
+    this.municipio = municipioNfse(empresa).chave;
     this.cache = new Map(); // numero -> { existe, dados, xmlBase64 }
     this.chamadas = 0;
   }
@@ -44,9 +45,9 @@ class BuscaNfseIpm {
       this.chamadas++;
       const r = await api("/api/ipm/consultar", {
         method: "POST",
-        body: JSON.stringify({ cnpj: this.e.cnpj, login: limparDigitos(this.e.loginPrefeitura) || undefined, senha: this.e.senhaPrefeitura, cadastro: this.e.cadastroMunicipal, serie: this.e.nfseSerie || "1", numeros: lote, comXml: true, url: _ipmUrl || undefined }),
+        body: JSON.stringify({ municipio: this.municipio, cnpj: this.e.cnpj, login: limparDigitos(this.e.loginPrefeitura) || undefined, senha: this.e.senhaPrefeitura, cadastro: this.e.cadastroMunicipal, serie: this.e.nfseSerie || "1", numeros: lote, comXml: true, url: _ipmUrl[this.municipio] || undefined }),
       });
-      if (r.url) _ipmUrl = r.url; // endereço do webservice que funcionou: as próximas chamadas já vão direto nele
+      if (r.url) _ipmUrl[this.municipio] = r.url; // endereço do webservice que funcionou: as próximas chamadas já vão direto nele
       for (const nota of r.notas) this.cache.set(nota.numero, nota);
     }
     return numeros.map((n) => this.cache.get(n) || { numero: n, existe: false });
@@ -267,6 +268,8 @@ const MESES_GUARDADOS = 24;
 function empresasParaNfse() {
   const aptas = [], fora = [];
   ESTADO.grupos.forEach((g) => g.empresas.forEach((e) => {
+    const mun = municipioNfse(e);
+    if (mun.sistema !== "ipm") { fora.push({ e, motivo: `${mun.nome} · ${SISTEMAS_NFSE[mun.sistema]} — em preparação` }); return; }
     const falta = [];
     if (limparDigitos(e.cnpj).length < 11) falta.push("CNPJ");
     if (!e.senhaPrefeitura) falta.push("senha da prefeitura");
@@ -382,7 +385,7 @@ function _htmlItem(e) {
     <div class="xml-item${aberta ? " aberta" : ""}" data-id="${e.id}">
       <div class="xml-linha">
         <label class="xml-check" title="Incluir na busca"><input type="checkbox" data-sel="${e.id}"${XMLP.selecionadas.has(e.id) ? " checked" : ""}${XMLP.ocupado ? " disabled" : ""}></label>
-        <div class="xml-nome"><b title="${escaparHtml(e.nome)}">${escaparHtml(e.nome)}</b><small>${_fmtDoc(e.cnpj)} · cadastro ${escaparHtml(e.cadastroMunicipal)} · série ${escaparHtml(e.nfseSerie || "1")}</small></div>
+        <div class="xml-nome"><b title="${escaparHtml(e.nome)}">${escaparHtml(e.nome)}</b><small>${escaparHtml(municipioNfse(e).nome)} · ${_fmtDoc(e.cnpj)} · cadastro ${escaparHtml(e.cadastroMunicipal)} · série ${escaparHtml(e.nfseSerie || "1")}</small></div>
         <div class="xml-estado">${_htmlEstado(e)}</div>
         <div class="xml-acoes">
           ${temNotas ? `<button type="button" class="btn-ghost btn-sm" data-acao="ver">${icone(aberta ? "setaBaixo" : "seta")}${aberta ? "Fechar" : "Ver notas"}</button>
@@ -451,7 +454,7 @@ function atualizarItem(e) {
 function renderizarFora() {
   const { fora } = empresasParaNfse();
   $("#xml-fora").innerHTML = fora.length ? `
-    <details class="wl-fora"><summary>${fora.length} empresa(s) sem os dados da prefeitura — <a href="/empresas.html">completar na página Empresas</a></summary>
+    <details class="wl-fora"><summary>${fora.length} empresa(s) fora da busca — <a href="/empresas.html">ver na página Empresas</a></summary>
       ${fora.map(({ e, motivo }) => `<div class="wl-fora-item"><span>${escaparHtml(e.nome)}</span><small>${motivo}</small></div>`).join("")}
     </details>` : "";
 }

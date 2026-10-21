@@ -725,8 +725,12 @@ a.btn-ghost, a.btn-secundario { text-decoration: none; }
   .xml-botoes button { flex: 1; }
   .xml-acoes { flex-wrap: wrap; }
   #xml-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  #xml-kpis .kpi-numero { font-size: 19px; overflow-wrap: anywhere; }
 }
 .xml-numero { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
 .xml-numero input { width: 190px; padding: 6px 10px; border: 1.3px solid var(--line-strong); border-radius: 8px; font-size: 13px; background: #fff; }
 .xml-numero input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+/* valores grandes (R$ 1.234.567,89) diminuem para caber no quadro, em qualquer largura */
+#xml-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1200px) { #xml-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+#xml-kpis .kpi-card { container-type: inline-size; }
+#xml-kpis .kpi-numero { font-size: clamp(15px, 11.5cqi, 26px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }

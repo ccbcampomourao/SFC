@@ -702,18 +702,16 @@ const IPM_MAX_NOTAS_POR_CHAMADA = 15; // o plano gratuito permite 50 consultas e
 // Endereços do webservice. O manual traz o primeiro; em algumas cidades a IPM usa o segundo
 // (ws-cidade.atende.net). Se o primeiro negar o acesso, o sistema tenta o outro.
 // Para fixar um endereço, crie a variável IPM_URL no Worker.
-function urlsWebserviceIpm(env) {
-  if (env.IPM_URL) return [String(env.IPM_URL)];
-  const municipio = String(env.IPM_MUNICIPIO || IPM_MUNICIPIO_PADRAO).toLowerCase().replace(/[^a-z0-9]/g, "");
+function municipioIpm(env, pedido) {
+  const m = String(pedido || env.IPM_MUNICIPIO || IPM_MUNICIPIO_PADRAO).toLowerCase().replace(/[^a-z0-9]/g, "");
+  return /^[a-z]{3,40}$/.test(m) ? m : IPM_MUNICIPIO_PADRAO; // só o nome da cidade: o endereço é sempre *.atende.net
+}
+function urlsWebserviceIpm(env, municipio) {
+  if (env.IPM_URL && municipio === municipioIpm(env)) return [String(env.IPM_URL)];
   return [
     `https://${municipio}.atende.net/?pg=rest&service=WNERestServiceNFSe`,
     `https://ws-${municipio}.atende.net/?pg=rest&service=WNERestServiceNFSe`,
   ];
-}
-
-// Resposta que veio mesmo do webservice: XML com nota ou com mensagem de erro da IPM.
-function respostaValidaIpm(r) {
-  return r && r.http < 500 && /<(nfse|retorno|mensagem|numero_nfse)[\s>]/i.test(r.texto || "");
 }
 
 // Resposta {"retorno":{"msg":"Acesso Negado!","sis":"EST","code":401}}: a própria plataforma
@@ -759,11 +757,11 @@ function mensagensIpm(xml) {
   });
 }
 
-function dicaErroIpm(codigo, texto) {
-  if (codigo === 401) return "A prefeitura recusou o login antes de olhar as notas. Confira, nesta ordem: (1) entre em campomourao.atende.net com o mesmo login e a mesma senha cadastrados aqui (login = CNPJ só com números, ou o campo “Login prefeitura” se a empresa entra com CPF); se não entrar, a senha está errada ou vencida; (2) no Autoatendimento, menu Empresa → “Emissão de NFS-e por WebService” → Acessar → marque “Liberar Acesso ao Usuário” e confirme (se já estava marcado, desmarque, confirme e marque de novo); (3) se trocou a senha do portal, atualize também aqui.";
+function dicaErroIpm(codigo, texto, municipio = IPM_MUNICIPIO_PADRAO) {
+  if (codigo === 401) return `A prefeitura recusou o login antes de olhar as notas. Confira, nesta ordem: (1) entre em ${municipio}.atende.net com o mesmo login e a mesma senha cadastrados aqui (login = CNPJ só com números, ou o campo “Login prefeitura” se a empresa entra com CPF); se não entrar, a senha está errada ou vencida; (2) no Autoatendimento, menu Empresa → “Emissão de NFS-e por WebService” → Acessar → marque “Liberar Acesso ao Usuário” e confirme (se já estava marcado, desmarque, confirme e marque de novo); (3) se trocou a senha do portal, atualize também aqui.`;
   if (codigo === 132) return "Usuário ou senha inválidos. O login é o CNPJ da empresa e a senha é a do portal da prefeitura (campo “Senha Prefeitura”).";
   if (codigo === 133) return "O usuário dessa empresa está desativado no portal da prefeitura.";
-  if ([137, 138, 139].includes(codigo)) return "O webservice não está liberado para essa empresa. No Portal do Cidadão de Campo Mourão, abra o serviço “Emissão de NFS-e por WebService”, marque “Liberar Acesso ao Usuário” e confirme.";
+  if ([137, 138, 139].includes(codigo)) return "O webservice não está liberado para essa empresa. No Portal do Cidadão da prefeitura, abra o serviço “Emissão de NFS-e por WebService”, marque “Liberar Acesso ao Usuário” e confirme.";
   if ([134, 135, 4, 41, 111].includes(codigo)) return "A prefeitura não encontrou o cadastro econômico dessa empresa. Confira o número do cadastro econômico (inscrição municipal) nos dados da empresa.";
   if ([5, 207].includes(codigo)) return "Esse usuário não tem permissão para consultar as notas desse cadastro. Use o login da própria empresa e confira o cadastro econômico.";
   if (codigo === 144) return "O login precisa ter só números (o CNPJ sem pontos).";
@@ -1402,7 +1400,8 @@ export default {
 
         let cookie = null;
         const notas = [];
-        const urls = urlsWebserviceIpm(env);
+        const municipio = municipioIpm(env, corpo.municipio);
+        const urls = urlsWebserviceIpm(env, municipio);
         let url = urls.includes(corpo.url) ? corpo.url : urls[0]; // o navegador lembra qual endereço funcionou
         let negado = null;
         const tentativas = [];
@@ -1434,7 +1433,7 @@ export default {
           }
           if (negado || acessoNegadoIpm(r.texto, r.http)) {
             const recusa = negado || acessoNegadoIpm(r.texto, r.http);
-            return json({ erro: `Prefeitura respondeu: acesso negado (login ${login.length === 14 ? "CNPJ" : "CPF"} ${login})${tentativas.length ? ` — endereços testados: ${tentativas.join("; ")}` : ""}`, codigo: 401, dica: dicaErroIpm(401, recusa.texto), etapa: "prefeitura", notas, url }, 502);
+            return json({ erro: `Prefeitura respondeu: acesso negado (login ${login.length === 14 ? "CNPJ" : "CPF"} ${login})${tentativas.length ? ` — endereços testados: ${tentativas.join("; ")}` : ""}`, codigo: 401, dica: dicaErroIpm(401, recusa.texto, municipio), etapa: "prefeitura", notas, url }, 502);
           }
           cookie = r.cookie;
           const mensagens = mensagensIpm(r.texto);
@@ -1451,7 +1450,7 @@ export default {
           return json({
             erro: `Prefeitura respondeu: ${principal.codigo ? `[${principal.codigo}] ` : ""}${principal.texto}`,
             codigo: principal.codigo,
-            dica: dicaErroIpm(principal.codigo, principal.texto),
+            dica: dicaErroIpm(principal.codigo, principal.texto, municipio),
             etapa: "prefeitura",
             notas,
             url,

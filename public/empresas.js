@@ -351,7 +351,7 @@ const CAMPOS_EMPRESA = [
   ["nome", "Nome"], ["cnpj", "CNPJ"], ["cpf", "CPF"], ["email", "E-mail", "email"],
   ["whatsapp", "WhatsApp do cliente", "tel", "(44) 99999-9999"],
   ["senhaPrefeitura", "Senha Prefeitura"], ["senhaRegularize", "Senha Regularize"], ["inscricaoEstadual", "Inscrição Estadual"],
-  ["loginPrefeitura", "Login prefeitura (se não for o CNPJ)", null, "CPF ou CNPJ, só números"], ["cadastroMunicipal", "Cadastro econômico (prefeitura)", null, "inscrição municipal"], ["nfseSerie", "Série da NFS-e", null, "1"],
+  ["municipioNfse", "Município da NFS-e", "select"], ["loginPrefeitura", "Login prefeitura (se não for o CNPJ)", null, "CPF ou CNPJ, só números"], ["cadastroMunicipal", "Cadastro econômico (prefeitura)", null, "inscrição municipal"], ["nfseSerie", "Série da NFS-e", null, "1"],
 ];
 
 function criarCorpoEmpresa(empresa) {
@@ -382,8 +382,10 @@ function criarCorpoEmpresa(empresa) {
   // Dados de acesso
   const campos = document.createElement("div");
   campos.className = "grade-campos";
-  campos.innerHTML = CAMPOS_EMPRESA.map(([campo, rotulo, tipo, placeholder]) =>
-    `<div class="campo-form"><label>${rotulo}</label><input data-campo="${campo}" ${tipo ? `type="${tipo}"` : ""} ${placeholder ? `placeholder="${placeholder}"` : ""} value="${escaparHtml(empresa[campo] || "")}" autocomplete="off" spellcheck="false"></div>`
+  campos.innerHTML = CAMPOS_EMPRESA.map(([campo, rotulo, tipo, placeholder]) => tipo === "select"
+    ? `<div class="campo-form"><label>${rotulo}</label><select data-campo="${campo}">${Object.entries(MUNICIPIOS_NFSE).map(([k, m]) =>
+        `<option value="${k}"${municipioNfse(empresa).chave === k ? " selected" : ""}>${m.nome} · ${SISTEMAS_NFSE[m.sistema]}${m.sistema === "ipm" ? "" : " (em preparação)"}</option>`).join("")}</select></div>`
+    : `<div class="campo-form"><label>${rotulo}</label><input data-campo="${campo}" ${tipo ? `type="${tipo}"` : ""} ${placeholder ? `placeholder="${placeholder}"` : ""} value="${escaparHtml(empresa[campo] || "")}" autocomplete="off" spellcheck="false"></div>`
   ).join("");
   campos.addEventListener("change", (e) => {
     const inp = e.target.closest("[data-campo]");
