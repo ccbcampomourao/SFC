@@ -1,7 +1,9 @@
 import { WorkerMailer } from "worker-mailer";
 
 const SESSION_COOKIE = "sfc_session";
-const SESSION_TTL_SEGUNDOS = 60 * 60 * 24; // 1 dia
+const SESSION_INATIVIDADE_MS = 4 * 60 * 60 * 1000; // desloga só depois de 4h sem usar o sistema
+const SESSION_RENOVA_MS = 30 * 60 * 1000;          // renova no máximo a cada 30 min (economiza gravações no KV)
+const SESSION_COOKIE_SEGUNDOS = 60 * 60 * 24 * 30;  // o cookie dura; quem decide se a sessão vale é o servidor
 const CONFIRMACAO_TTL_SEGUNDOS = 60 * 60 * 24; // 24h para confirmar o e-mail
 
 function emailValido(email) {
@@ -78,12 +80,28 @@ async function conferirSenha(senha, hashSalvo, saltSalvo) {
   return hash === hashSalvo;
 }
 
+// Sessão por inatividade: cada uso "renova" a sessão por mais 4h. Para não gravar no KV a cada
+// clique, a renovação acontece no máximo a cada 30 min — e a validade é 4h + 30 min a partir dela,
+// então o sistema desloga entre 4h e 4h30 depois do último uso (nunca antes de 4h).
+async function gravarSessao(env, token, username) {
+  await env.SFC_KV.put(`session:${token}`, JSON.stringify({ username, renovadaEm: Date.now() }), {
+    expirationTtl: Math.ceil((SESSION_INATIVIDADE_MS + SESSION_RENOVA_MS) / 1000),
+  });
+}
+
 async function usuarioLogado(request, env) {
   const cookies = lerCookies(request);
   const token = cookies[SESSION_COOKIE];
   if (!token) return null;
   const sessao = await env.SFC_KV.get(`session:${token}`, "json");
-  return sessao ? sessao.username : null;
+  if (!sessao || !sessao.username) return null;
+  const agora = Date.now();
+  const renovadaEm = Number(sessao.renovadaEm) || 0; // sessões antigas (antes desta versão) não têm esse campo
+  if (renovadaEm && agora - renovadaEm > SESSION_INATIVIDADE_MS + SESSION_RENOVA_MS) return null;
+  if (agora - renovadaEm >= SESSION_RENOVA_MS) {
+    try { await gravarSessao(env, token, sessao.username); } catch { /* limite do KV: segue logado, tenta na próxima */ }
+  }
+  return sessao.username;
 }
 
 function gruposIniciais() {
@@ -115,7 +133,7 @@ async function lerDadosCompletos(env, prefixo = "") {
     empresas: g.empresas.map((e) => ({ ...e, comentarios: comentEmp[e.id] || [] })),
   }));
   const parcelamentos = parcelamentosObj.parcelamentos.map((p) => ({ ...p, comentarios: comentPar[p.id] || [] }));
-  return { grupos, checklist, parcelamentos };
+  return { grupos, checklist, parcelamentos, ...(dados.mesTrabalho ? { mesTrabalho: dados.mesTrabalho } : {}) };
 }
 
 // Grava o estado completo, separando: cadastro/status -> KV_EMPRESAS, comentários/tarefas -> KV_COMENTARIOS.
@@ -150,14 +168,14 @@ async function gravarDadosCompletos(env, estado, prefixo = "") {
     return true;
   };
   await Promise.all([
-    gravarSeMudou(env.KV_EMPRESAS, `${prefixo}dados`, JSON.stringify({ grupos })),
+    gravarSeMudou(env.KV_EMPRESAS, `${prefixo}dados`, JSON.stringify(/^\d{4}-\d{2}$/.test(estado.mesTrabalho || "") ? { grupos, mesTrabalho: estado.mesTrabalho } : { grupos })),
     gravarSeMudou(env.KV_EMPRESAS, `${prefixo}parcelamentos`, JSON.stringify({ parcelamentos })),
     gravarSeMudou(env.KV_COMENTARIOS, `${prefixo}checklist`, JSON.stringify(estado.checklist || [])),
     gravarSeMudou(env.KV_COMENTARIOS, `${prefixo}comentariosEmpresas`, JSON.stringify(comentariosEmpresas)),
     gravarSeMudou(env.KV_COMENTARIOS, `${prefixo}comentariosParcelamentos`, JSON.stringify(comentariosParcelamentos)),
   ]);
 
-  return { grupos, checklist: estado.checklist || [], parcelamentos };
+  return { grupos, checklist: estado.checklist || [], parcelamentos, ...(estado.mesTrabalho ? { mesTrabalho: estado.mesTrabalho } : {}) };
 }
 
 // Migração automática e transparente: se ainda existirem dados no formato antigo (tudo dentro do
@@ -927,14 +945,12 @@ export default {
           );
         }
         const token = crypto.randomUUID();
-        await env.SFC_KV.put(`session:${token}`, JSON.stringify({ username }), {
-          expirationTtl: SESSION_TTL_SEGUNDOS,
-        });
+        await gravarSessao(env, token, username);
         return new Response(JSON.stringify({ ok: true, nome: usuario.nome }), {
           status: 200,
           headers: {
             "Content-Type": "application/json",
-            "Set-Cookie": cookieDeSessao(token, SESSION_TTL_SEGUNDOS),
+            "Set-Cookie": cookieDeSessao(token, SESSION_COOKIE_SEGUNDOS),
           },
         });
       }

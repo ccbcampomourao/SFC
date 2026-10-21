@@ -3,46 +3,48 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FZCONT · Situação Fiscal</title>
-<link rel="icon" href="/img/logo-mark.png" />
+<title>Prumo · Situação Fiscal</title>
+<link rel="icon" href="/img/prumo-icone.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="/img/prumo-icone-180.png" />
+<meta name="theme-color" content="#1D1A16" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.12.313/pdf.min.js" defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 <style>
   /* Estilos exclusivos do visualizador de Situação Fiscal (o resto vem do style.css) */
   :root{
     --rfb:#2563eb; --pgfn:#dc2626; --parc:#059669; --proc:#7c3aed; --decl:#d97706; --outras:#475569;
   }
-  .mono{ font-family:'JetBrains Mono',monospace; }
+  .mono{ font-family:'IBM Plex Mono',monospace; }
 
   /* ---------- Menu lateral: upload + lista de empresas ---------- */
   .sf-upload{
     display:flex; flex-direction:column; align-items:center; gap:4px;
-    border:1.5px dashed #3a4266; border-radius:12px; padding:14px;
-    text-align:center; cursor:pointer; margin:0 0 8px; background:#1E2547;
+    border:1.5px dashed #4A4238; border-radius:12px; padding:14px;
+    text-align:center; cursor:pointer; margin:0 0 8px; background:#26221D;
     transition:border-color .15s ease, background-color .15s ease;
   }
-  .sf-upload:hover, .sf-upload.arrastando{ border-color:var(--blue-bright); background:#232A55; }
+  .sf-upload:hover, .sf-upload.arrastando{ border-color:var(--blue-bright); background:#2C2722; }
   .sf-upload .ico{ width:22px; height:22px; color:var(--blue-bright); }
-  .sf-upload strong{ color:#e7ebfb; font-size:13px; }
-  .sf-upload span{ font-size:11.5px; color:#8f99c2; }
+  .sf-upload strong{ color:#EFE7D8; font-size:13px; }
+  .sf-upload span{ font-size:11.5px; color:#A99F91; }
   #pdf-upload{ display:none; }
-  .sf-dica{ font-size:11px; color:#66709a; margin:0 4px 14px; line-height:1.5; }
+  .sf-dica{ font-size:11px; color:#8C8273; margin:0 4px 14px; line-height:1.5; }
   .sf-lista-titulo{ display:flex; align-items:center; justify-content:space-between; }
-  .sf-lista-titulo .contador-pilula{ background:#232C55; color:#A9B1D4; margin-right:6px; }
-  .empresa-list{ flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:2px; min-height:0; margin:0 -4px; padding:0 4px; scrollbar-width:thin; scrollbar-color:#333c63 transparent; }
+  .sf-lista-titulo .contador-pilula{ background:#2B2620; color:#D8D0C2; margin-right:6px; }
+  .empresa-list{ flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:2px; min-height:0; margin:0 -4px; padding:0 4px; scrollbar-width:thin; scrollbar-color:#3A342C transparent; }
   .empresa-item{ display:flex; align-items:center; gap:10px; padding:8px; border-radius:9px; cursor:pointer; border:1px solid transparent; transition:background-color .12s ease, border-color .12s ease; }
-  .empresa-item:hover{ background:#20274A; }
-  .empresa-item.active{ background:#232C55; border-color:#2F4A86; }
-  .empresa-avatar{ width:30px; height:30px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; color:#fff; font-family:'Sora',sans-serif; }
+  .empresa-item:hover{ background:#26221D; }
+  .empresa-item.active{ background:#2B2620; border-color:#5A4A3B; }
+  .empresa-avatar{ width:30px; height:30px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; color:#fff; font-family:'Fraunces',sans-serif; }
   .empresa-info{ min-width:0; flex:1; }
-  .empresa-info .nome{ font-size:12.5px; color:#e7ebfb; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .empresa-info .cnpj{ font-size:10.5px; color:#7580ab; }
+  .empresa-info .nome{ font-size:12.5px; color:#EFE7D8; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .empresa-info .cnpj{ font-size:10.5px; color:#8C8273; }
   .empresa-badge{ font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:20px; flex-shrink:0; font-variant-numeric:tabular-nums; }
-  .empty-side{ color:#66709a; font-size:12px; padding:14px 6px; text-align:center; }
+  .empty-side{ color:#8C8273; font-size:12px; padding:14px 6px; text-align:center; }
 
   /* ---------- Faixa superior: busca + filtro ---------- */
   .filter-chip{ display:none; align-items:center; gap:8px; color:#fff; font-size:12.5px; font-weight:700; padding:6px 6px 6px 12px; border-radius:20px; }
@@ -63,7 +65,7 @@
   .overview-table td{ padding:12px 16px; border-bottom:1px solid var(--line); font-size:13px; vertical-align:middle; font-variant-numeric:tabular-nums; }
   .overview-table tr:last-child td{ border-bottom:none; }
   .overview-table tr.clickable{ transition:background-color .12s ease; cursor:pointer; }
-  .overview-table tr.clickable:hover{ background:#F4F8FD; }
+  .overview-table tr.clickable:hover{ background:#F5F1EA; }
   .overview-table td.zero{ color:var(--ink-3); }
   .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px; font-size:11.5px; font-weight:700; white-space:nowrap; }
   .pill::before{ content:""; width:7px; height:7px; border-radius:50%; background:currentColor; }
@@ -74,14 +76,14 @@
   .sf-cabecalho .cnpj-line{ color:var(--ink-soft); font-size:12px; margin-top:4px; }
   .risk-gauge{ display:flex; align-items:center; gap:12px; }
   .donut{ width:56px; height:56px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-  .donut span{ background:#fff; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; font-family:'Sora',sans-serif; }
+  .donut span{ background:#fff; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; font-family:'Fraunces',sans-serif; }
   .risk-label{ font-size:11.5px; color:var(--ink-soft); }
   .risk-label strong{ display:block; font-size:13.5px; }
 
   /* ---------- Visão geral ---------- */
   .sf-resumo-geral{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
   .sf-kpi{ background:#fff; border:1.3px solid var(--line); border-radius:var(--raio); padding:14px 16px; display:flex; align-items:baseline; gap:10px; box-shadow:var(--sombra); border-left:4px solid var(--line-strong); }
-  .sf-kpi b{ font-family:'Sora',sans-serif; font-size:26px; line-height:1; font-variant-numeric:tabular-nums; }
+  .sf-kpi b{ font-family:'Fraunces',sans-serif; font-size:26px; line-height:1; font-variant-numeric:tabular-nums; }
   .sf-kpi span{ color:var(--ink-soft); font-size:13px; }
   .sf-k-pendente{ border-left-color:var(--vermelho); } .sf-k-pendente b{ color:var(--vermelho); }
   .sf-k-suspensa{ border-left-color:var(--amber-vivo); } .sf-k-suspensa b{ color:var(--amber); }
@@ -114,7 +116,7 @@
   .sf-card::before{ content:""; position:absolute; left:0; right:0; top:0; height:3px; background:var(--line-strong); }
   .sf-card:hover{ border-color:var(--line-strong); }
   .sf-card-rotulo{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-soft); }
-  .sf-card-valor{ font-family:'Sora',sans-serif; font-size:20px; font-weight:750; font-variant-numeric:tabular-nums; }
+  .sf-card-valor{ font-family:'Fraunces',sans-serif; font-size:20px; font-weight:750; font-variant-numeric:tabular-nums; }
   .sf-card-sub{ font-size:12px; color:var(--ink-soft); }
   .sf-card-erro::before{ background:var(--vermelho); } .sf-card-erro .sf-card-valor{ color:var(--vermelho); }
   .sf-card-ok::before{ background:var(--verde-vivo); } .sf-card-ok .sf-card-valor{ color:var(--ink-3); }
@@ -177,7 +179,7 @@
   .sf-parc{ border:1.3px solid var(--line); border-radius:12px; padding:12px 14px; margin-top:12px; border-left:4px solid var(--verde-vivo); }
   .sf-parc.atraso{ border-left-color:var(--vermelho); background:#FFFBFB; }
   .sf-parc-topo{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-  .sf-sistema{ font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; padding:3px 7px; border-radius:6px; background:var(--ink); color:#fff; letter-spacing:.03em; }
+  .sf-sistema{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; font-weight:700; padding:3px 7px; border-radius:6px; background:var(--ink); color:#fff; letter-spacing:.03em; }
   .sf-parc-nome{ flex:1; min-width:200px; }
   .sf-parc-nome b{ display:block; font-size:13.5px; }
   .sf-parc-nome small{ display:block; font-size:12px; color:var(--ink-soft); }
@@ -204,7 +206,7 @@
 
   mark{ background:#fff1a8; padding:0 1px; border-radius:2px; }
 
-  .raw-panel{ background:#10142a; color:#c7cdea; border-radius:var(--raio); padding:16px 18px; margin-top:14px; font-family:'JetBrains Mono',monospace; font-size:11.5px; white-space:pre-wrap; max-height:420px; overflow:auto; line-height:1.6; display:none; }
+  .raw-panel{ background:#1D1A16; color:#D8D0C2; border-radius:var(--raio); padding:16px 18px; margin-top:14px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; white-space:pre-wrap; max-height:420px; overflow:auto; line-height:1.6; display:none; }
   .raw-panel.show{ display:block; }
   .actions-row{ display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
 
@@ -220,16 +222,16 @@
 
   <aside class="app-sidebar" id="barra-lateral">
     <div class="app-sidebar-inner">
-      <div class="app-sidebar-brand">
-        <img src="/img/logo-mark.png" alt="" width="36" height="36" />
-        <div><h1>FZCONT</h1><small>Sistema Fiscal Contábil</small></div>
-      </div>
+      <a class="marca" href="/empresas.html" aria-label="Prumo — início">
+        <span class="marca-nome">prum<img src="/img/prumo-simbolo-escuro.svg" alt="" width="17" height="27" /></span>
+        <small>Controle fiscal</small>
+      </a>
       <nav class="app-nav" aria-label="Páginas">
-        <a href="/empresas.html" class="app-nav-link"><svg class="ico" aria-hidden="true"><use href="#i-empresas"/></svg><span>Empresas</span></a>
-        <a href="/parcelamentos.html" class="app-nav-link"><svg class="ico" aria-hidden="true"><use href="#i-parcelamentos"/></svg><span>Parcelamentos</span></a>
-        <a href="/situacao-fiscal.html" class="app-nav-link ativo" aria-current="page"><svg class="ico" aria-hidden="true"><use href="#i-situacao"/></svg><span>Situação Fiscal</span></a>
+        <a href="/empresas.html" class="app-nav-link"><svg class="ico" aria-hidden="true"><use href="#i-empresas"/></svg><span>Empresas</span><em class="nav-contador" id="nav-cont-empresas"></em></a>
+        <a href="/parcelamentos.html" class="app-nav-link"><svg class="ico" aria-hidden="true"><use href="#i-parcelamentos"/></svg><span>Parcelamentos</span><em class="nav-contador" id="nav-cont-parcelamentos"></em></a>
+        <a href="/situacao-fiscal.html" class="app-nav-link ativo" aria-current="page"><svg class="ico" aria-hidden="true"><use href="#i-escudo"/></svg><span>Situação Fiscal</span></a>
         <a href="/xml-nfse.html" class="app-nav-link"><svg class="ico" aria-hidden="true"><use href="#i-xml"/></svg><span>XML NFS-e</span></a>
-        <a href="/integracontador.html" class="app-nav-link"><svg class="ico" aria-hidden="true"><use href="#i-governo"/></svg><span>IntegraContador</span></a>
+        <a href="/integracontador.html" class="app-nav-link"><svg class="ico" aria-hidden="true"><use href="#i-link"/></svg><span>IntegraContador</span></a>
       </nav>
 
       <label class="sf-upload" for="pdf-upload" id="sf-upload">
@@ -889,13 +891,20 @@ carregarTudoInicial();
 // Confere sozinho de tempos em tempos se apareceu relatório novo/atualizado no
 // IntegraContador — mas como agora só baixa/reprocessa quem realmente mudou (compara pela
 // data de atualização), isso é bem leve e não fica reconsultando o Cloudflare à toa.
-setInterval(async () => {
+// Só confere enquanto a aba está à vista E alguém mexeu na página nos últimos 15 min —
+// assim a aba esquecida aberta não mantém a sessão viva nem gasta consultas.
+let ultimaAtividadeSf = Date.now();
+["click", "keydown", "scroll", "pointermove"].forEach((ev) => addEventListener(ev, () => (ultimaAtividadeSf = Date.now()), { passive: true }));
+async function conferirRelatoriosNovos() {
+  if (document.hidden || Date.now() - ultimaAtividadeSf > 15 * 60000) return;
   const mudou = await atualizarRelatoriosIntegraContador();
   if (mudou) {
     renderSidebar();
     if (!empresaAtiva) renderOverview();
   }
-}, 300000);
+}
+setInterval(conferirRelatoriosNovos, 300000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) conferirRelatoriosNovos(); });
 </script>
 </body>
 </html>

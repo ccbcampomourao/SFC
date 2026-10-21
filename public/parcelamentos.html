@@ -3,12 +3,14 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>FZCONT · Parcelamentos</title>
-<link rel="icon" href="/img/logo-mark.png" />
+<title>Prumo · Parcelamentos</title>
+<link rel="icon" href="/img/prumo-icone.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="/img/prumo-icone-180.png" />
+<meta name="theme-color" content="#1D1A16" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/style.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
 </head>
@@ -18,31 +20,34 @@
   <div id="app" class="app-shell">
     <aside class="app-sidebar" id="barra-lateral">
       <div class="app-sidebar-inner">
-        <div class="app-sidebar-brand">
-          <img src="/img/logo-mark.png" alt="" width="36" height="36" />
-          <div><h1>FZCONT</h1><small>Sistema Fiscal Contábil</small></div>
-        </div>
+        <a class="marca" href="/empresas.html" aria-label="Prumo — início">
+          <span class="marca-nome">prum<img src="/img/prumo-simbolo-escuro.svg" alt="" width="17" height="27" /></span>
+          <small>Controle fiscal</small>
+        </a>
+        <label class="campo-busca busca-menu"><svg class="ico " aria-hidden="true"><use href="#i-busca"/></svg><input type="search" id="busca" placeholder="Buscar parcelamento ou CNPJ..." autocomplete="off" /><kbd>/</kbd></label>
         <nav class="app-nav" aria-label="Páginas">
-            <a href="/empresas.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-empresas"/></svg><span>Empresas</span></a>
-            <a href="/parcelamentos.html" class="app-nav-link ativo" aria-current="page"><svg class="ico " aria-hidden="true"><use href="#i-parcelamentos"/></svg><span>Parcelamentos</span></a>
-            <a href="/situacao-fiscal.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-situacao"/></svg><span>Situação Fiscal</span></a>
+            <a href="/empresas.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-empresas"/></svg><span>Empresas</span><em class="nav-contador" id="nav-cont-empresas"></em></a>
+            <a href="/parcelamentos.html" class="app-nav-link ativo" aria-current="page"><svg class="ico " aria-hidden="true"><use href="#i-parcelamentos"/></svg><span>Parcelamentos</span><em class="nav-contador" id="nav-cont-parcelamentos"></em></a>
+            <a href="/situacao-fiscal.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-escudo"/></svg><span>Situação Fiscal</span></a>
             <a href="/xml-nfse.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-xml"/></svg><span>XML NFS-e</span></a>
-            <a href="/integracontador.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-governo"/></svg><span>IntegraContador</span></a>
+            <a href="/integracontador.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-link"/></svg><span>IntegraContador</span></a>
         </nav>
 
-          <div class="app-sidebar-titulo">Dados</div>
           <div class="app-sidebar-acoes">
-            <button class="btn-ghost-side" id="btn-salvar-periodo"><svg class="ico " aria-hidden="true"><use href="#i-arquivo"/></svg><span>Salvar período</span></button>
+            <div class="app-sidebar-titulo">Período</div>
+            <button class="btn-ghost-side" id="btn-salvar-periodo"><svg class="ico " aria-hidden="true"><use href="#i-salvar"/></svg><span>Salvar período</span></button>
             <button class="btn-ghost-side" id="btn-abrir-periodo"><svg class="ico " aria-hidden="true"><use href="#i-pastaAberta"/></svg><span>Abrir período</span></button>
-            <button class="btn-ghost-side" id="btn-importar-pdfs"><svg class="ico " aria-hidden="true"><use href="#i-arquivos"/></svg><span>Importar PDFs em lote</span></button>
+            <button class="btn-ghost-side" id="btn-importar-pdfs"><svg class="ico " aria-hidden="true"><use href="#i-enviar"/></svg><span>Importar PDFs em lote</span></button>
             <input type="file" id="input-importar-pdfs" accept="application/pdf" multiple class="oculto" />
-            <div class="app-sidebar-sep"></div>
-            <button class="btn-ghost-side" id="btn-exportar-backup"><svg class="ico " aria-hidden="true"><use href="#i-baixar"/></svg><span>Exportar backup</span></button>
-            <button class="btn-ghost-side" id="btn-importar-backup"><svg class="ico " aria-hidden="true"><use href="#i-enviar"/></svg><span>Importar backup</span></button>
-            <input type="file" id="input-importar-backup" accept="application/json" class="oculto" />
-            <div class="app-sidebar-sep"></div>
-            <button class="btn-ghost-side" id="btn-usuarios"><svg class="ico " aria-hidden="true"><use href="#i-usuarios"/></svg><span>Usuários</span></button>
             <button class="btn-ghost-side btn-perigo-side" id="btn-nova-lista"><svg class="ico " aria-hidden="true"><use href="#i-borracha"/></svg><span>Nova lista</span></button>
+            <div class="app-sidebar-titulo">Sistema</div>
+            <details class="side-sub">
+              <summary class="btn-ghost-side"><svg class="ico " aria-hidden="true"><use href="#i-banco"/></svg><span>Backup</span><svg class="ico side-sub-seta" aria-hidden="true"><use href="#i-setaBaixo"/></svg></summary>
+              <button class="btn-ghost-side" id="btn-exportar-backup"><svg class="ico " aria-hidden="true"><use href="#i-baixar"/></svg><span>Exportar backup</span></button>
+              <button class="btn-ghost-side" id="btn-importar-backup"><svg class="ico " aria-hidden="true"><use href="#i-enviar"/></svg><span>Importar backup</span></button>
+            </details>
+            <input type="file" id="input-importar-backup" accept="application/json" class="oculto" />
+            <button class="btn-ghost-side" id="btn-usuarios"><svg class="ico " aria-hidden="true"><use href="#i-usuarios"/></svg><span>Usuários</span></button>
           </div>
         <div class="usuario-chip">
           <span class="avatar-mini" id="usuario-avatar">·</span>
@@ -59,7 +64,7 @@
           <h1>Parcelamentos</h1>
           <span>Acompanhamento dos parcelamentos na Receita e na PGFN</span>
         </div>
-        <div class="faixa-direita"><label class="campo-busca"><svg class="ico " aria-hidden="true"><use href="#i-busca"/></svg><input type="search" id="busca" placeholder="Buscar parcelamento ou CNPJ..." autocomplete="off" /><kbd>/</kbd></label><button class="btn-primario" id="btn-salvar" title="Salvar (Ctrl+S)"><svg class="ico " aria-hidden="true"><use href="#i-salvar"/></svg><span>Salvar</span></button></div>
+        <div class="faixa-direita"><button class="btn-primario" id="btn-salvar" title="Salvar (Ctrl+S)"><svg class="ico " aria-hidden="true"><use href="#i-salvar"/></svg><span>Salvar</span></button></div>
       </header>
 
       <main class="conteudo conteudo-coluna">

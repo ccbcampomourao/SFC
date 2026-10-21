@@ -11,11 +11,15 @@ const EMPRESAS_ABERTAS = new Set(); // ids de empresas abertas
 const EL_GRUPO = new Map();         // grupo -> elemento do cartão
 const EL_EMPRESA = new Map();       // id da empresa -> elemento do cartão
 let filtroAtual = "";
+let filtroStatus = "";               // "" | "VERMELHO" | "ATENÇÃO" | "fechado" (abas Todas/Pendentes/Atenção/Fechadas)
+const SELECIONADAS = new Set();      // ids marcados para ação em lote
 
 function renderizarPagina() {
   renderizarDashboard();
   renderizarGrupos();
   renderizarChecklist();
+  atualizarRotuloMes();
+  atualizarBarraSelecao();
 }
 
 function grupoDaEmpresa(empresa) {
@@ -27,14 +31,29 @@ function grupoDaEmpresa(empresa) {
 // ---------------------------------------------------------------------------
 function renderizarDashboard() {
   const cont = $("#dashboard");
-  let total = 0, tv = 0, ta = 0, te = 0;
-  const cards = ESTADO.grupos.map((g) => {
-    const { verde, vermelho, atencao } = contarStatus(g.empresas, "status");
-    total += g.empresas.length; tv += verde; ta += atencao; te += vermelho;
-    return htmlKpi({ nome: g.nome, total: g.empresas.length, verde, atencao, vermelho, iconeNome: "pasta" });
-  });
-  const geral = htmlKpi({ nome: "Geral", total, verde: tv, atencao: ta, vermelho: te, destaque: true, iconeNome: "grafico" });
-  cont.innerHTML = geral + cards.join("");
+  const todas = ESTADO.grupos.flatMap((g) => g.empresas);
+  const total = todas.length;
+  const fechadas = todas.filter((e) => e.fechado).length;
+  const atencao = todas.filter((e) => e.status === "ATENÇÃO").length;
+  const pendentes = todas.filter((e) => e.status === "VERMELHO").length;
+  // grupo com mais empresas pedindo atenção
+  const grupoAtencao = ESTADO.grupos.map((g) => [g.nome, g.empresas.filter((e) => e.status === "ATENÇÃO").length]).sort((a, b) => b[1] - a[1])[0];
+  const pct = (n) => (total ? Math.round((n / total) * 100) : 0);
+  const card = ({ tom, ic, nome, num, barra, sub }) => `
+    <div class="kpi2 kpi2-${tom}">
+      <span class="kpi2-icone">${icone(ic)}</span>
+      <div class="kpi2-txt">
+        <div class="kpi2-linha"><span class="kpi2-nome">${nome}</span><span class="kpi2-barra"><i style="width:${Math.max(barra, barra ? 3 : 0)}%"></i></span></div>
+        <div class="kpi2-linha"><b class="kpi2-num">${num}</b><small>${sub}</small></div>
+      </div>
+    </div>`;
+  cont.innerHTML =
+    card({ tom: "cobre", ic: "empresas", nome: "Empresas ativas", num: total, barra: 100, sub: `${ESTADO.grupos.length} grupo${ESTADO.grupos.length === 1 ? "" : "s"}` }) +
+    card({ tom: "ok", ic: "check", nome: "Fechadas no mês", num: fechadas, barra: pct(fechadas), sub: `${pct(fechadas)}%` }) +
+    card({ tom: "atencao", ic: "alerta", nome: "Requer atenção", num: atencao, barra: pct(atencao), sub: atencao && grupoAtencao ? escaparHtml(grupoAtencao[0]) : "nenhuma" }) +
+    card({ tom: "erro", ic: "relogio", nome: "Pendentes", num: pendentes, barra: pct(pendentes), sub: "DAS vence dia 20" });
+  const nav = $("#nav-cont-empresas");
+  if (nav) nav.textContent = total || "";
 }
 
 // ---------------------------------------------------------------------------
@@ -59,6 +78,7 @@ $("#btn-expandir-todos")?.addEventListener("click", (e) => {
 });
 
 function empresaPassaFiltro(e) {
+  if (filtroStatus === "fechado" ? !e.fechado : filtroStatus && e.status !== filtroStatus) return false;
   if (!filtroAtual) return true;
   const f = filtroAtual;
   return (e.nome || "").toLowerCase().includes(f) || (e.cnpj || "").includes(f) || limparDigitos(e.cnpj).includes(limparDigitos(f) || "\u0000");
@@ -75,30 +95,36 @@ function renderizarGrupos() {
   });
   cont.replaceChildren(frag);
   if (!cont.children.length) {
-    cont.innerHTML = filtroAtual
-      ? `<div class="vazio">${icone("busca", "ico-xl")}<strong>Nada encontrado</strong><p>Nenhuma empresa com “${escaparHtml(filtroAtual)}” no nome ou CNPJ.</p></div>`
+    const nomeAba = { VERMELHO: "pendente", "ATENÇÃO": "em atenção", fechado: "fechada" }[filtroStatus];
+    cont.innerHTML = filtroAtual || filtroStatus
+      ? `<div class="vazio">${icone("busca", "ico-xl")}<strong>Nada encontrado</strong><p>${filtroAtual ? `Nenhuma empresa${nomeAba ? " " + nomeAba : ""} com “${escaparHtml(filtroAtual)}” no nome ou CNPJ.` : `Nenhuma empresa ${nomeAba} no momento.`}</p></div>`
       : `<div class="vazio">${icone("camadas", "ico-xl")}<strong>Nenhum grupo ainda</strong><p>Crie um grupo (ex.: Simples Nacional, Lucro Presumido) e adicione as empresas dentro dele.</p></div>`;
   }
 }
 
 function htmlCabecalhoGrupo(grupo, aberto) {
   const { verde, vermelho, atencao } = contarStatus(grupo.empresas, "status");
+  const total = grupo.empresas.length;
+  const sem = Math.max(total - verde - vermelho - atencao, 0);
+  const seg = (cls, n) => (n ? `<i class="${cls}" style="flex-grow:${n}"></i>` : "");
   return `
     ${icone("seta", "chevron")}
-    ${icone(aberto ? "pastaAberta" : "pasta", "ico-pasta")}
     <h3>${escaparHtml(grupo.nome)}</h3>
-    <span class="mini-status">
-      ${verde ? `<span class="ok" title="OK">${verde}</span>` : ""}
-      ${atencao ? `<span class="atencao" title="Atenção">${atencao}</span>` : ""}
-      ${vermelho ? `<span class="erro" title="Pendente">${vermelho}</span>` : ""}
+    <span class="pilula-qtd">${total} empresa${total === 1 ? "" : "s"}</span>
+    <span class="grupo-contagens">
+      ${verde ? `<span class="cont cont-ok" title="OK">${verde} OK</span>` : ""}
+      ${atencao ? `<span class="cont cont-atencao" title="Atenção">${atencao} atenção</span>` : ""}
+      ${vermelho ? `<span class="cont cont-erro" title="Pendente">${vermelho} pend.</span>` : ""}
     </span>
-    <span class="contador-pilula">${grupo.empresas.length}</span>`;
+    <span class="grupo-barra" title="${verde} OK · ${atencao} atenção · ${vermelho} pendente · ${sem} sem status">${seg("b-ok", verde)}${seg("b-atencao", atencao)}${seg("b-erro", vermelho)}${seg("b-sem", sem)}${total ? "" : '<i class="b-sem" style="flex-grow:1"></i>'}</span>
+    <button type="button" class="btn-icone neutro" data-grupo-menu title="Opções do grupo" aria-label="Opções do grupo">${icone("maisOpcoes")}</button>`;
 }
 
 function criarGrupoCard(grupo) {
   const visiveis = grupo.empresas.filter(empresaPassaFiltro);
-  if (filtroAtual && visiveis.length === 0) return null;
-  const aberto = GRUPOS_ABERTOS.has(grupo) || !!filtroAtual;
+  const filtrando = !!(filtroAtual || filtroStatus);
+  if (filtrando && visiveis.length === 0) return null;
+  const aberto = GRUPOS_ABERTOS.has(grupo) || filtrando;
 
   const card = document.createElement("div");
   card.className = "grupo-card" + (aberto ? " aberto" : "");
@@ -109,7 +135,15 @@ function criarGrupoCard(grupo) {
   cab.setAttribute("aria-expanded", aberto);
   cab.innerHTML = htmlCabecalhoGrupo(grupo, aberto);
   const alternar = () => alternarGrupo(grupo);
-  cab.addEventListener("click", alternar);
+  cab.addEventListener("click", (e) => {
+    const menu = e.target.closest("[data-grupo-menu]");
+    if (menu) return abrirMenuAcoes(menu, grupo.nome, [
+      { ic: "mais", rotulo: "Adicionar empresa", acao: () => abrirFormNovaEmpresa(grupo) },
+      { ic: "documento", rotulo: "Renomear grupo", acao: () => renomearGrupo(grupo) },
+      { ic: "lixeira", rotulo: "Excluir grupo", perigo: true, acao: () => excluirGrupo(grupo) },
+    ]);
+    alternar();
+  });
   cab.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); alternar(); } });
   card.appendChild(cab);
   if (aberto) card.appendChild(criarCorpoGrupo(grupo, visiveis, false));
@@ -120,25 +154,13 @@ function criarGrupoCard(grupo) {
 function criarCorpoGrupo(grupo, visiveis, animar) {
   const corpo = document.createElement("div");
   corpo.className = "grupo-corpo" + (animar ? " anim-surgir" : "");
-  const acoes = document.createElement("div");
-  acoes.className = "grupo-acoes";
-  acoes.innerHTML = `
-    <button type="button" class="btn-secundario btn-sm" data-acao="add">${icone("mais")}Empresa</button>
-    <span class="painel-acoes">
-      <button type="button" class="btn-ghost btn-sm" data-acao="renomear" title="Renomear grupo">${icone("documento")}Renomear</button>
-      <button type="button" class="btn-ghost btn-sm" data-acao="excluir" title="Excluir grupo">${icone("lixeira")}Excluir grupo</button>
-    </span>`;
-  acoes.addEventListener("click", (e) => {
-    const acao = e.target.closest("[data-acao]")?.dataset.acao;
-    if (acao === "add") abrirFormNovaEmpresa(grupo);
-    else if (acao === "renomear") renomearGrupo(grupo);
-    else if (acao === "excluir") excluirGrupo(grupo);
-  });
-  corpo.appendChild(acoes);
   const lista = document.createElement("div");
   lista.className = "lista-empresas";
   visiveis.forEach((empresa) => lista.appendChild(criarEmpresaCard(empresa)));
-  if (!visiveis.length) lista.innerHTML = '<p class="vazio-mini">Nenhuma empresa neste grupo ainda.</p>';
+  if (!visiveis.length) {
+    lista.innerHTML = `<div class="vazio-mini">Nenhuma empresa neste grupo ainda. <button type="button" class="btn-ghost btn-sm">${icone("mais")}Adicionar empresa</button></div>`;
+    lista.querySelector("button").addEventListener("click", () => abrirFormNovaEmpresa(grupo));
+  }
   corpo.appendChild(lista);
   return corpo;
 }
@@ -195,11 +217,13 @@ async function excluirGrupo(grupo) {
   renderizarDashboard();
 }
 
-function abrirFormNovaEmpresa(grupo) {
+function abrirFormNovaEmpresa(grupo = null) {
+  if (!grupo && !ESTADO.grupos.length) return notificar("Crie um grupo primeiro (botão “+ Grupo”).", "aviso");
   abrirModal(`
     <h2>Nova empresa</h2>
-    <p class="modal-sub">Grupo: <b>${escaparHtml(grupo.nome)}</b>. Os demais dados podem ser preenchidos depois, abrindo a empresa.</p>
+    <p class="modal-sub">${grupo ? `Grupo: <b>${escaparHtml(grupo.nome)}</b>. ` : ""}Os demais dados podem ser preenchidos depois, abrindo a empresa.</p>
     <form id="form-nova-empresa">
+      ${grupo ? "" : `<div class="campo-form"><label>Grupo</label><select id="ne-grupo">${ESTADO.grupos.map((g, i) => `<option value="${i}">${escaparHtml(g.nome)}</option>`).join("")}</select></div>`}
       <div class="campo-form"><label>CNPJ</label><input id="ne-cnpj" inputmode="numeric" placeholder="00.000.000/0000-00"></div>
       <div class="campo-form"><label>Nome</label><input id="ne-nome" placeholder="Razão social ou apelido"></div>
       <div class="campo-form"><label>WhatsApp do cliente (opcional)</label><input id="ne-whatsapp" type="tel" placeholder="(44) 99999-9999"></div>
@@ -212,6 +236,7 @@ function abrirFormNovaEmpresa(grupo) {
   $("#ne-cancelar").addEventListener("click", fecharModal);
   $("#form-nova-empresa").addEventListener("submit", (e) => {
     e.preventDefault();
+    if (!grupo) grupo = ESTADO.grupos[+$("#ne-grupo").value];
     const cnpj = $("#ne-cnpj").value.trim();
     const nome = $("#ne-nome").value.trim();
     const erro = $("#ne-erro");
@@ -239,38 +264,62 @@ function abrirFormNovaEmpresa(grupo) {
 // ---------------------------------------------------------------------------
 // CARTÃO DA EMPRESA
 // ---------------------------------------------------------------------------
+
+const ROTULO_STATUS = { VERDE: ["ok", "OK"], VERMELHO: ["erro", "Pendente"], "ATENÇÃO": ["atencao", "Atenção"] };
+
+function htmlCabecalhoEmpresa(empresa) {
+  const st = ROTULO_STATUS[empresa.status];
+  const das = empresa.das && empresa.das.valor ? `<span class="empresa-das" title="${escaparHtml(`Guia DAS ${empresa.das.competencia || ""} · processada em ${empresa.das.em || ""}`)}">DAS R$ ${escaparHtml(empresa.das.valor)}</span>` : `<span class="empresa-das vazio-das"></span>`;
+  return `
+    <button type="button" class="empresa-alca" data-alca title="Arraste para mudar a ordem (ou use as setas ↑ ↓)" aria-label="Mudar a ordem de ${escaparHtml(empresa.nome)}">${icone("alca")}</button>
+    <label class="empresa-sel" title="Selecionar para ação em lote"><input type="checkbox" data-sel ${SELECIONADAS.has(empresa.id) ? "checked" : ""} aria-label="Selecionar ${escaparHtml(empresa.nome)}"></label>
+    ${icone("seta", "chevron")}
+    <div class="empresa-nome-wrap">
+      <span class="empresa-nome"><span class="texto">${escaparHtml(empresa.nome)}</span></span>
+      <span class="empresa-doc">${escaparHtml(formatarDocumento(empresa.cnpj || empresa.cpf) || "sem CNPJ")}</span>
+    </div>
+    <div class="selos-linha">${htmlSelosEmpresa(empresa)}</div>
+    <div class="empresa-situacao">
+      ${st ? `<span class="selo-st selo-st-${st[0]}">${st[1]}</span>` : ""}
+      ${empresa.fechado ? `<span class="selo-fechado">${icone("cadeado")}Fechado</span>` : ""}
+    </div>
+    ${das}
+    <div class="empresa-acoes">
+      <button type="button" class="btn-icone neutro${empresa.whatsapp ? "" : " desligado"}" data-whatsapp title="${empresa.whatsapp ? `WhatsApp para ${escaparHtml(empresa.whatsapp)}` : "Cadastre o WhatsApp do cliente"}" aria-label="WhatsApp">${icone("conversa")}</button>
+      <button type="button" class="btn-icone neutro" data-copiar-menu title="Copiar CNPJ, CPF, inscrições e senhas" aria-label="Copiar dados">${icone("copiar")}</button>
+      <button type="button" class="btn-icone neutro" data-mais title="Mais ações" aria-label="Mais ações">${icone("maisOpcoes")}</button>
+    </div>`;
+}
+
 function htmlSelosEmpresa(empresa) {
   return [
-    empresa.anexos.length ? `<span class="selo selo-anexado" title="${empresa.anexos.length} documento(s)">${icone("clipe")}ANEXADO${empresa.anexos.length > 1 ? " · " + empresa.anexos.length : ""}</span>` : "",
+    empresa.anexos.length ? `<span class="selo selo-anexado" title="${empresa.anexos.length} documento(s)">Anexado${empresa.anexos.length > 1 ? " · " + empresa.anexos.length : ""}</span>` : "",
     empresa.nfs ? '<span class="selo selo-tag">NFS</span>' : "",
     empresa.nfe ? '<span class="selo selo-tag">NFE</span>' : "",
     empresa.nfc ? '<span class="selo selo-tag">NFC</span>' : "",
-    empresa.fechado ? `<span class="selo selo-cadeado" title="Fechado">${icone("cadeado")}</span>` : "",
   ].join("");
 }
 
-function htmlCabecalhoEmpresa(empresa) {
-  return `
-    <div class="empresa-nome-wrap">
-      <span class="empresa-nome">${icone("seta", "chevron")}<span class="texto">${escaparHtml(empresa.nome)}</span></span>
-      <div class="selos-linha">${htmlSelosEmpresa(empresa)}</div>
-    </div>
-    <div class="chips-acesso">
-      ${botaoCopiaSe(empresa.cnpj, "CNPJ")}
-      ${botaoCopiaSe(empresa.cpf, "CPF")}
-      ${botaoCopiaSe(empresa.inscricaoEstadual, "IE")}
-      ${botaoCopiaSe(empresa.senhaPrefeitura, "Prefeitura")}
-      ${botaoCopiaSe(empresa.senhaRegularize, "Regularize")}
-      ${empresa.email ? `<button type="button" class="chip-copia chip-email" data-email title="Enviar documentos para ${escaparHtml(empresa.email)}">${icone("email")}Enviar e-mail</button>` : ""}
-      ${empresa.whatsapp ? `<button type="button" class="chip-copia chip-whatsapp" data-whatsapp title="Enviar documentos pelo WhatsApp para ${escaparHtml(empresa.whatsapp)}">${icone("conversa")}WhatsApp</button>` : ""}
-    </div>
-    <button type="button" class="btn-icone" data-excluir title="Excluir empresa">${icone("lixeira")}</button>`;
+// Tudo que dá para copiar da empresa (o botão de copiar da linha abre esta lista)
+function itensCopiaEmpresa(e) {
+  const itens = [];
+  const add = (titulo, valor, oculto = false) => { if (valor) itens.push({ titulo, valor, mostrar: oculto ? "••••••••" : valor }); };
+  add("CNPJ", e.cnpj);
+  sociosDe(e).filter((s) => s.cpf).forEach((s, i, l) => add(l.length > 1 ? `CPF · ${s.nome || "Sócio " + (i + 1)}` : `CPF${s.nome ? " · " + s.nome : ""}`, s.cpf));
+  add("Inscrição Estadual", e.inscricaoEstadual);
+  add("Inscrição Municipal", e.cadastroMunicipal);
+  add("Login prefeitura", e.loginPrefeitura);
+  add("Senha Prefeitura", e.senhaPrefeitura, true);
+  add("Senha Regularize", e.senhaRegularize, true);
+  add("E-mail", e.email);
+  add("WhatsApp", e.whatsapp);
+  return itens;
 }
 
 function criarEmpresaCard(empresa) {
   const aberto = EMPRESAS_ABERTAS.has(empresa.id);
   const wrap = document.createElement("div");
-  wrap.className = `empresa-card ${classeStatus(empresa.status)}${aberto ? " aberto" : ""}`;
+  wrap.className = `empresa-card ${classeStatus(empresa.status)}${aberto ? " aberto" : ""}${SELECIONADAS.has(empresa.id) ? " selecionada" : ""}`;
   wrap.dataset.id = empresa.id;
 
   const header = document.createElement("div");
@@ -281,15 +330,31 @@ function criarEmpresaCard(empresa) {
   header.innerHTML = htmlCabecalhoEmpresa(empresa);
   // Um único listener por cabeçalho (delegação) — sobrevive às atualizações do innerHTML.
   header.addEventListener("click", (e) => {
+    if (e.target.closest(".empresa-sel") || e.target.closest("[data-alca]")) return; // caixinha e alça têm comportamento próprio
     const copia = e.target.closest("[data-copiar]");
-    if (copia) {
-      const mapa = { CNPJ: empresa.cnpj, CPF: empresa.cpf, IE: empresa.inscricaoEstadual, Prefeitura: empresa.senhaPrefeitura, Regularize: empresa.senhaRegularize };
-      return copiar(copia.dataset.copiar, mapa[copia.dataset.copiar]);
+    if (copia) return copiarCampoEmpresa(empresa, copia.dataset.copiar, copia);
+    const menuCopia = e.target.closest("[data-copiar-menu]");
+    if (menuCopia) {
+      const itens = itensCopiaEmpresa(empresa);
+      if (!itens.length) return notificar("Essa empresa ainda não tem dados para copiar.", "aviso");
+      return abrirMenuCopia(menuCopia, "Copiar", itens, "");
     }
-    if (e.target.closest("[data-email]")) return enviarEmailEmpresaOriginal(empresa, e.target.closest("[data-email]"));
     if (e.target.closest("[data-whatsapp]")) return enviarWhatsAppEmpresa(empresa);
-    if (e.target.closest("[data-excluir]")) return excluirEmpresa(empresa);
+    const mais = e.target.closest("[data-mais]");
+    if (mais) return abrirMenuAcoes(mais, empresa.nome, [
+      { ic: "email", rotulo: empresa.email ? "Enviar documentos por e-mail" : "Enviar e-mail (cadastre o e-mail)", acao: () => enviarEmailEmpresaOriginal(empresa, mais) },
+      { ic: "conversa", rotulo: "Enviar pelo WhatsApp", acao: () => enviarWhatsAppEmpresa(empresa) },
+      { ic: "comentario", rotulo: "Comentar", acao: () => abrirEComentar(empresa) },
+      { ic: "lixeira", rotulo: "Excluir empresa", perigo: true, acao: () => excluirEmpresa(empresa) },
+    ]);
     alternarEmpresa(empresa);
+  });
+  header.addEventListener("change", (e) => {
+    const sel = e.target.closest("[data-sel]");
+    if (!sel) return;
+    sel.checked ? SELECIONADAS.add(empresa.id) : SELECIONADAS.delete(empresa.id);
+    wrap.classList.toggle("selecionada", sel.checked);
+    atualizarBarraSelecao();
   });
   header.addEventListener("keydown", (e) => {
     if ((e.key === "Enter" || e.key === " ") && e.target === header) { e.preventDefault(); alternarEmpresa(empresa); }
@@ -316,8 +381,10 @@ function alternarEmpresa(empresa) {
 function atualizarEmpresa(empresa) {
   const wrap = EL_EMPRESA.get(empresa.id);
   if (!wrap) return;
-  wrap.className = `empresa-card ${classeStatus(empresa.status)}${wrap.classList.contains("aberto") ? " aberto" : ""}`;
+  wrap.className = `empresa-card ${classeStatus(empresa.status)}${wrap.classList.contains("aberto") ? " aberto" : ""}${SELECIONADAS.has(empresa.id) ? " selecionada" : ""}`;
   wrap.querySelector(".empresa-header").innerHTML = htmlCabecalhoEmpresa(empresa);
+  const info = wrap.querySelector(".info-das");
+  if (info) info.innerHTML = htmlInfoDas(empresa);
 }
 
 function mudouStatus(empresa) {
@@ -348,10 +415,12 @@ async function excluirEmpresa(empresa) {
 }
 
 const CAMPOS_EMPRESA = [
-  ["nome", "Nome"], ["cnpj", "CNPJ"], ["cpf", "CPF"], ["email", "E-mail", "email"],
-  ["whatsapp", "WhatsApp do cliente", "tel", "(44) 99999-9999"],
-  ["senhaPrefeitura", "Senha Prefeitura"], ["senhaRegularize", "Senha Regularize"], ["inscricaoEstadual", "Inscrição Estadual"],
-  ["municipioNfse", "Município da NFS-e", "select"], ["loginPrefeitura", "Login prefeitura (se não for o CNPJ)", null, "CPF ou CNPJ, só números"], ["cadastroMunicipal", "Cadastro econômico (prefeitura)", null, "inscrição municipal"], ["nfseSerie", "Série da NFS-e", null, "1"],
+  ["nome", "Nome"], ["cnpj", "CNPJ", null, "00.000.000/0000-00", "mono"],
+  ["whatsapp", "WhatsApp", "tel", "(44) 99999-9999", "mono"], ["email", "E-mail", "email", "não informado"],
+  ["municipioNfse", "Município NFS-e", "select"], ["senhaPrefeitura", "Senha prefeitura", "senha"],
+  ["cadastroMunicipal", "Inscrição municipal", null, "cadastro econômico", "mono"], ["nfseSerie", "Série NFS-e", null, "1", "mono"],
+  ["loginPrefeitura", "Login prefeitura", null, "se não for o CNPJ", "mono"], ["senhaRegularize", "Senha Regularize", "senha"],
+  ["inscricaoEstadual", "Inscrição estadual", null, "", "mono"],
 ];
 
 function criarCorpoEmpresa(empresa) {
@@ -363,8 +432,16 @@ function criarCorpoEmpresa(empresa) {
   barra.className = "barra-opcoes";
   const chk = (campo, rotulo, extra = "") =>
     `<label class="chip-check ${extra}"><input type="checkbox" data-cb="${campo}" ${empresa[campo] ? "checked" : ""}><span class="caixa">${icone("check")}</span>${rotulo}</label>`;
-  barra.innerHTML = `${htmlBotoesStatus(empresa.status)}<span class="separador-v"></span>${chk("nfs", "NFS")}${chk("nfe", "NFE")}${chk("nfc", "NFC")}${chk("fechado", `${icone("cadeado", "ico-sm")}Fechado`, "fechado")}`;
+  barra.innerHTML = `${htmlBotoesStatus(empresa.status)}<span class="segmentado segmentado-checks">${chk("nfs", "NFS")}${chk("nfe", "NFE")}${chk("nfc", "NFC")}</span>${chk("fechado", `${icone("cadeado", "ico-sm")}Fechado`, "fechado")}
+    <span class="barra-copias">
+      ${botaoCopiaSe(empresa.cnpj, "CNPJ")}
+      ${sociosDe(empresa).some((s) => s.cpf) ? `<button type="button" class="chip-copia" data-copiar="CPF">${icone("copiar")}CPF</button>` : ""}
+      ${botaoCopiaSe(empresa.cadastroMunicipal, "IM")}
+      ${botaoCopiaSe(empresa.senhaPrefeitura, "Prefeitura")}
+    </span>`;
   barra.addEventListener("click", (e) => {
+    const copia = e.target.closest("[data-copiar]");
+    if (copia) return copiarCampoEmpresa(empresa, copia.dataset.copiar, copia);
     const btn = e.target.closest("[data-status]");
     if (!btn) return;
     empresa.status = empresa.status === btn.dataset.status ? "SEM" : btn.dataset.status;
@@ -382,11 +459,22 @@ function criarCorpoEmpresa(empresa) {
   // Dados de acesso
   const campos = document.createElement("div");
   campos.className = "grade-campos";
-  campos.innerHTML = CAMPOS_EMPRESA.map(([campo, rotulo, tipo, placeholder]) => tipo === "select"
+  campos.innerHTML = CAMPOS_EMPRESA.map(([campo, rotulo, tipo, placeholder, extra]) => tipo === "select"
     ? `<div class="campo-form"><label>${rotulo}</label><select data-campo="${campo}">${Object.entries(MUNICIPIOS_NFSE).map(([k, m]) =>
         `<option value="${k}"${municipioNfse(empresa).chave === k ? " selected" : ""}>${m.nome} · ${SISTEMAS_NFSE[m.sistema]}${m.sistema === "ipm" ? "" : " (em preparação)"}</option>`).join("")}</select></div>`
-    : `<div class="campo-form"><label>${rotulo}</label><input data-campo="${campo}" ${tipo ? `type="${tipo}"` : ""} ${placeholder ? `placeholder="${placeholder}"` : ""} value="${escaparHtml(empresa[campo] || "")}" autocomplete="off" spellcheck="false"></div>`
+    : tipo === "senha"
+    ? `<div class="campo-form"><label>${rotulo}</label><span class="campo-senha"><input data-campo="${campo}" type="password" class="mono" value="${escaparHtml(empresa[campo] || "")}" autocomplete="new-password" spellcheck="false"><button type="button" class="olho" data-olho title="Mostrar senha" aria-label="Mostrar senha">${icone("olho")}</button></span></div>`
+    : `<div class="campo-form"><label>${rotulo}</label><input data-campo="${campo}" ${tipo ? `type="${tipo}"` : ""} ${placeholder ? `placeholder="${placeholder}"` : ""} ${extra === "mono" ? 'class="mono"' : ""} value="${escaparHtml(empresa[campo] || "")}" autocomplete="off" spellcheck="false"></div>`
   ).join("");
+  campos.addEventListener("click", (e) => {
+    const olho = e.target.closest("[data-olho]");
+    if (!olho) return;
+    const inp = olho.previousElementSibling;
+    const mostrar = inp.type === "password";
+    inp.type = mostrar ? "text" : "password";
+    olho.innerHTML = icone(mostrar ? "olhoFechado" : "olho");
+    olho.title = mostrar ? "Esconder senha" : "Mostrar senha";
+  });
   campos.addEventListener("change", (e) => {
     const inp = e.target.closest("[data-campo]");
     if (!inp) return;
@@ -404,16 +492,18 @@ function criarCorpoEmpresa(empresa) {
     setTimeout(() => inp.classList.remove("salvo"), 700);
   });
   corpo.appendChild(campos);
+  corpo.appendChild(montarSocios(empresa));
 
   // Ações extras
   const acoesExtra = document.createElement("div");
   acoesExtra.className = "acoes-extra";
   acoesExtra.innerHTML = `
-    <button type="button" class="btn-secundario btn-sm btn-consultar-simples">${icone("busca")}Consultar Simples Nacional</button>
+    <button type="button" class="btn-secundario btn-sm btn-consultar-simples">${icone("busca")}Consultar Simples</button>
     <button type="button" class="btn-secundario btn-sm btn-consultar-exclusao">${icone("proibido")}Consultar exclusão</button>
-    <button type="button" class="btn-secundario btn-sm btn-importar-resumo">${icone("documento")}Importar Resumo (PGDAS)</button>
+    <button type="button" class="btn-secundario btn-sm btn-importar-resumo" title="Gera o Relatório Fiscal a partir do Resumo do PGDAS">${icone("enviar")}Importar PGDAS</button>
     <input type="file" accept="application/pdf" class="input-resumo oculto">
-    <span class="resultado-simples"></span>`;
+    <span class="resultado-simples"></span>
+    <span class="info-das">${htmlInfoDas(empresa)}</span>`;
   const colComentarios = montarColunaComentarios(empresa);
   const colAnexos = montarColunaAnexos(empresa, { aoMudar: () => atualizarEmpresa(empresa), nomeAlvo: "desta empresa" });
   const btnSimples = acoesExtra.querySelector(".btn-consultar-simples");
@@ -903,50 +993,124 @@ async function importarResumoPdf(empresa, arquivo, inputEl, { colComentarios, co
 // ---------------------------------------------------------------------------
 // CHECKLIST (TAREFAS DO DIA) — cada tarefa se atualiza sozinha
 // ---------------------------------------------------------------------------
+const _MESES_CURTOS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+function _hojeIso() { return _isoLocal(new Date()); }
+
+function htmlPrazoTarefa(item) {
+  if (!item.prazo) return "";
+  const [a, m, d] = item.prazo.split("-").map(Number);
+  const hoje = _hojeIso();
+  if (!item.concluido && item.prazo < hoje) return `<span class="tag tag-erro" title="Prazo ${d}/${m}/${a}">Atrasada · ${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}</span>`;
+  if (item.prazo === hoje) return `<span class="tag tag-erro">Hoje</span>`;
+  const agoraD = new Date();
+  const mesmoMes = a === agoraD.getFullYear() && m === agoraD.getMonth() + 1;
+  return `<span class="tag tag-aviso" title="Prazo ${d}/${m}/${a}">${mesmoMes ? `Dia ${d}` : `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`}</span>`;
+}
+
 function criarTarefaEl(item) {
   const div = document.createElement("div");
   div.className = "tarefa-item" + (item.concluido ? " feita" : "");
-  div.innerHTML = `
-    <div class="tarefa-topo">
-      <input type="checkbox" class="check-redondo" ${item.concluido ? "checked" : ""} aria-label="Concluída">
-      <span class="tarefa-texto">${escaparHtml(item.texto)}</span>
-      <button type="button" class="btn-icone" title="Remover tarefa">${icone("x", "ico-sm")}</button>
-    </div>
-    <div class="tarefa-comentarios">
-      <div class="tarefa-lista-coment">${(item.comentarios || []).map((c) => `<div class="comentario-linha">• ${escaparHtml(c)}</div>`).join("")}</div>
-      <input placeholder="Comentar e apertar Enter..." maxlength="500">
-    </div>`;
-  div.querySelector(".check-redondo").addEventListener("change", (e) => {
+  const desenhar = () => {
+    const n = (item.comentarios || []).length;
+    div.className = "tarefa-item" + (item.concluido ? " feita" : "");
+    div.innerHTML = `
+      <input type="checkbox" class="check-quadrado" ${item.concluido ? "checked" : ""} aria-label="Concluída">
+      <div class="tarefa-corpo">
+        <button type="button" class="tarefa-texto" data-editar title="Editar tarefa">${escaparHtml(item.texto)}</button>
+        ${item.detalhe ? `<span class="tarefa-detalhe">${escaparHtml(item.detalhe)}</span>` : ""}
+        <div class="tarefa-tags">
+          ${htmlPrazoTarefa(item)}
+          ${item.etiqueta ? `<span class="tag">${escaparHtml(item.etiqueta)}</span>` : ""}
+          <button type="button" class="tag tag-botao${n ? "" : " tag-fantasma"}" data-coment>${n ? `${n} comentário${n > 1 ? "s" : ""}` : `${icone("comentario", "ico-sm")}Comentar`}</button>
+        </div>
+        <div class="tarefa-comentarios${div._comentAberto ? "" : " oculto"}">
+          <div class="tarefa-lista-coment">${(item.comentarios || []).map((c) => `<div class="comentario-linha">${escaparHtml(c)}</div>`).join("")}</div>
+          <input placeholder="Comentar e apertar Enter..." maxlength="500">
+        </div>
+      </div>
+      <button type="button" class="btn-icone" data-remover title="Remover tarefa">${icone("x", "ico-sm")}</button>`;
+  };
+  desenhar();
+  div.addEventListener("change", (e) => {
+    if (!e.target.classList.contains("check-quadrado")) return;
     item.concluido = e.target.checked;
-    div.classList.toggle("feita", item.concluido);
-    marcarAlterado();
-  });
-  div.querySelector(".btn-icone").addEventListener("click", () => {
-    const i = ESTADO.checklist.indexOf(item);
-    if (i >= 0) ESTADO.checklist.splice(i, 1);
     marcarAlterado();
     renderizarChecklist();
   });
-  const inp = div.querySelector(".tarefa-comentarios input");
-  inp.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter" || !inp.value.trim()) return;
+  div.addEventListener("click", async (e) => {
+    if (e.target.closest("[data-remover]")) {
+      const i = ESTADO.checklist.indexOf(item);
+      if (i >= 0) ESTADO.checklist.splice(i, 1);
+      marcarAlterado();
+      return renderizarChecklist();
+    }
+    if (e.target.closest("[data-coment]")) {
+      div._comentAberto = !div._comentAberto;
+      desenhar();
+      if (div._comentAberto) div.querySelector(".tarefa-comentarios input").focus();
+      return;
+    }
+    if (e.target.closest("[data-editar]")) editarTarefa(item);
+  });
+  div.addEventListener("keydown", (e) => {
+    const inp = e.target.closest(".tarefa-comentarios input");
+    if (!inp || e.key !== "Enter" || !inp.value.trim()) return;
     item.comentarios = item.comentarios || [];
     item.comentarios.push(inp.value.trim());
-    div.querySelector(".tarefa-lista-coment").insertAdjacentHTML("beforeend", `<div class="comentario-linha">• ${escaparHtml(inp.value.trim())}</div>`);
-    inp.value = "";
     marcarAlterado();
+    desenhar();
+    div.querySelector(".tarefa-comentarios input").focus();
   });
   return div;
 }
 
 function renderizarChecklist() {
   const cont = $("#lista-checklist");
-  if (!ESTADO.checklist.length) {
+  const lista = ESTADO.checklist;
+  const feitas = lista.filter((t) => t.concluido).length;
+  const hoje = new Date();
+  const dataTxt = `${hoje.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}, ${hoje.getDate()} ${_MESES_CURTOS[hoje.getMonth()]}`;
+  const prog = $("#tarefas-progresso");
+  if (prog) prog.innerHTML = lista.length ? `
+    <div class="tarefas-numero"><b>${feitas} de ${lista.length}</b><span>concluídas · ${dataTxt}</span></div>
+    <span class="tarefas-barra"><i style="width:${Math.round((feitas / lista.length) * 100)}%"></i></span>` : "";
+  if (!lista.length) {
     cont.innerHTML = `<div class="vazio">${icone("tarefas", "ico-xl")}<p>Nenhuma tarefa para hoje.</p></div>`;
     return;
   }
-  cont.replaceChildren(...ESTADO.checklist.map(criarTarefaEl));
+  // pendentes primeiro (as com prazo mais cedo no topo), concluídas no fim
+  const ordem = [...lista].sort((a, b) => (a.concluido - b.concluido) || ((a.prazo || "9") < (b.prazo || "9") ? -1 : (a.prazo || "9") > (b.prazo || "9") ? 1 : lista.indexOf(a) - lista.indexOf(b)));
+  cont.replaceChildren(...ordem.map(criarTarefaEl));
 }
+
+function abrirFormTarefa(item = null) {
+  abrirModal(`
+    <h2>${item ? "Editar tarefa" : "Nova tarefa"}</h2>
+    <form id="form-tarefa">
+      <div class="campo-form"><label>Tarefa</label><input id="tf-texto" maxlength="200" required value="${escaparHtml(item?.texto || "")}" placeholder="Ex.: Protocolo prefeitura"></div>
+      <div class="campo-form"><label>Detalhe (opcional)</label><input id="tf-detalhe" maxlength="200" value="${escaparHtml(item?.detalhe || "")}" placeholder="Ex.: Serviços prestados e tomados"></div>
+      <div class="linha-dois-campos">
+        <div class="campo-form"><label>Prazo (opcional)</label><input id="tf-prazo" type="date" value="${escaparHtml(item?.prazo || "")}"></div>
+        <div class="campo-form"><label>Etiqueta (opcional)</label><input id="tf-etiqueta" maxlength="20" value="${escaparHtml(item?.etiqueta || "")}" placeholder="Ex.: MEI"></div>
+      </div>
+      <div class="modal-rodape">
+        <button type="button" class="btn-ghost" id="tf-cancelar">Cancelar</button>
+        <button type="submit" class="btn-primario">${icone(item ? "salvar" : "mais")}${item ? "Salvar tarefa" : "Adicionar"}</button>
+      </div>
+    </form>`);
+  $("#tf-cancelar").addEventListener("click", fecharModal);
+  $("#form-tarefa").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const dados = { texto: $("#tf-texto").value.trim(), detalhe: $("#tf-detalhe").value.trim(), prazo: $("#tf-prazo").value, etiqueta: $("#tf-etiqueta").value.trim() };
+    if (!dados.texto) return;
+    if (item) Object.assign(item, dados);
+    else ESTADO.checklist.push({ ...dados, concluido: false, comentarios: [] });
+    fecharModal();
+    marcarAlterado();
+    renderizarChecklist();
+  });
+}
+function editarTarefa(item) { abrirFormTarefa(item); }
 
 // ---------------------------------------------------------------------------
 // WHATSAPP — mesma mensagem do e-mail, com link para baixar os documentos
@@ -1201,10 +1365,11 @@ function mostrarFilaWhatsApp(fila, { modo, registrar, competencia }) {
   desenhar();
 }
 
-$("#btn-nova-tarefa").addEventListener("click", async () => {
-  const texto = await perguntar("Nova tarefa", { placeholder: "Descreva a tarefa", textoOk: "Adicionar" });
-  if (!texto || !texto.trim()) return;
-  ESTADO.checklist.push({ texto: texto.trim(), concluido: false, comentarios: [] });
+$("#btn-nova-tarefa").addEventListener("click", () => abrirFormTarefa());
+$("#tarefa-rapida")?.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || !e.target.value.trim()) return;
+  ESTADO.checklist.push({ texto: e.target.value.trim(), concluido: false, comentarios: [] });
+  e.target.value = "";
   marcarAlterado();
   renderizarChecklist();
 });
@@ -1270,6 +1435,7 @@ $("#input-importar-pdfs")?.addEventListener("change", async (e) => {
         if (competencia) comentario += `\nCompetência: ${competencia}`;
         if (valor) comentario += `\nValor Total: R$ ${valor}`;
         empresa.comentarios.push(`${comentario}\n${agora()}`);
+        if (valor) empresa.das = { valor, competencia: competencia || "", em: agora() };
         vinculados++;
       } catch (err) {
         console.error("Erro ao processar PDF", arquivo.name, err);
@@ -1298,4 +1464,447 @@ $("#busca")?.addEventListener("input", atrasar((e) => {
   renderizarGrupos();
 }, 150));
 
+{
+  const termo = new URLSearchParams(location.search).get("busca");
+  if (termo && $("#busca")) { $("#busca").value = termo; filtroAtual = termo.trim().toLowerCase(); }
+}
 iniciarPagina();
+
+// ---------------------------------------------------------------------------
+// SÓCIOS (vários CPFs por empresa)
+// O primeiro sócio continua gravado também em empresa.cpf (compatível com o que já existia).
+// ---------------------------------------------------------------------------
+function sociosDe(e) {
+  if (Array.isArray(e.socios)) return e.socios;
+  return e.cpf ? [{ nome: "", cpf: e.cpf }] : [];
+}
+function _gravarSocios(e, lista) {
+  e.socios = lista;
+  e.cpf = (lista.find((s) => s.cpf) || {}).cpf || "";
+}
+function formatarCpf(v) {
+  const d = limparDigitos(v);
+  return d.length === 11 ? d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4") : String(v || "").trim();
+}
+
+function htmlChipCpfs(e) {
+  const comCpf = sociosDe(e).filter((s) => s.cpf);
+  if (!comCpf.length) return "";
+  const titulo = comCpf.length === 1 ? `Copiar CPF: ${comCpf[0].cpf}` : `${comCpf.length} sócios — escolher qual CPF copiar`;
+  return `<button type="button" class="chip-copia" data-copiar="CPF" title="${escaparHtml(titulo)}">${icone("copiar")}CPF${comCpf.length > 1 ? `<span class="chip-contador">${comCpf.length}</span>` : ""}</button>`;
+}
+
+function copiarCpfSocio(e, botao) {
+  const comCpf = sociosDe(e).filter((s) => s.cpf);
+  if (comCpf.length === 1) return copiar("CPF", comCpf[0].cpf);
+  abrirMenuCopia(botao, "Qual CPF copiar?", comCpf.map((s, i) => ({ titulo: s.nome || `Sócio ${i + 1}`, valor: s.cpf })), "CPF");
+}
+
+// Menuzinho ao lado do botão (fecha com Esc, clique fora ou depois de copiar)
+function abrirMenuCopia(ancora, titulo, itens, rotulo) {
+  document.querySelector(".menu-copia")?.remove();
+  const menu = document.createElement("div");
+  menu.className = "menu-copia";
+  menu.setAttribute("role", "menu");
+  menu.innerHTML = `<div class="menu-copia-titulo">${escaparHtml(titulo)}</div>` + itens.map((it, i) =>
+    `<button type="button" role="menuitem" data-i="${i}"><span><b>${escaparHtml(it.titulo)}</b><small>${escaparHtml(it.mostrar ?? it.valor)}</small></span>${icone("copiar", "ico-sm")}</button>`).join("");
+  document.body.appendChild(menu);
+  const r = ancora.getBoundingClientRect();
+  const larg = menu.offsetWidth, alt = menu.offsetHeight;
+  menu.style.left = Math.max(8, Math.min(r.left, innerWidth - larg - 8)) + "px";
+  menu.style.top = (r.bottom + alt + 8 > innerHeight ? Math.max(8, r.top - alt - 6) : r.bottom + 6) + "px";
+  const fechar = () => { menu.remove(); document.removeEventListener("mousedown", fora, true); document.removeEventListener("keydown", tecla, true); };
+  const fora = (ev) => { if (!menu.contains(ev.target)) fechar(); };
+  const tecla = (ev) => { if (ev.key === "Escape") { ev.stopPropagation(); fechar(); } };
+  document.addEventListener("mousedown", fora, true);
+  document.addEventListener("keydown", tecla, true);
+  menu.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-i]");
+    if (!b) return;
+    const it = itens[+b.dataset.i];
+    copiar(rotulo ? `${rotulo} de ${it.titulo}` : it.titulo, it.valor);
+    fechar();
+  });
+  menu.querySelector("button")?.focus();
+}
+
+function montarSocios(e) {
+  const caixa = document.createElement("div");
+  caixa.className = "socios";
+  const desenhar = () => {
+    const lista = sociosDe(e);
+    caixa.innerHTML = `
+      <div class="socios-cabeca"><span>${icone("usuarios", "ico-sm")}Sócios <small>${lista.length ? `${lista.length} cadastrado(s)` : "nenhum CPF cadastrado"}</small></span>
+        <button type="button" class="btn-ghost btn-sm" data-add>${icone("mais")}Adicionar sócio</button></div>
+      ${lista.map((s, i) => `
+        <div class="socio-linha" data-i="${i}">
+          <input data-socio="nome" placeholder="Nome do sócio (opcional)" value="${escaparHtml(s.nome || "")}" autocomplete="off" spellcheck="false">
+          <input data-socio="cpf" placeholder="CPF" inputmode="numeric" value="${escaparHtml(s.cpf || "")}" autocomplete="off">
+          <button type="button" class="btn-icone" data-remover title="Remover este sócio">${icone("lixeira", "ico-sm")}</button>
+        </div>`).join("")}`;
+  };
+  const mudou = (lista, foco) => {
+    _gravarSocios(e, lista);
+    atualizarEmpresa(e); // atualiza o chip "CPF" do cabeçalho
+    marcarAlterado();
+    desenhar();
+    if (foco) caixa.querySelector(foco)?.focus();
+  };
+  caixa.addEventListener("click", (ev) => {
+    if (ev.target.closest("[data-add]")) {
+      const lista = [...sociosDe(e).map((s) => ({ ...s })), { nome: "", cpf: "" }];
+      return mudou(lista, `.socio-linha[data-i="${lista.length - 1}"] [data-socio="nome"]`);
+    }
+    const rem = ev.target.closest("[data-remover]");
+    if (rem) {
+      const i = +rem.closest(".socio-linha").dataset.i;
+      mudou(sociosDe(e).filter((_, k) => k !== i).map((s) => ({ ...s })));
+    }
+  });
+  caixa.addEventListener("change", (ev) => {
+    const inp = ev.target.closest("[data-socio]");
+    if (!inp) return;
+    const i = +inp.closest(".socio-linha").dataset.i;
+    const lista = sociosDe(e).map((s) => ({ ...s }));
+    let valor = inp.value.trim();
+    if (inp.dataset.socio === "cpf" && valor) {
+      valor = formatarCpf(valor);
+      if (limparDigitos(valor).length !== 11) notificar("Esse CPF não tem 11 números — confira.", "aviso");
+    }
+    lista[i][inp.dataset.socio] = valor;
+    _gravarSocios(e, lista);
+    inp.value = valor;
+    atualizarEmpresa(e);
+    marcarAlterado();
+    inp.classList.add("salvo");
+    setTimeout(() => inp.classList.remove("salvo"), 700);
+  });
+  desenhar();
+  return caixa;
+}
+
+// ---------------------------------------------------------------------------
+// PRUMO — menus, cópia, seleção em lote, filtros por status e mês de trabalho
+// ---------------------------------------------------------------------------
+function copiarCampoEmpresa(e, chave, botao) {
+  if (chave === "CPF") return copiarCpfSocio(e, botao);
+  const mapa = { CNPJ: e.cnpj, IE: e.inscricaoEstadual, IM: e.cadastroMunicipal, Prefeitura: e.senhaPrefeitura, Regularize: e.senhaRegularize };
+  const rotulos = { IM: "Inscrição Municipal", IE: "Inscrição Estadual", Prefeitura: "Senha da prefeitura", Regularize: "Senha do Regularize" };
+  copiar(rotulos[chave] || chave, mapa[chave]);
+}
+
+function htmlInfoDas(e) {
+  if (!e.das || !e.das.valor) return "";
+  return `${icone("documento", "ico-sm")}Guia DAS processada · R$ ${escaparHtml(e.das.valor)}${e.das.competencia ? ` · ${escaparHtml(e.das.competencia)}` : ""} · ${escaparHtml((e.das.em || "").slice(0, 16))}`;
+}
+
+// Menu de ações ao lado de um botão (mesmo visual do menu de copiar)
+function abrirMenuAcoes(ancora, titulo, itens) {
+  document.querySelector(".menu-copia")?.remove();
+  const menu = document.createElement("div");
+  menu.className = "menu-copia menu-acoes";
+  menu.setAttribute("role", "menu");
+  menu.innerHTML = `<div class="menu-copia-titulo">${escaparHtml(titulo)}</div>` + itens.map((it, i) =>
+    `<button type="button" role="menuitem" data-i="${i}" class="${it.perigo ? "perigo" : ""}">${icone(it.ic, "ico-sm")}<span><b>${escaparHtml(it.rotulo)}</b></span></button>`).join("");
+  document.body.appendChild(menu);
+  const r = ancora.getBoundingClientRect();
+  const larg = menu.offsetWidth, alt = menu.offsetHeight;
+  menu.style.left = Math.max(8, Math.min(r.right - larg, innerWidth - larg - 8)) + "px";
+  menu.style.top = (r.bottom + alt + 8 > innerHeight ? Math.max(8, r.top - alt - 6) : r.bottom + 6) + "px";
+  const fechar = () => { menu.remove(); document.removeEventListener("mousedown", fora, true); document.removeEventListener("keydown", tecla, true); };
+  const fora = (ev) => { if (!menu.contains(ev.target)) fechar(); };
+  const tecla = (ev) => { if (ev.key === "Escape") { ev.stopPropagation(); fechar(); } };
+  document.addEventListener("mousedown", fora, true);
+  document.addEventListener("keydown", tecla, true);
+  menu.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-i]");
+    if (!b) return;
+    fechar();
+    itens[+b.dataset.i].acao();
+  });
+  menu.querySelector("button")?.focus();
+}
+
+function abrirEComentar(empresa) {
+  irParaEmpresa(empresa);
+  requestAnimationFrame(() => {
+    const inp = EL_EMPRESA.get(empresa.id)?.querySelector(".empresa-corpo .coluna-detalhe input");
+    inp?.focus({ preventScroll: false });
+  });
+}
+
+// ----- seleção em lote -----
+function atualizarBarraSelecao() {
+  const barra = $("#barra-selecao");
+  if (!barra) return;
+  // tira da seleção quem não existe mais
+  const ids = new Set(ESTADO.grupos.flatMap((g) => g.empresas.map((e) => e.id)));
+  [...SELECIONADAS].forEach((id) => { if (!ids.has(id)) SELECIONADAS.delete(id); });
+  const n = SELECIONADAS.size;
+  barra.classList.toggle("oculto", !n);
+  if (!n) return;
+  const sel = ESTADO.grupos.flatMap((g) => g.empresas).filter((e) => SELECIONADAS.has(e.id));
+  const todasFechadas = sel.every((e) => e.fechado), todasNfs = sel.every((e) => e.nfs);
+  barra.innerHTML = `
+    <span class="sel-qtd"><b>${n}</b> selecionada${n > 1 ? "s" : ""}</span>
+    <span class="sel-grupo">
+      <button type="button" data-lote="VERDE">${icone("check")}OK</button>
+      <button type="button" data-lote="VERMELHO">${icone("x")}Pendente</button>
+      <button type="button" data-lote="ATENÇÃO">${icone("alerta")}Atenção</button>
+      <button type="button" data-lote="SEM" title="Tirar o status">Sem status</button>
+    </span>
+    <span class="sel-grupo">
+      <button type="button" data-lote-flag="fechado" title="${todasFechadas ? "Todas já estão fechadas: o clique reabre" : "Marcar como fechadas"}">${icone("cadeado")}${todasFechadas ? "Reabrir" : "Fechado"}</button>
+      <button type="button" data-lote-flag="nfs" title="${todasNfs ? "Todas já têm NFS: o clique desmarca" : "Marcar NFS"}">${todasNfs ? "Tirar NFS" : "NFS"}</button>
+    </span>
+    <button type="button" class="sel-limpar" data-lote-limpar>${icone("x")}Limpar</button>`;
+}
+$("#barra-selecao")?.addEventListener("click", (ev) => {
+  const empresas = ESTADO.grupos.flatMap((g) => g.empresas).filter((e) => SELECIONADAS.has(e.id));
+  const st = ev.target.closest("[data-lote]");
+  const flag = ev.target.closest("[data-lote-flag]");
+  if (ev.target.closest("[data-lote-limpar]")) {
+    SELECIONADAS.clear();
+    renderizarGrupos();
+    return atualizarBarraSelecao();
+  }
+  if (!st && !flag) return;
+  if (st) empresas.forEach((e) => (e.status = st.dataset.lote));
+  if (flag) {
+    const campo = flag.dataset.loteFlag;
+    const ligar = !empresas.every((e) => e[campo]); // se todas já têm, o clique desliga
+    empresas.forEach((e) => (e[campo] = ligar));
+  }
+  marcarAlterado();
+  renderizarGrupos();
+  renderizarDashboard();
+  atualizarBarraSelecao(); // o rótulo dos botões muda (ex.: "Fechado" ↔ "Reabrir")
+  notificar(`${empresas.length} empresa(s) atualizada(s) — clique em Salvar para gravar`, "ok");
+});
+
+// ----- abas Todas / Pendentes / Atenção / Fechadas -----
+$("#filtros-status")?.addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-filtro]");
+  if (!b) return;
+  filtroStatus = b.dataset.filtro;
+  $$("#filtros-status [data-filtro]").forEach((x) => { const ativo = x === b; x.classList.toggle("ativo", ativo); x.setAttribute("aria-selected", ativo); });
+  renderizarGrupos();
+});
+
+// ----- botões do topo -----
+$("#btn-nova-empresa")?.addEventListener("click", () => abrirFormNovaEmpresa());
+
+function rotuloMesTrabalho() {
+  const [a, m] = (ESTADO.mesTrabalho || _isoLocal(new Date()).slice(0, 7)).split("-").map(Number);
+  const nome = new Date(a, m - 1, 1).toLocaleDateString("pt-BR", { month: "long" });
+  return `${nome.charAt(0).toUpperCase()}${nome.slice(1)} ${a}`;
+}
+function atualizarRotuloMes() { const el = $("#competencia-rotulo"); if (el) el.textContent = rotuloMesTrabalho(); }
+$("#btn-competencia")?.addEventListener("click", (ev) => {
+  const btn = ev.currentTarget;
+  abrirMenuAcoes(btn, `Mês de trabalho · ${rotuloMesTrabalho()}`, [
+    { ic: "calendario", rotulo: "Trocar o mês de trabalho", acao: trocarMesTrabalho },
+    { ic: "salvar", rotulo: "Salvar período", acao: () => $("#btn-salvar-periodo")?.click() },
+    { ic: "pastaAberta", rotulo: "Abrir período salvo", acao: () => $("#btn-abrir-periodo")?.click() },
+    { ic: "borracha", rotulo: "Nova lista (começar o próximo mês)", perigo: true, acao: () => $("#btn-nova-lista")?.click() },
+  ]);
+});
+function trocarMesTrabalho() {
+  abrirModal(`
+    <h2>Mês de trabalho</h2>
+    <p class="modal-sub">Aparece no topo da página e é o nome sugerido ao salvar o período.</p>
+    <form id="form-mes"><div class="campo-form"><label>Mês</label><input type="month" id="mes-trabalho" value="${escaparHtml(ESTADO.mesTrabalho || _isoLocal(new Date()).slice(0, 7))}" required></div>
+    <div class="modal-rodape"><button type="button" class="btn-ghost" id="mes-cancelar">Cancelar</button><button type="submit" class="btn-primario">${icone("check")}Usar este mês</button></div></form>`);
+  $("#mes-cancelar").addEventListener("click", fecharModal);
+  $("#form-mes").addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (!/^\d{4}-\d{2}$/.test($("#mes-trabalho").value)) return;
+    ESTADO.mesTrabalho = $("#mes-trabalho").value;
+    fecharModal();
+    atualizarRotuloMes();
+    marcarAlterado();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ARRASTAR PARA MUDAR A ORDEM DAS EMPRESAS
+// A lista não é redesenhada: o próprio cartão é movido no lugar (com uma "vaga" do mesmo
+// tamanho marcando onde vai cair). Empresas abertas continuam abertas; nada pisca.
+// Dá para soltar em outro grupo aberto, ou no cabeçalho de um grupo fechado (vai para o fim dele).
+// ---------------------------------------------------------------------------
+let _arraste = null;
+
+function _grupoDaLista(lista) {
+  for (const [grupo, card] of EL_GRUPO) if (card.contains(lista)) return grupo;
+  return null;
+}
+function _grupoDoCabecalho(cab) {
+  for (const [grupo, card] of EL_GRUPO) if (card.contains(cab)) return grupo;
+  return null;
+}
+
+$("#lista-grupos")?.addEventListener("pointerdown", (ev) => {
+  const alca = ev.target.closest("[data-alca]");
+  if (!alca || ev.button !== 0) return;
+  ev.preventDefault();
+  if (filtroAtual || filtroStatus) {
+    notificar("Para mudar a ordem, limpe a busca e volte para a aba “Todas”.", "aviso");
+    return;
+  }
+  const card = alca.closest(".empresa-card");
+  alca.setPointerCapture(ev.pointerId);
+  _arraste = { pointerId: ev.pointerId, card, alca, inicioX: ev.clientX, inicioY: ev.clientY, x: ev.clientX, y: ev.clientY, iniciado: false, grupoCab: null, rolagem: 0 };
+});
+
+function _comecarArraste() {
+  const a = _arraste;
+  const r = a.card.getBoundingClientRect();
+  a.rect = r;
+  a.vaga = document.createElement("div");
+  a.vaga.className = "empresa-vaga";
+  a.vaga.style.height = r.height + "px";
+  a.card.parentNode.insertBefore(a.vaga, a.card);
+  a.origem = _grupoDaLista(a.card.parentNode);
+  a.cardGrupo = a.card.closest(".grupo-card");
+  a.cardGrupo?.classList.add("origem-arraste");
+  Object.assign(a.card.style, { position: "fixed", left: r.left + "px", top: r.top + "px", width: r.width + "px", zIndex: 900, pointerEvents: "none" });
+  a.card.classList.add("arrastando");
+  document.body.classList.add("arrastando-empresa");
+  a.iniciado = true;
+  a.loop = requestAnimationFrame(_passoArraste);
+}
+
+$("#lista-grupos")?.addEventListener("pointermove", (ev) => {
+  const a = _arraste;
+  if (!a) return;
+  a.x = ev.clientX; a.y = ev.clientY;
+  if (!a.iniciado && Math.hypot(a.x - a.inicioX, a.y - a.inicioY) < 5) return; // só um clique
+  if (!a.iniciado) _comecarArraste();
+});
+
+// Um quadro por vez (requestAnimationFrame): mexe o cartão, acha o lugar e rola a página perto das bordas.
+function _passoArraste() {
+  const a = _arraste;
+  if (!a || !a.iniciado) return;
+  // rolagem automática perto das bordas (o topo fixo da página conta como borda)
+  const topoFixo = ($(".faixa-superior")?.getBoundingClientRect().bottom || 0);
+  const zona = 70;
+  let vel = 0;
+  if (a.y < topoFixo + zona) vel = -Math.ceil((topoFixo + zona - a.y) / 6);
+  else if (a.y > innerHeight - zona) vel = Math.ceil((a.y - (innerHeight - zona)) / 6);
+  if (vel) { scrollBy(0, Math.max(-24, Math.min(24, vel))); }
+  // Posição do cartão: mede onde ele está e corrige até ficar sob o ponteiro. Assim funciona mesmo
+  // quando algum elemento acima muda a referência do "position: fixed" (e acompanha a rolagem).
+  const yVisivel = Math.min(Math.max(a.y, 0), innerHeight); // o cartão nunca sai da janela
+  const atual = a.card.getBoundingClientRect();
+  a.tx = (a.tx || 0) + (a.rect.left - atual.left);
+  a.ty = (a.ty || 0) + (a.rect.top + (yVisivel - a.inicioY) - atual.top);
+  a.card.style.transform = `translate3d(${a.tx}px, ${a.ty}px, 0)`;
+
+  // onde soltar: sobre outro cartão (antes/depois da metade), numa lista vazia ou no cabeçalho de um grupo
+  const el = document.elementFromPoint(Math.min(Math.max(a.x, 0), innerWidth - 1), Math.min(Math.max(a.y, 0), innerHeight - 1));
+  const sobreCard = el && el.closest("#lista-grupos .empresa-card");
+  const sobreCab = el && el.closest("#lista-grupos .grupo-cabecalho");
+  const sobreLista = el && el.closest("#lista-grupos .lista-empresas");
+  document.querySelectorAll(".grupo-cabecalho.alvo-soltar").forEach((c) => c !== sobreCab && c.classList.remove("alvo-soltar"));
+  a.grupoCab = null;
+  if (sobreCard && sobreCard !== a.card) {
+    const r = sobreCard.getBoundingClientRect();
+    const antes = a.y < r.top + r.height / 2;
+    const ref = antes ? sobreCard : sobreCard.nextSibling;
+    if (ref !== a.vaga && (antes ? sobreCard.previousSibling !== a.vaga : sobreCard.nextSibling !== a.vaga)) sobreCard.parentNode.insertBefore(a.vaga, ref);
+  } else if (sobreCab) {
+    const g = _grupoDoCabecalho(sobreCab);
+    const card = EL_GRUPO.get(g);
+    if (g && card && !card.classList.contains("aberto")) { a.grupoCab = g; sobreCab.classList.add("alvo-soltar"); }
+  } else if (sobreLista && !sobreLista.contains(a.vaga) && !sobreLista.querySelector(".empresa-card:not(.arrastando)")) {
+    sobreLista.querySelector(".vazio-mini")?.classList.add("oculto");
+    sobreLista.appendChild(a.vaga); // grupo aberto e vazio
+  }
+  a.vaga.classList.toggle("apagada", !!a.grupoCab);
+  a.loop = requestAnimationFrame(_passoArraste);
+}
+
+function _terminarArraste(cancelar) {
+  const a = _arraste;
+  _arraste = null;
+  if (!a) return;
+  try { a.alca.releasePointerCapture?.(a.pointerId); } catch {}
+  if (!a.iniciado) return;
+  cancelAnimationFrame(a.loop);
+  document.body.classList.remove("arrastando-empresa");
+  a.cardGrupo?.classList.remove("origem-arraste");
+  document.querySelectorAll(".grupo-cabecalho.alvo-soltar").forEach((c) => c.classList.remove("alvo-soltar"));
+  const empresa = ESTADO.grupos.flatMap((g) => g.empresas).find((e) => e.id === a.card.dataset.id);
+  const soltarSemAnimar = () => { a.card.classList.remove("arrastando"); a.card.removeAttribute("style"); };
+
+  if (cancelar) { a.vaga.replaceWith(a.card); soltarSemAnimar(); return; }
+
+  // soltou no cabeçalho de um grupo fechado: vai para o fim dele (o cartão sai da tela, o grupo continua fechado)
+  if (a.grupoCab) {
+    a.origem.empresas.splice(a.origem.empresas.indexOf(empresa), 1);
+    a.grupoCab.empresas.push(empresa);
+    const listaOrigem = a.vaga.parentNode;
+    a.vaga.remove(); a.card.remove(); EL_EMPRESA.delete(empresa.id);
+    if (listaOrigem && !listaOrigem.querySelector(".empresa-card")) redesenharGrupo(a.origem); // ficou vazio: mostra o aviso
+    atualizarCabecalhoGrupo(a.origem); atualizarCabecalhoGrupo(a.grupoCab);
+    renderizarDashboard(); marcarAlterado();
+    notificar(`“${empresa.nome}” foi para ${a.grupoCab.nome}`, "ok");
+    return;
+  }
+
+  // soltou numa lista: o cartão desliza da posição atual até a vaga
+  const destino = a.vaga.getBoundingClientRect();
+  const atualTop = a.rect.top + (Math.min(Math.max(a.y, 0), innerHeight) - a.inicioY);
+  const listaDestino = a.vaga.parentNode;
+  a.vaga.replaceWith(a.card);
+  soltarSemAnimar();
+  const dy = atualTop - destino.top;
+  if (Math.abs(dy) > 1) {
+    a.card.style.transform = `translateY(${dy}px)`;
+    a.card.getBoundingClientRect(); // aplica antes de animar
+    a.card.style.transition = "transform .16s cubic-bezier(.2,.8,.2,1)";
+    a.card.style.transform = "";
+    a.card.addEventListener("transitionend", () => a.card.removeAttribute("style"), { once: true });
+  }
+  _gravarOrdem(a.origem, _grupoDaLista(listaDestino), listaDestino, empresa);
+}
+
+// A ordem na tela vira a ordem nos dados (só da lista mexida; nada é redesenhado).
+function _gravarOrdem(origem, destino, lista, empresa) {
+  if (!destino) return;
+  const ids = [...lista.querySelectorAll(":scope > .empresa-card")].map((el) => el.dataset.id);
+  const antes = destino.empresas.map((e) => e.id).join();
+  if (origem !== destino) origem.empresas.splice(origem.empresas.indexOf(empresa), 1);
+  const porId = new Map([...destino.empresas, empresa].map((e) => [e.id, e]));
+  destino.empresas = ids.map((id) => porId.get(id)).filter(Boolean);
+  lista.querySelector(".vazio-mini")?.remove();
+  if (origem === destino && antes === destino.empresas.map((e) => e.id).join()) return; // voltou para o mesmo lugar
+  if (origem !== destino) {
+    const cardOrigem = EL_GRUPO.get(origem);
+    if (cardOrigem && !cardOrigem.querySelector(".lista-empresas .empresa-card")) redesenharGrupo(origem);
+    atualizarCabecalhoGrupo(origem); atualizarCabecalhoGrupo(destino); renderizarDashboard();
+    notificar(`“${empresa.nome}” foi para ${destino.nome}`, "ok");
+  }
+  marcarAlterado();
+}
+
+$("#lista-grupos")?.addEventListener("pointerup", () => _terminarArraste(false));
+$("#lista-grupos")?.addEventListener("pointercancel", () => _terminarArraste(true));
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && _arraste && _arraste.iniciado) { ev.preventDefault(); _terminarArraste(true); } }, true);
+
+// Teclado: com a alça em foco, ↑ e ↓ sobem e descem a empresa dentro do grupo.
+$("#lista-grupos")?.addEventListener("keydown", (ev) => {
+  const alca = ev.target.closest("[data-alca]");
+  if (!alca || (ev.key !== "ArrowUp" && ev.key !== "ArrowDown")) return;
+  ev.preventDefault();
+  if (filtroAtual || filtroStatus) return notificar("Para mudar a ordem, limpe a busca e volte para a aba “Todas”.", "aviso");
+  const card = alca.closest(".empresa-card");
+  const vizinho = ev.key === "ArrowUp" ? card.previousElementSibling : card.nextElementSibling;
+  if (!vizinho || !vizinho.classList.contains("empresa-card")) return;
+  const grupo = _grupoDaLista(card.parentNode);
+  const empresa = grupo.empresas.find((e) => e.id === card.dataset.id);
+  card.parentNode.insertBefore(card, ev.key === "ArrowUp" ? vizinho : vizinho.nextSibling);
+  _gravarOrdem(grupo, grupo, card.parentNode, empresa);
+  card.querySelector("[data-alca]").focus();
+});

@@ -9,9 +9,14 @@ const $ = (sel, ctx = document) => ctx.querySelector(sel);
 const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
 if (typeof window.icone !== "function") window.icone = () => ""; // segurança se icones.js faltar
 
-async function api(caminho, opcoes = {}) {
+async function api(caminho, opcoes = {}, _jaTentou = false) {
   const resp = await fetch(caminho, { headers: { "Content-Type": "application/json" }, ...opcoes });
   const dados = await resp.json().catch(() => ({}));
+  // Sessão venceu (4h sem uso) com a página aberta: pede a senha aqui mesmo e repete o pedido,
+  // sem recarregar a página — assim nada do que não foi salvo se perde.
+  if (resp.status === 401 && !_jaTentou && !caminho.startsWith("/api/auth/") && caminho !== "/api/session" && document.body.classList.contains("dados-prontos")) {
+    if (await entrarDeNovo()) return api(caminho, opcoes, true);
+  }
   if (!resp.ok) {
     const erro = new Error(dados.erro || `Erro na requisição (HTTP ${resp.status})`);
     Object.assign(erro, dados);
@@ -390,6 +395,10 @@ function aplicarDados(dados) {
     p.anexos = p.anexos || [];
   });
   limparAlterado();
+  // contadores do menu lateral
+  const navEmp = $("#nav-cont-empresas"), navPar = $("#nav-cont-parcelamentos");
+  if (navEmp) navEmp.textContent = ESTADO.grupos.reduce((n, g) => n + g.empresas.length, 0) || "";
+  if (navPar) navPar.textContent = ESTADO.parcelamentos.length || "";
   document.body.classList.add("dados-prontos");
   if (typeof renderizarPagina === "function") renderizarPagina();
 }
@@ -429,7 +438,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key !== "/" || e.ctrlKey || e.metaKey) return;
   const alvo = e.target;
   if (alvo && (alvo.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(alvo.tagName))) return;
-  const busca = $("#busca") || $("#search-input:not([hidden])");
+  const busca = $("#busca") || $("#busca-global") || $("#search-input:not([hidden])");
   if (busca && busca.offsetParent !== null) { e.preventDefault(); busca.focus(); }
 });
 
@@ -472,7 +481,8 @@ $("#btn-nova-lista")?.addEventListener("click", async () => {
 // ============================================================================
 $("#btn-salvar-periodo")?.addEventListener("click", async () => {
   const hoje = new Date();
-  const sugestao = `${String(hoje.getMonth() + 1).padStart(2, "0")}-${hoje.getFullYear()}`;
+  const [anoT, mesT] = /^\d{4}-\d{2}$/.test(ESTADO.mesTrabalho || "") ? ESTADO.mesTrabalho.split("-") : [hoje.getFullYear(), String(hoje.getMonth() + 1).padStart(2, "0")];
+  const sugestao = `${mesT}-${anoT}`;
   const nome = await perguntar("Salvar período", { mensagem: "Dê um nome para essa cópia (ex: 07-2026).", valor: sugestao, textoOk: "Salvar" });
   if (!nome || !nome.trim()) return;
   try {
@@ -765,7 +775,7 @@ function montarColunaAnexos(entidade, { aoMudar, nomeAlvo = "neste cadastro" } =
 function htmlBotoesStatus(atual) {
   const b = (valor, base, ic, rotulo) =>
     `<button type="button" class="pill-toggle ${atual === valor ? base + "-on" : base + "-off"}" data-status="${valor}" aria-pressed="${atual === valor}">${icone(ic)}${rotulo}</button>`;
-  return b("VERDE", "ok", "check", "OK") + b("VERMELHO", "erro", "x", "Pendente") + b("ATENÇÃO", "atencao", "alerta", "Atenção");
+  return `<span class="segmentado">${b("VERDE", "ok", "check", "OK") + b("VERMELHO", "erro", "x", "Pendente") + b("ATENÇÃO", "atencao", "alerta", "Atenção")}</span>`;
 }
 function atualizarBotoesStatus(barra, atual) {
   barra.querySelectorAll("[data-status]").forEach((btn) => {
@@ -939,3 +949,79 @@ const MUNICIPIOS_NFSE = {
 const SISTEMAS_NFSE = { ipm: "IPM / Atende.Net", elotech: "Elotech", nacional: "NFS-e Nacional" };
 const MUNICIPIO_NFSE_PADRAO = "campomourao";
 function municipioNfse(e) { const k = MUNICIPIOS_NFSE[e.municipioNfse] ? e.municipioNfse : MUNICIPIO_NFSE_PADRAO; return { chave: k, ...MUNICIPIOS_NFSE[k] }; }
+
+// ============================================================================
+// SESSÃO VENCIDA — janela para entrar de novo sem sair da página
+// ============================================================================
+let _entrandoDeNovo = null;
+function entrarDeNovo() {
+  if (_entrandoDeNovo) return _entrandoDeNovo; // vários pedidos ao mesmo tempo: uma janela só
+  _entrandoDeNovo = new Promise((resolve) => {
+    const usuario = ($("#usuario-logado")?.textContent || "").trim();
+    const fundo = document.createElement("div");
+    fundo.className = "dialogo-fundo";
+    fundo.innerHTML = `
+      <form class="dialogo" role="dialog" aria-modal="true">
+        <div class="dialogo-cabeca">
+          <span class="dialogo-icone dialogo-icone-aviso">${icone("cadeado")}</span>
+          <h2>Sua sessão expirou</h2>
+        </div>
+        <div class="dialogo-mensagem">Você ficou mais de 4 horas sem usar o sistema. Entre de novo para continuar — o que está na tela não se perde.</div>
+        <input class="dialogo-campo" name="usuario" placeholder="Usuário" autocomplete="username" value="${escaparHtml(usuario)}" required>
+        <input class="dialogo-campo" name="senha" type="password" placeholder="Senha" autocomplete="current-password" required>
+        <div class="dialogo-erro oculto"></div>
+        <div class="dialogo-rodape">
+          <button type="button" class="btn-ghost" data-sair>Ir para o login</button>
+          <button type="submit" class="btn-primario">Entrar</button>
+        </div>
+      </form>`;
+    document.body.appendChild(fundo);
+    const form = fundo.querySelector("form");
+    const erro = fundo.querySelector(".dialogo-erro");
+    requestAnimationFrame(() => (usuario ? form.senha : form.usuario).focus());
+    const fechar = (ok) => { fundo.remove(); _entrandoDeNovo = null; resolve(ok); };
+    fundo.querySelector("[data-sair]").addEventListener("click", async () => {
+      if (_alteracoesPendentes && !(await confirmar("As alterações que ainda não foram salvas vão se perder.", { titulo: "Ir para o login?", textoOk: "Ir mesmo assim", perigo: true }))) return;
+      _alteracoesPendentes = false;
+      location.href = "/";
+    });
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const btn = form.querySelector("[type=submit]");
+      btn.disabled = true;
+      try {
+        const r = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: form.usuario.value.trim(), password: form.senha.value }) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.erro || "Não foi possível entrar.");
+        notificar("Sessão renovada", "ok");
+        fechar(true);
+      } catch (e) {
+        erro.textContent = e.message;
+        erro.classList.remove("oculto");
+        form.senha.select();
+        btn.disabled = false;
+      }
+    });
+  });
+  return _entrandoDeNovo;
+}
+
+// Topo fixo ganha uma linha de separação quando a página rola
+(() => {
+  const topo = document.querySelector(".faixa-superior");
+  if (!topo) return;
+  let pendente = false;
+  addEventListener("scroll", () => {
+    if (pendente) return;
+    pendente = true;
+    requestAnimationFrame(() => { topo.classList.toggle("rolou", scrollY > 8); pendente = false; });
+  }, { passive: true });
+})();
+
+// CNPJ/CPF para exibição: só pontua quando o número está completo (o valor salvo não muda).
+function formatarDocumento(v) {
+  const d = limparDigitos(v);
+  if (d.length === 14) return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+  if (d.length === 11) return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+  return String(v || "").trim();
+}

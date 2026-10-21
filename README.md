@@ -228,3 +228,29 @@ Ao reabrir a página, o que já foi buscado aparece de novo sem consultar a pref
 **Erro "Acesso Negado" (401):** a prefeitura recusou o login antes de chegar nas notas. Confira se o login e a senha entram em campomourao.atende.net, e se o serviço "Emissão de NFS-e por WebService" está com "Liberar Acesso ao Usuário" marcado. Se a empresa entra no portal com CPF, preencha o campo "Login prefeitura (se não for o CNPJ)". O sistema tenta sozinho também o endereço alternativo `ws-campomourao.atende.net`.
 
 Outro município IPM: crie a variável `IPM_MUNICIPIO` no Worker (ex.: `maringa`). O padrão é `campomourao`. Para fixar o endereço exato do webservice, use a variável `IPM_URL`.
+
+## Sessão: só desloga depois de 4h sem uso
+
+Enquanto o sistema está sendo usado, a sessão não vence. Depois de **4 horas sem uso** (entre 4h e 4h30, para economizar gravações no KV: a renovação acontece no máximo a cada 30 min, cerca de 16 gravações num dia inteiro de uso), o próximo clique abre a janela **"Sua sessão expirou"**. Basta digitar a senha para continuar: a página não recarrega e o que ainda não foi salvo continua na tela.
+
+## Visual Prumo e recursos da tela Empresas
+
+Identidade visual Prumo (tinta, cobre e papel; Fraunces nos títulos, IBM Plex Sans no sistema e Plex Mono em CNPJ/CPF), aplicada em todas as páginas, inclusive no login. Logos e ícones ficam em `public/img/prumo-*`.
+
+Recursos novos na tela Empresas:
+- **Topo:** mês de trabalho (guardado junto com os dados e nos períodos salvos), WhatsApp em lote, Salvar e **Nova empresa** (escolhendo o grupo).
+- **Indicadores:** empresas ativas, fechadas no mês, que requerem atenção e pendentes.
+- **Filtros** Todas / Pendentes / Atenção / Fechadas, e busca no menu lateral (de qualquer página, leva para Empresas já filtrado).
+- **Linha do grupo:** quantidade de empresas, contagem por status, barra de progresso e menu ⋯ (renomear, excluir, adicionar empresa).
+- **Linha da empresa:** CNPJ, selos, status, valor do DAS, comentário, menu de copiar (CNPJ, CPF de cada sócio, IE, IM e senhas, com as senhas escondidas) e menu ⋯.
+- **Empresa aberta:** status em botões, NFS/NFE/NFC, Fechado, senhas com botão de mostrar/esconder.
+- **Seleção em lote:** marque várias empresas para mudar status, Fechado ou NFS de uma vez. O botão diz o que vai fazer ("Fechado" ou "Reabrir").
+- **Tarefas do dia:** "X de Y concluídas" com barra, descrição, prazo (HOJE, DIA 20), contador de comentários e campo para adicionar com Enter.
+
+## Mudar a ordem das empresas
+
+Passe o mouse na empresa: aparece uma alça (⋮⋮) à esquerda. Arraste para cima ou para baixo e uma vaga mostra onde ela vai cair. Perto do topo ou do fim da tela, a página rola sozinha. Dá para soltar:
+- **em outro grupo aberto**, na posição que quiser;
+- **no cabeçalho de um grupo fechado**, e a empresa vai para o fim dele sem abrir o grupo.
+
+A lista não é redesenhada: o próprio cartão é movido, então nada pisca e as empresas abertas continuam abertas. **Esc** cancela. Pelo teclado, com a alça em foco, ↑ e ↓ sobem e descem a empresa. Com busca ou filtro ativo, o arraste fica desligado, porque a lista visível não é a lista inteira. Depois, clique em **Salvar**.
