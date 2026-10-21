@@ -797,9 +797,7 @@ a.btn-ghost, a.btn-secundario, a.btn-primario { text-decoration: none; }
 .app-sidebar { background: var(--tinta); color: #D8D0C2; }
 .app-sidebar-inner { padding: 26px 16px 14px; }
 .marca { display: block; text-decoration: none; margin: 0 8px 24px; }
-.marca-nome { display: inline-flex; align-items: flex-end; font-family: var(--fonte-titulo); font-weight: 600; font-size: 34px; line-height: .9; color: var(--marfim); letter-spacing: -0.02em; }
-.marca-nome img { width: 17px; height: 27px; margin: 0 0 -6px 1px; }
-.marca small { display: block; margin-top: 12px; font-size: 10.5px; font-weight: 600; letter-spacing: .2em; text-transform: uppercase; color: #8C8273; }
+.marca-assinatura { display: block; width: 200px; max-width: 100%; height: auto; }
 .busca-menu { width: 100%; max-width: none; margin: 0 0 18px; }
 .busca-menu > .ico { color: #8C8273; }
 .busca-menu input { background: #26221D; border-color: #3A342C; color: var(--marfim); }
@@ -1098,7 +1096,7 @@ a.btn-ghost, a.btn-secundario, a.btn-primario { text-decoration: none; }
 .painel-hero { background: var(--tinta); color: var(--marfim); }
 .painel-hero::before { background: radial-gradient(circle at 80% 15%, rgba(227, 149, 92, .22), transparent 55%), radial-gradient(circle at 5% 100%, rgba(168, 70, 31, .25), transparent 45%); }
 .painel-hero::after { background-image: linear-gradient(rgba(239, 231, 216, .035) 1px, transparent 1px), linear-gradient(90deg, rgba(239, 231, 216, .035) 1px, transparent 1px); }
-.hero-logo { max-width: 260px; filter: none; }
+.hero-logo { max-width: 300px; filter: none; }
 .hero-tagline { color: #CFC6B8; font-size: 15.5px; }
 .hero-lista li { color: #E4DCCD; }
 .hero-lista .ico { color: var(--blue-bright); }
@@ -1164,3 +1162,4 @@ body.arrastando-empresa, body.arrastando-empresa * { cursor: grabbing !important
 /* durante o arraste, o grupo de origem e o cartão não podem recortar o desenho (content-visibility recorta) */
 .grupo-card.origem-arraste, .grupo-card.origem-arraste .grupo-corpo, .grupo-card.origem-arraste .lista-empresas { content-visibility: visible; contain: none; overflow: visible; }
 .empresa-card.arrastando { content-visibility: visible; contain: none; }
+@media (max-width: 700px) { .hero-logo { max-width: 210px; } }
