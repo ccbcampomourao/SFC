@@ -6,7 +6,7 @@
 <title>Prumo · Situação Fiscal</title>
 <link rel="icon" href="/img/prumo-icone.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="/img/prumo-icone-180.png" />
-<meta name="theme-color" content="#1D1A16" />
+<meta name="theme-color" content="#16202E" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.12.313/pdf.min.js" defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,28 +23,28 @@
   /* ---------- Menu lateral: upload + lista de empresas ---------- */
   .sf-upload{
     display:flex; flex-direction:column; align-items:center; gap:4px;
-    border:1.5px dashed #4A4238; border-radius:12px; padding:14px;
-    text-align:center; cursor:pointer; margin:0 0 8px; background:#26221D;
+    border:1.5px dashed #3A4A62; border-radius:12px; padding:14px;
+    text-align:center; cursor:pointer; margin:0 0 8px; background:#1F2B3D;
     transition:border-color .15s ease, background-color .15s ease;
   }
-  .sf-upload:hover, .sf-upload.arrastando{ border-color:var(--blue-bright); background:#2C2722; }
+  .sf-upload:hover, .sf-upload.arrastando{ border-color:var(--blue-bright); background:#223045; }
   .sf-upload .ico{ width:22px; height:22px; color:var(--blue-bright); }
   .sf-upload strong{ color:#EFE7D8; font-size:13px; }
-  .sf-upload span{ font-size:11.5px; color:#A99F91; }
+  .sf-upload span{ font-size:11.5px; color:#8E9AAE; }
   #pdf-upload{ display:none; }
-  .sf-dica{ font-size:11px; color:#8C8273; margin:0 4px 14px; line-height:1.5; }
+  .sf-dica{ font-size:11px; color:#7F8BA0; margin:0 4px 14px; line-height:1.5; }
   .sf-lista-titulo{ display:flex; align-items:center; justify-content:space-between; }
-  .sf-lista-titulo .contador-pilula{ background:#2B2620; color:#D8D0C2; margin-right:6px; }
-  .empresa-list{ flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:2px; min-height:0; margin:0 -4px; padding:0 4px; scrollbar-width:thin; scrollbar-color:#3A342C transparent; }
+  .sf-lista-titulo .contador-pilula{ background:#26344A; color:#CBD3DF; margin-right:6px; }
+  .empresa-list{ flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:2px; min-height:0; margin:0 -4px; padding:0 4px; scrollbar-width:thin; scrollbar-color:#2C3A50 transparent; }
   .empresa-item{ display:flex; align-items:center; gap:10px; padding:8px; border-radius:9px; cursor:pointer; border:1px solid transparent; transition:background-color .12s ease, border-color .12s ease; }
-  .empresa-item:hover{ background:#26221D; }
-  .empresa-item.active{ background:#2B2620; border-color:#5A4A3B; }
+  .empresa-item:hover{ background:#1F2B3D; }
+  .empresa-item.active{ background:#26344A; border-color:#3E4C63; }
   .empresa-avatar{ width:30px; height:30px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; color:#fff; font-family:'Fraunces',sans-serif; }
   .empresa-info{ min-width:0; flex:1; }
   .empresa-info .nome{ font-size:12.5px; color:#EFE7D8; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .empresa-info .cnpj{ font-size:10.5px; color:#8C8273; }
+  .empresa-info .cnpj{ font-size:10.5px; color:#7F8BA0; }
   .empresa-badge{ font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:20px; flex-shrink:0; font-variant-numeric:tabular-nums; }
-  .empty-side{ color:#8C8273; font-size:12px; padding:14px 6px; text-align:center; }
+  .empty-side{ color:#7F8BA0; font-size:12px; padding:14px 6px; text-align:center; }
 
   /* ---------- Faixa superior: busca + filtro ---------- */
   .filter-chip{ display:none; align-items:center; gap:8px; color:#fff; font-size:12.5px; font-weight:700; padding:6px 6px 6px 12px; border-radius:20px; }
@@ -66,7 +66,7 @@
   .overview-table td:first-child{ white-space:normal; }
   .overview-table tr:last-child td{ border-bottom:none; }
   .overview-table tr.clickable{ transition:background-color .12s ease; cursor:pointer; }
-  .overview-table tr.clickable:hover{ background:#F5F1EA; }
+  .overview-table tr.clickable:hover{ background:#F2F4F7; }
   .overview-table td.zero{ color:var(--ink-3); }
   .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px; font-size:11.5px; font-weight:700; white-space:nowrap; }
   .pill::before{ content:""; width:7px; height:7px; border-radius:50%; background:currentColor; }
@@ -209,7 +209,7 @@
 
   mark{ background:#fff1a8; padding:0 1px; border-radius:2px; }
 
-  .raw-panel{ background:#1D1A16; color:#D8D0C2; border-radius:var(--raio); padding:16px 18px; margin-top:14px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; white-space:pre-wrap; max-height:420px; overflow:auto; line-height:1.6; display:none; }
+  .raw-panel{ background:#16202E; color:#CBD3DF; border-radius:var(--raio); padding:16px 18px; margin-top:14px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; white-space:pre-wrap; max-height:420px; overflow:auto; line-height:1.6; display:none; }
   .raw-panel.show{ display:block; }
   .actions-row{ display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
 

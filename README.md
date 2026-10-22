@@ -259,3 +259,12 @@ A lista não é redesenhada: o próprio cartão é movido, então nada pisca e a
 
 Camada "REFINO" no fim do `public/style.css`, que não muda nenhum comportamento: rótulos em frase normal (sem maiúsculas espaçadas), etiquetas mais discretas, colunas alinhadas nas linhas das empresas, campos da empresa aberta com largura suficiente, o mesmo desenho de indicador em todas as páginas, títulos sem ícones decorativos, botões das listas de parcelamentos mais discretos, tabela da Situação Fiscal sem quebrar valores, foco visível em tudo que é clicável e topo do celular numa linha só.
 - **Arredondado:** cantos em níveis (painéis 18px, blocos 14px, botões e campos 10px, etiquetas em pílula), sombras suaves e botões de escolha em "trilho".
+
+## Tema azul-marinho e recursos modernos
+
+- **Tema:** menu azul-marinho (#16202E) com um brilho cobre sutil atrás do logo, fundo claro frio (#F1F3F6), painéis brancos e o cobre só no botão principal, no item ativo e no logo. As cores de status (verde, amarelo, vermelho) não mudam.
+- **Paleta de comandos (Ctrl+K / ⌘K), em todas as páginas:** acha empresa por nome ou CNPJ (Enter abre, Ctrl+Enter copia o CNPJ), ações da página (Nova empresa, Salvar, WhatsApp em lote…) e páginas. Também abre clicando em "Ctrl K" no campo de busca do menu.
+- **Indicadores:** ao abrir, os números contam do zero e as barras crescem; depois, só o que mudou se atualiza, sem redesenhar. "Fechadas no mês" ganhou um anel de progresso.
+- **Tarefas:** a barra desliza, a tarefa concluída desliza para o fim da lista, e concluir a última faz uma pequena celebração ("Tudo no lugar").
+- **Login:** o prumo pendurado balança e para no eixo vertical.
+- Quem ativou "reduzir movimento" no sistema operacional não vê as animações.

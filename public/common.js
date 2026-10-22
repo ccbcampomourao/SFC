@@ -1025,3 +1025,132 @@ function formatarDocumento(v) {
   if (d.length === 11) return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
   return String(v || "").trim();
 }
+
+// ============================================================================
+// PALETA DE COMANDOS (Ctrl+K / ⌘K) — acha qualquer empresa, página ou ação digitando.
+// Enter abre · Ctrl+Enter copia o CNPJ da empresa · Esc fecha.
+// ============================================================================
+const _PAGINAS_PALETA = [
+  { rotulo: "Empresas", ic: "empresas", href: "/empresas.html" },
+  { rotulo: "Parcelamentos", ic: "parcelamentos", href: "/parcelamentos.html" },
+  { rotulo: "Situação Fiscal", ic: "situacao", href: "/situacao-fiscal.html" },
+  { rotulo: "XML NFS-e", ic: "xml", href: "/xml-nfse.html" },
+  { rotulo: "IntegraContador", ic: "governo", href: "/integracontador.html" },
+];
+// Ações: só aparecem quando o botão existe na página atual (reaproveita o que o botão já faz).
+const _ACOES_PALETA = [
+  { rotulo: "Nova empresa", ic: "mais", sel: "#btn-nova-empresa", chaves: "adicionar cadastrar" },
+  { rotulo: "Salvar", ic: "salvar", sel: "#btn-salvar", chaves: "gravar" },
+  { rotulo: "WhatsApp em lote", ic: "conversa", sel: "#btn-whatsapp-lote", chaves: "mensagem enviar" },
+  { rotulo: "Verificar exclusões do Simples", ic: "proibido", sel: "#btn-verificar-exclusoes", chaves: "simples nacional" },
+  { rotulo: "Nova tarefa", ic: "tarefas", sel: "#btn-nova-tarefa", chaves: "tarefa lembrete" },
+  { rotulo: "Novo parcelamento", ic: "mais", sel: "#btn-novo-parcelamento", chaves: "adicionar" },
+  { rotulo: "Mês de trabalho e períodos", ic: "calendario", sel: "#btn-competencia", chaves: "competencia periodo mes" },
+  { rotulo: "Salvar período", ic: "arquivo", sel: "#btn-salvar-periodo", chaves: "competencia" },
+  { rotulo: "Abrir período", ic: "pastaAberta", sel: "#btn-abrir-periodo", chaves: "restaurar competencia" },
+  { rotulo: "Importar PDFs em lote", ic: "arquivos", sel: "#btn-importar-pdfs", chaves: "guias das" },
+  { rotulo: "Exportar backup", ic: "baixar", sel: "#btn-exportar-backup", chaves: "copia" },
+  { rotulo: "Usuários", ic: "usuarios", sel: "#btn-usuarios", chaves: "equipe acesso" },
+  { rotulo: "Sair", ic: "sair", sel: "#btn-sair", chaves: "logout deslogar" },
+];
+const _semAcento = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+function _itensPaleta(termo) {
+  const t = _semAcento(termo).trim();
+  const td = limparDigitos(termo);
+  const pontua = (texto) => { const x = _semAcento(texto); if (!t) return 1; if (x.startsWith(t)) return 3; if (x.includes(" " + t)) return 2; return x.includes(t) ? 1 : 0; };
+  const empresas = (ESTADO.grupos || []).flatMap((g) => (g.empresas || []).map((e) => ({ e, g })))
+    .map(({ e, g }) => {
+      let p = pontua(e.nome);
+      if (td.length >= 3 && limparDigitos(e.cnpj).includes(td)) p = Math.max(p, 2);
+      return { tipo: "empresa", e, grupo: g.nome, p };
+    })
+    .filter((x) => x.p > 0 && (t || td))
+    .sort((a, b) => b.p - a.p || String(a.e.nome).localeCompare(String(b.e.nome), "pt-BR"))
+    .slice(0, 7);
+  const acoes = _ACOES_PALETA.filter((a) => { const el = $(a.sel); return el && el.offsetParent !== null && !el.disabled; })
+    .map((a) => ({ tipo: "acao", ...a, p: Math.max(pontua(a.rotulo), pontua(a.chaves)) })).filter((x) => x.p > 0)
+    .sort((a, b) => b.p - a.p).slice(0, t ? 5 : 6);
+  const aqui = location.pathname;
+  const paginas = _PAGINAS_PALETA.filter((pg) => pg.href !== aqui).map((pg) => ({ tipo: "pagina", ...pg, p: pontua(pg.rotulo) })).filter((x) => x.p > 0)
+    .sort((a, b) => b.p - a.p);
+  return [
+    ...(empresas.length ? [{ cab: "Empresas" }, ...empresas] : []),
+    ...(acoes.length ? [{ cab: "Ações" }, ...acoes] : []),
+    ...(paginas.length ? [{ cab: "Ir para" }, ...paginas] : []),
+  ];
+}
+
+let _paletaAberta = false;
+async function abrirPaleta() {
+  if (_paletaAberta) return;
+  _paletaAberta = true;
+  // páginas que ainda não carregaram as empresas (ex.: Situação Fiscal) buscam uma vez
+  if (!(ESTADO.grupos || []).length) { try { const d = await api("/api/data"); if (d && d.grupos) ESTADO.grupos = d.grupos; } catch {} }
+  const fundo = document.createElement("div");
+  fundo.className = "paleta-fundo";
+  fundo.innerHTML = `
+    <div class="paleta" role="dialog" aria-modal="true" aria-label="Paleta de comandos">
+      <label class="paleta-busca">${icone("busca")}<input type="text" placeholder="Buscar empresa, CNPJ, página ou ação…" autocomplete="off" spellcheck="false" aria-label="Buscar"><kbd>Esc</kbd></label>
+      <div class="paleta-lista" role="listbox"></div>
+      <div class="paleta-rodape"><span><kbd>↑</kbd><kbd>↓</kbd> navegar</span><span><kbd>Enter</kbd> abrir</span><span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> copiar CNPJ</span></div>
+    </div>`;
+  document.body.appendChild(fundo);
+  const input = fundo.querySelector("input"), lista = fundo.querySelector(".paleta-lista");
+  let itens = [], ativo = 0;
+  const selecionaveis = () => itens.filter((x) => !x.cab);
+  const desenhar = () => {
+    itens = _itensPaleta(input.value);
+    const sel = selecionaveis();
+    ativo = Math.min(ativo, Math.max(sel.length - 1, 0));
+    let i = -1;
+    lista.innerHTML = itens.length ? itens.map((x) => {
+      if (x.cab) return `<div class="paleta-cab">${x.cab}</div>`;
+      i++;
+      const atual = i === ativo ? " ativo" : "";
+      if (x.tipo === "empresa") {
+        const st = { VERDE: "ok", VERMELHO: "erro", "ATENÇÃO": "atencao" }[x.e.status];
+        return `<button type="button" class="paleta-item${atual}" data-i="${i}" role="option"><span class="paleta-ic empresa">${escaparHtml(String(x.e.nome || "?").trim().charAt(0).toUpperCase())}</span><span class="paleta-txt"><b>${escaparHtml(x.e.nome)}</b><small>${escaparHtml(formatarDocumento(x.e.cnpj) || "sem CNPJ")} · ${escaparHtml(x.grupo)}</small></span>${st ? `<span class="paleta-st st-${st}"></span>` : ""}</button>`;
+      }
+      return `<button type="button" class="paleta-item${atual}" data-i="${i}" role="option"><span class="paleta-ic">${icone(x.ic)}</span><span class="paleta-txt"><b>${escaparHtml(x.rotulo)}</b></span><span class="paleta-tipo">${x.tipo === "acao" ? "ação" : "página"}</span></button>`;
+    }).join("") : `<div class="paleta-vazio">Nada encontrado para “${escaparHtml(input.value)}”.</div>`;
+    lista.querySelector(".ativo")?.scrollIntoView({ block: "nearest" });
+  };
+  const fechar = () => { _paletaAberta = false; fundo.classList.add("saindo"); setTimeout(() => fundo.remove(), 130); document.removeEventListener("keydown", tecla, true); };
+  const executar = (x, copiarCnpj) => {
+    if (!x) return;
+    fechar();
+    if (x.tipo === "empresa") {
+      if (copiarCnpj) return x.e.cnpj ? copiar("CNPJ", x.e.cnpj) : notificar("Essa empresa não tem CNPJ cadastrado.", "aviso");
+      if (typeof irParaEmpresa === "function" && location.pathname.endsWith("/empresas.html")) return irParaEmpresa(x.e);
+      location.href = "/empresas.html?empresa=" + encodeURIComponent(x.e.id);
+    } else if (x.tipo === "acao") { setTimeout(() => $(x.sel)?.click(), 140); }
+    else location.href = x.href;
+  };
+  function tecla(e) {
+    const sel = selecionaveis();
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); fechar(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); ativo = (ativo + 1) % Math.max(sel.length, 1); desenhar(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); ativo = (ativo - 1 + sel.length) % Math.max(sel.length, 1); desenhar(); }
+    else if (e.key === "Enter") { e.preventDefault(); executar(sel[ativo], e.ctrlKey || e.metaKey); }
+  }
+  document.addEventListener("keydown", tecla, true);
+  input.addEventListener("input", () => { ativo = 0; desenhar(); });
+  lista.addEventListener("mousemove", (e) => { const b = e.target.closest("[data-i]"); if (b && +b.dataset.i !== ativo) { ativo = +b.dataset.i; lista.querySelectorAll(".paleta-item").forEach((x) => x.classList.toggle("ativo", +x.dataset.i === ativo)); } });
+  lista.addEventListener("click", (e) => { const b = e.target.closest("[data-i]"); if (b) executar(selecionaveis()[+b.dataset.i], e.ctrlKey || e.metaKey); });
+  fundo.addEventListener("mousedown", (e) => { if (e.target === fundo) fechar(); });
+  desenhar();
+  requestAnimationFrame(() => input.focus());
+}
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); abrirPaleta(); }
+});
+// no menu lateral: o "/" vira "Ctrl K" e abre a paleta (o campo continua filtrando como antes)
+(() => {
+  const kbd = document.querySelector(".busca-menu kbd");
+  if (!kbd) return;
+  kbd.textContent = "Ctrl K";
+  kbd.classList.add("kbd-paleta");
+  kbd.title = "Buscar tudo: empresas, páginas e ações (Ctrl+K)";
+  kbd.addEventListener("mousedown", (e) => { e.preventDefault(); abrirPaleta(); });
+})();

@@ -29,6 +29,19 @@ function grupoDaEmpresa(empresa) {
 // ---------------------------------------------------------------------------
 // DASHBOARD
 // ---------------------------------------------------------------------------
+// Indicadores: na primeira vez os números contam a partir do zero e as barras crescem;
+// depois, cada mudança só atualiza o que mudou (o número "anda" até o valor novo) — nada é redesenhado.
+const _semMovimento = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+function _contar(el, de, para, ms = 650) {
+  if (de === para || _semMovimento()) { el.textContent = para; return; }
+  const t0 = performance.now();
+  const passo = (t) => {
+    const k = Math.min(1, (t - t0) / ms), suave = 1 - Math.pow(1 - k, 3);
+    el.textContent = Math.round(de + (para - de) * suave);
+    if (k < 1) requestAnimationFrame(passo);
+  };
+  requestAnimationFrame(passo);
+}
 function renderizarDashboard() {
   const cont = $("#dashboard");
   const todas = ESTADO.grupos.flatMap((g) => g.empresas);
@@ -39,19 +52,36 @@ function renderizarDashboard() {
   // grupo com mais empresas pedindo atenção
   const grupoAtencao = ESTADO.grupos.map((g) => [g.nome, g.empresas.filter((e) => e.status === "ATENÇÃO").length]).sort((a, b) => b[1] - a[1])[0];
   const pct = (n) => (total ? Math.round((n / total) * 100) : 0);
-  const card = ({ tom, ic, nome, num, barra, sub }) => `
-    <div class="kpi2 kpi2-${tom}">
-      <span class="kpi2-icone">${icone(ic)}</span>
-      <div class="kpi2-txt">
-        <div class="kpi2-linha"><span class="kpi2-nome">${nome}</span><span class="kpi2-barra"><i style="width:${Math.max(barra, barra ? 3 : 0)}%"></i></span></div>
-        <div class="kpi2-linha"><b class="kpi2-num">${num}</b><small>${sub}</small></div>
-      </div>
-    </div>`;
-  cont.innerHTML =
-    card({ tom: "cobre", ic: "empresas", nome: "Empresas ativas", num: total, barra: 100, sub: `${ESTADO.grupos.length} grupo${ESTADO.grupos.length === 1 ? "" : "s"}` }) +
-    card({ tom: "ok", ic: "check", nome: "Fechadas no mês", num: fechadas, barra: pct(fechadas), sub: `${pct(fechadas)}%` }) +
-    card({ tom: "atencao", ic: "alerta", nome: "Requer atenção", num: atencao, barra: pct(atencao), sub: atencao && grupoAtencao ? escaparHtml(grupoAtencao[0]) : "nenhuma" }) +
-    card({ tom: "erro", ic: "relogio", nome: "Pendentes", num: pendentes, barra: pct(pendentes), sub: "DAS vence dia 20" });
+  const dados = [
+    { tom: "cobre", ic: "empresas", nome: "Empresas ativas", num: total, barra: 100, sub: `${ESTADO.grupos.length} grupo${ESTADO.grupos.length === 1 ? "" : "s"}` },
+    { tom: "ok", ic: "check", nome: "Fechadas no mês", num: fechadas, barra: pct(fechadas), sub: `${pct(fechadas)}% do mês`, anel: true },
+    { tom: "atencao", ic: "alerta", nome: "Requer atenção", num: atencao, barra: pct(atencao), sub: atencao && grupoAtencao ? escaparHtml(grupoAtencao[0]) : "nenhuma" },
+    { tom: "erro", ic: "relogio", nome: "Pendentes", num: pendentes, barra: pct(pendentes), sub: "DAS vence dia 20" },
+  ];
+  const largura = (b) => Math.max(b, b ? 3 : 0) + "%";
+  if (!cont.querySelector(".kpi2")) {
+    // primeira vez: monta zerado e anima até os valores
+    cont.innerHTML = dados.map((d) => `
+      <div class="kpi2 kpi2-${d.tom}${d.anel ? " kpi2-com-anel" : ""}">
+        ${d.anel
+          ? `<span class="kpi2-icone kpi2-anel" title="${d.barra}% fechadas"><svg viewBox="0 0 44 44" aria-hidden="true"><circle class="anel-fundo" cx="22" cy="22" r="18"/><circle class="anel-valor" cx="22" cy="22" r="18" pathLength="100" style="stroke-dasharray:0 100"/></svg>${icone("check")}</span>`
+          : `<span class="kpi2-icone">${icone(d.ic)}</span>`}
+        <div class="kpi2-txt">
+          <div class="kpi2-linha"><span class="kpi2-nome">${d.nome}</span><span class="kpi2-barra"><i style="width:0%"></i></span></div>
+          <div class="kpi2-linha"><b class="kpi2-num">0</b><small>${d.sub}</small></div>
+        </div>
+      </div>`).join("");
+    cont.getBoundingClientRect(); // aplica o "zero" antes de animar
+  }
+  [...cont.querySelectorAll(".kpi2")].forEach((el, i) => {
+    const d = dados[i];
+    const num = el.querySelector(".kpi2-num");
+    _contar(num, Number(num.textContent) || 0, d.num);
+    el.querySelector(".kpi2-barra i").style.width = largura(d.barra);
+    el.querySelector("small").innerHTML = d.sub;
+    const anel = el.querySelector(".anel-valor");
+    if (anel) { anel.style.strokeDasharray = `${d.barra} 100`; el.querySelector(".kpi2-anel").title = `${d.barra}% fechadas`; el.classList.toggle("completo", d.barra === 100 && total > 0); }
+  });
   const nav = $("#nav-cont-empresas");
   if (nav) nav.textContent = total || "";
 }
@@ -1064,6 +1094,8 @@ function criarTarefaEl(item) {
   return div;
 }
 
+let _tarefasFeitasAntes = null;
+const _posTarefa = new WeakMap(); // tarefa -> posição na tela (para deslizar quando a ordem muda)
 function renderizarChecklist() {
   const cont = $("#lista-checklist");
   const lista = ESTADO.checklist;
@@ -1071,16 +1103,58 @@ function renderizarChecklist() {
   const hoje = new Date();
   const dataTxt = `${hoje.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}, ${hoje.getDate()} ${_MESES_CURTOS[hoje.getMonth()]}`;
   const prog = $("#tarefas-progresso");
-  if (prog) prog.innerHTML = lista.length ? `
-    <div class="tarefas-numero"><b>${feitas} de ${lista.length}</b><span>concluídas · ${dataTxt}</span></div>
-    <span class="tarefas-barra"><i style="width:${Math.round((feitas / lista.length) * 100)}%"></i></span>` : "";
+  const pctT = lista.length ? Math.round((feitas / lista.length) * 100) : 0;
+  if (prog) {
+    if (!lista.length) prog.innerHTML = "";
+    else if (prog.querySelector(".tarefas-barra")) {
+      // atualiza no lugar: a barra desliza até o novo valor
+      prog.querySelector(".tarefas-numero b").textContent = `${feitas} de ${lista.length}`;
+      prog.querySelector(".tarefas-barra i").style.width = pctT + "%";
+    } else {
+      prog.innerHTML = `
+        <div class="tarefas-numero"><b>${feitas} de ${lista.length}</b><span>concluídas · ${dataTxt}</span></div>
+        <span class="tarefas-barra"><i style="width:0%"></i></span>`;
+      prog.getBoundingClientRect();
+      prog.querySelector(".tarefas-barra i").style.width = pctT + "%";
+    }
+    // concluiu a última tarefa agora: pequena celebração
+    if (_tarefasFeitasAntes !== null && lista.length && feitas === lista.length && _tarefasFeitasAntes < lista.length) celebrarTarefas(prog);
+  }
+  _tarefasFeitasAntes = lista.length ? feitas : null;
   if (!lista.length) {
-    cont.innerHTML = `<div class="vazio">${icone("tarefas", "ico-xl")}<p>Nenhuma tarefa para hoje.</p></div>`;
+    cont.innerHTML = `<div class="vazio">${icone("tarefas", "ico-xl")}<p>Nenhuma tarefa para hoje. Adicione abaixo o que precisa ser feito.</p></div>`;
     return;
   }
   // pendentes primeiro (as com prazo mais cedo no topo), concluídas no fim
   const ordem = [...lista].sort((a, b) => (a.concluido - b.concluido) || ((a.prazo || "9") < (b.prazo || "9") ? -1 : (a.prazo || "9") > (b.prazo || "9") ? 1 : lista.indexOf(a) - lista.indexOf(b)));
-  cont.replaceChildren(...ordem.map(criarTarefaEl));
+  // FLIP: guarda onde cada tarefa estava, troca a lista e faz cada uma deslizar da posição antiga para a nova
+  cont.querySelectorAll(".tarefa-item").forEach((el) => el._item && _posTarefa.set(el._item, el.getBoundingClientRect().top));
+  const novos = ordem.map((item) => { const el = criarTarefaEl(item); el._item = item; return el; });
+  cont.replaceChildren(...novos);
+  if (_semMovimento()) return;
+  novos.forEach((el) => {
+    const antes = _posTarefa.get(el._item);
+    if (antes == null) return;
+    const dy = antes - el.getBoundingClientRect().top;
+    if (Math.abs(dy) < 2) return;
+    el.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: 320, easing: "cubic-bezier(.2,.8,.2,1)" });
+  });
+}
+
+function celebrarTarefas(prog) {
+  notificar("Tudo no lugar: todas as tarefas de hoje concluídas", "ok");
+  if (_semMovimento()) return;
+  const barra = prog.querySelector(".tarefas-barra");
+  const r = barra.getBoundingClientRect();
+  const cores = ["#B4532A", "#E3955C", "#4B7E43", "#16202E", "#F2B98F"];
+  for (let i = 0; i < 18; i++) {
+    const p = document.createElement("span");
+    p.className = "faisca";
+    const ang = (-Math.PI / 2) + (Math.random() - 0.5) * Math.PI * 1.1, dist = 40 + Math.random() * 70;
+    p.style.cssText = `left:${r.right - 6}px;top:${r.top}px;background:${cores[i % cores.length]};--dx:${Math.cos(ang) * dist}px;--dy:${Math.sin(ang) * dist}px;--rot:${Math.random() * 360}deg`;
+    document.body.appendChild(p);
+    p.addEventListener("animationend", () => p.remove(), { once: true });
+  }
 }
 
 function abrirFormTarefa(item = null) {
@@ -1468,7 +1542,14 @@ $("#busca")?.addEventListener("input", atrasar((e) => {
   const termo = new URLSearchParams(location.search).get("busca");
   if (termo && $("#busca")) { $("#busca").value = termo; filtroAtual = termo.trim().toLowerCase(); }
 }
-iniciarPagina();
+iniciarPagina().then(() => {
+  // vindo da paleta de comandos de outra página: abre a empresa escolhida
+  const id = new URLSearchParams(location.search).get("empresa");
+  if (!id) return;
+  const e = ESTADO.grupos.flatMap((g) => g.empresas).find((x) => x.id === id);
+  if (e) irParaEmpresa(e);
+  history.replaceState(null, "", location.pathname);
+});
 
 // ---------------------------------------------------------------------------
 // SÓCIOS (vários CPFs por empresa)
