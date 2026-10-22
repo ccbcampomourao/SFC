@@ -1163,3 +1163,167 @@ body.arrastando-empresa, body.arrastando-empresa * { cursor: grabbing !important
 .grupo-card.origem-arraste, .grupo-card.origem-arraste .grupo-corpo, .grupo-card.origem-arraste .lista-empresas { content-visibility: visible; contain: none; overflow: visible; }
 .empresa-card.arrastando { content-visibility: visible; contain: none; }
 @media (max-width: 700px) { .hero-logo { max-width: 210px; } }
+
+/* =========================================================================
+   REFINO — acabamento profissional (mesma estrutura, menos ruído)
+   Princípios: rótulos em frase normal (sem MAIÚSCULAS espaçadas), uma cor de
+   destaque (cobre) só para ação principal e item ativo, colunas alinhadas,
+   campos com largura suficiente, foco visível em tudo que é clicável.
+   ========================================================================= */
+
+/* ---------- 1. Rótulos e etiquetas: frase normal, tom discreto ---------- */
+.campo-form label, .bloco-titulo, .kpi-nome, .menu-copia-titulo, .menu-acoes-titulo,
+.app-sidebar-titulo, .pilula-qtd, .cont, .selo, .selo-st, .selo-fechado, .tag,
+.etiqueta, .coluna-titulo, .coluna-detalhe h4, .coluna-detalhe .coluna-cabecalho,
+.ic-relatorio-titulo, .wl-titulo, .xml-tabela th, .socios-cabeca small {
+  text-transform: none; letter-spacing: 0;
+}
+.campo-form label { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+.app-sidebar-titulo { font-size: 12px; font-weight: 600; color: #8C8273; margin-top: 6px; }
+.menu-copia-titulo, .menu-acoes-titulo { font-size: 12px; font-weight: 600; color: var(--ink-3); }
+.selo, .selo-st, .selo-fechado, .tag { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 99px; line-height: 1.5; }
+.selo-tag { border-radius: 4px; font-weight: 600; letter-spacing: .02em; } /* NFS/NFE/NFC são siglas: continuam em maiúsculas */
+.selo-st::before { width: 5px; height: 5px; }
+.pilula-qtd { background: transparent; border: 0; padding: 0; font-size: 12.5px; font-weight: 500; color: var(--ink-3); }
+.cont { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 99px; }
+.contador-pilula { letter-spacing: 0; text-transform: none; font-weight: 600; }
+
+/* placeholders nunca em fonte de números (fica com cara de código) */
+input::placeholder, textarea::placeholder { font-family: "IBM Plex Sans", system-ui, sans-serif; letter-spacing: 0; color: #A79D8F; }
+
+/* ---------- 2. Indicadores: o mesmo desenho em todas as páginas ---------- */
+.kpi-card { background: var(--paper-panel); border: 1px solid var(--line); box-shadow: none; padding: 16px 18px; gap: 6px; }
+.kpi-card .kpi-nome { font-size: 13px; font-weight: 500; color: var(--ink-soft); }
+.kpi-card .kpi-numero { font-family: var(--fonte-titulo); font-weight: 600; font-size: 30px; }
+.kpi-card .kpi-numero small { font-family: "IBM Plex Sans", sans-serif; font-size: 13px; font-weight: 500; color: var(--ink-3); }
+.kpi-card.destaque { background: var(--paper-panel); color: var(--ink); border-color: var(--line); box-shadow: inset 3px 0 0 var(--blue); }
+.kpi-card.destaque .kpi-nome { color: var(--ink-soft); }
+.kpi-card.destaque .kpi-numero { color: var(--ink); }
+.kpi-card.destaque .kpi-icone, .kpi-card .kpi-icone { background: var(--blue-soft); color: var(--blue); border-radius: 6px; }
+.kpi-card.destaque .xml-kpi-sub { color: var(--ink-soft); }
+.kpi-card .kpi-legenda { font-size: 12px; }
+
+/* ---------- 3. Títulos de painel: sem ícone decorativo antes ---------- */
+.painel-cabecalho h2 > .ico:first-child { display: none; }
+.painel-cabecalho h2 { gap: 10px; }
+
+/* ---------- 4. Empresas: colunas alinhadas entre as linhas ---------- */
+#lista-grupos .empresa-header { grid-template-columns: 22px 14px minmax(180px, 1.6fr) minmax(120px, 1fr) 150px 110px auto; }
+#lista-grupos .empresa-situacao { justify-content: flex-start; }
+@media (max-width: 1500px) { #lista-grupos .empresa-header { grid-template-columns: 22px 14px minmax(170px, 1.6fr) minmax(110px, 1fr) 150px auto; } }
+@media (max-width: 1180px) { #lista-grupos .empresa-header { grid-template-columns: 22px 14px minmax(160px, 1.5fr) minmax(90px, 1fr) auto auto; } }
+@media (max-width: 900px) { #lista-grupos .empresa-header { grid-template-columns: 22px minmax(0, 1fr) auto; } }
+#lista-grupos .empresa-nome { font-size: 14px; }
+.empresa-doc { font-size: 12px; color: var(--ink-3); }
+
+/* empresa aberta: campos com espaço de verdade (3 colunas quando a tela é estreita) */
+#lista-grupos .grade-campos { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px 16px; }
+#lista-grupos .grade-campos .campo-form { margin: 0; }
+.campo-form input, .campo-form select, .campo-form textarea { min-height: 38px; }
+
+/* ---------- 5. Grupos: menos caixas dentro de caixas ---------- */
+#lista-grupos .grupo-card { box-shadow: none; }
+#lista-grupos .grupo-cabecalho h3 { font-size: 15px; font-weight: 600; }
+
+/* ---------- 6. Tarefas: sem espaço sobrando ---------- */
+.tarefa-item { position: relative; }
+.tarefa-tags:not(:has(> :not(.tag-fantasma))) { margin-top: 0; }
+.tarefa-tags > .tag-fantasma { position: absolute; right: 40px; top: 12px; opacity: 0; transition: opacity .12s ease; }
+.tarefa-item:hover .tag-fantasma, .tag-fantasma:focus-visible { opacity: 1; }
+@media (hover: none) { .tarefa-tags > .tag-fantasma { position: static; opacity: 1; } }
+
+/* ---------- 7. Menu lateral: subitens alinhados ---------- */
+.side-sub > summary.btn-ghost-side { padding-left: 12px; }
+.side-sub > .btn-ghost-side { padding-left: 40px; }
+
+/* ---------- 8. Botões discretos em listas (parcelamentos): borda só ao passar o mouse ---------- */
+.grade-parcelamentos .chips-acesso .chip-copia { border-color: transparent; background: transparent; }
+.grade-parcelamentos .chips-acesso .chip-copia:hover { border-color: var(--line-strong); background: var(--paper-panel); }
+
+/* ---------- 9. Foco visível e consistente ---------- */
+:where(button, a, summary, [role="button"], input[type="checkbox"]):focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* ---------- 10. Topo no celular: ações numa linha só ---------- */
+@media (max-width: 700px) {
+  .faixa-direita { flex-wrap: nowrap; gap: 8px; width: 100%; justify-content: flex-start; }
+  .faixa-direita .btn-primario, .faixa-direita .btn-secundario { padding: 9px 12px; }
+  .faixa-direita #btn-nova-empresa { margin-left: auto; }
+  .faixa-direita #btn-nova-empresa span { font-size: 0; }
+  .faixa-direita #btn-nova-empresa span::after { content: "Nova"; font-size: 14px; }
+}
+.wl-agora small { text-transform: none; letter-spacing: 0; font-size: 12px; }
+/* ajustes finos depois da revisão */
+#lista-grupos .grade-campos { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); }
+.app-sidebar-titulo { margin-top: 18px; margin-bottom: 6px; }
+.bloco-titulo { font-size: 13px; font-weight: 600; color: var(--ink-soft); display: flex; align-items: center; gap: 7px; }
+.duas-colunas { grid-template-columns: minmax(0, 1fr) 360px; }
+@media (max-width: 1500px) { .duas-colunas { grid-template-columns: minmax(0, 1fr) 320px; } }
+@media (max-width: 1100px) { .duas-colunas { grid-template-columns: minmax(0, 1fr); } }
+/* XML: opções lado a lado; links no tom da marca */
+.xml-controles .nf-opcoes { flex-direction: row; flex-wrap: wrap; gap: 8px; align-items: center; }
+main a:not([class]), .wl-fora summary a { color: var(--blue); text-decoration: underline; text-decoration-color: var(--blue-line); text-underline-offset: 3px; }
+main a:not([class]):hover, .wl-fora summary a:hover { text-decoration-color: currentColor; }
+
+/* =========================================================================
+   ARREDONDADO — cantos em níveis (painel 18 · bloco 14 · controle 10 · etiqueta pílula),
+   sombras suaves no lugar de bordas pesadas, escolhas em "trilho".
+   ========================================================================= */
+:root { --raio: 18px; --raio-sm: 14px; --raio-xs: 10px; --raio-ctl: 10px;
+  --sombra-painel: 0 1px 2px rgba(29, 26, 22, .04), 0 10px 28px -16px rgba(29, 26, 22, .16);
+  --line: #E8E1D5; }
+
+/* painéis grandes */
+.painel-esquerdo, .painel-direito, .kpi2, .kpi-card, .overview-table, .sf-card, .sf-secao, .ic-status-box,
+.modal-conteudo { border-radius: var(--raio); }
+.painel-esquerdo, .painel-direito, .kpi2, .kpi-card { box-shadow: var(--sombra-painel); border-color: var(--line); }
+.modal-conteudo { border-radius: 22px; }
+.dialogo { border-radius: 20px; }
+.card-login { border-radius: 22px; box-shadow: var(--sombra-painel); }
+
+/* blocos internos */
+#lista-grupos .grupo-card, .grade-parcelamentos > *, .coluna-detalhe, .tarefa-item, .socios, .xml-lista, .ic-lista-empresas,
+.ic-servico, .ic-status-item, .wl-lista, .barra-selecao, .zona-arquivos, .empresa-vaga { border-radius: var(--raio-sm); }
+#lista-grupos .grupo-card { overflow: hidden; }
+#lista-grupos .grupo-card.origem-arraste { overflow: visible; }
+.kpi2-icone, .kpi-card .kpi-icone { border-radius: 12px; }
+
+/* controles: botões, campos, menus */
+.btn-primario, .btn-secundario, .btn-ghost, .btn-perigo, .btn-perigo-outline, .chip-copia,
+.campo-form input, .campo-form select, .campo-form textarea, .campo-busca input, .dialogo-campo,
+.socio-linha input, .xml-numero input, .tarefa-comentarios input { border-radius: var(--raio-ctl); }
+.btn-sm { border-radius: 9px; }
+.btn-icone, .empresa-acoes .btn-icone, .btn-icone-side { border-radius: 10px; }
+.app-nav-link, .btn-ghost-side { border-radius: 10px; }
+.app-nav-link.ativo::before { top: 9px; bottom: 9px; border-radius: 0 3px 3px 0; }
+.menu-copia, .menu-acoes { border-radius: 14px; padding: 6px; }
+.menu-copia button, .menu-acoes button { border-radius: 9px; }
+.toast { border-radius: 12px; }
+.campo-busca kbd { border-radius: 6px; }
+
+/* etiquetas e contadores: pílula */
+.selo-tag { border-radius: 99px; padding: 2px 9px; }
+.contador-pilula, .nav-contador, .chip-contador { border-radius: 99px; }
+.empresa-sel input, .check-quadrado, .xml-check input { border-radius: 6px; }
+
+/* escolhas em "trilho": um fundo só, opção ativa destacada dentro */
+.segmentado { border: 0; background: #EEE7DB; padding: 3px; gap: 2px; border-radius: 12px; overflow: visible; }
+.segmentado > * { border: 0 !important; border-right: 0 !important; border-radius: 9px !important; background: transparent; }
+.segmentado > .chip-check:hover, .segmentado > button:hover { background: rgba(255, 255, 255, .55); }
+.segmentado .chip-check:has(input:checked), .segmentado > button.ativo, .segmentado > .ativo { box-shadow: 0 1px 2px rgba(29, 26, 22, .10); }
+.segmentado-checks .chip-check:has(input:checked) { background: #fff; color: var(--blue-escuro); }
+.chip-check.fechado { border-radius: 12px; }
+.filtros-status { border-radius: 12px; border: 0; background: #EEE7DB; }
+.filtros-status button { border-radius: 9px; }
+.chip-check { border-radius: 10px; }
+
+/* grupos e linhas: cantos do cartão aberto acompanham o grupo */
+#lista-grupos .empresa-card.aberto { border-radius: 0; }
+#lista-grupos .grupo-card:not(.aberto) .grupo-cabecalho { border-radius: var(--raio-sm); }
+
+/* indicadores de Parcelamentos e Situação Fiscal ocupam a largura toda */
+#dashboard-parcelamentos { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+/* ajustes do arredondado */
+.kpi-card.destaque { box-shadow: var(--sombra-painel); }
+.ic-status-box { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 900px) { .ic-status-box { grid-template-columns: minmax(0, 1fr); } }
+.linha-icone, .ic-status-item .linha-icone { border-radius: 10px; }

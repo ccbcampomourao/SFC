@@ -235,7 +235,7 @@ Enquanto o sistema está sendo usado, a sessão não vence. Depois de **4 horas 
 
 ## Visual Prumo e recursos da tela Empresas
 
-Identidade visual Prumo (tinta, cobre e papel; Fraunces nos títulos, IBM Plex Sans no sistema e Plex Mono em CNPJ/CPF), aplicada em todas as páginas, inclusive no login. Logos e ícones ficam em `public/img/prumo-*`.
+Identidade visual Prumo (tinta, cobre e papel; Fraunces nos títulos, IBM Plex Sans no sistema e Plex Mono em CNPJ/CPF), aplicada em todas as páginas, inclusive no login. Logos e ícones (versão v3: assinatura com o prumo de latão no "o" e a linha "Controle fiscal") ficam em `public/img/prumo-*`.
 
 Recursos novos na tela Empresas:
 - **Topo:** mês de trabalho (guardado junto com os dados e nos períodos salvos), WhatsApp em lote, Salvar e **Nova empresa** (escolhendo o grupo).
@@ -254,3 +254,8 @@ Passe o mouse na empresa: aparece uma alça (⋮⋮) à esquerda. Arraste para c
 - **no cabeçalho de um grupo fechado**, e a empresa vai para o fim dele sem abrir o grupo.
 
 A lista não é redesenhada: o próprio cartão é movido, então nada pisca e as empresas abertas continuam abertas. **Esc** cancela. Pelo teclado, com a alça em foco, ↑ e ↓ sobem e descem a empresa. Com busca ou filtro ativo, o arraste fica desligado, porque a lista visível não é a lista inteira. Depois, clique em **Salvar**.
+
+## Acabamento visual (refino)
+
+Camada "REFINO" no fim do `public/style.css`, que não muda nenhum comportamento: rótulos em frase normal (sem maiúsculas espaçadas), etiquetas mais discretas, colunas alinhadas nas linhas das empresas, campos da empresa aberta com largura suficiente, o mesmo desenho de indicador em todas as páginas, títulos sem ícones decorativos, botões das listas de parcelamentos mais discretos, tabela da Situação Fiscal sem quebrar valores, foco visível em tudo que é clicável e topo do celular numa linha só.
+- **Arredondado:** cantos em níveis (painéis 18px, blocos 14px, botões e campos 10px, etiquetas em pílula), sombras suaves e botões de escolha em "trilho".

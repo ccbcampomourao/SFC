@@ -461,7 +461,7 @@ function criarCorpoEmpresa(empresa) {
   campos.className = "grade-campos";
   campos.innerHTML = CAMPOS_EMPRESA.map(([campo, rotulo, tipo, placeholder, extra]) => tipo === "select"
     ? `<div class="campo-form"><label>${rotulo}</label><select data-campo="${campo}">${Object.entries(MUNICIPIOS_NFSE).map(([k, m]) =>
-        `<option value="${k}"${municipioNfse(empresa).chave === k ? " selected" : ""}>${m.nome} · ${SISTEMAS_NFSE[m.sistema]}${m.sistema === "ipm" ? "" : " (em preparação)"}</option>`).join("")}</select></div>`
+        `<option value="${k}"${municipioNfse(empresa).chave === k ? " selected" : ""}>${m.nome} · ${{ ipm: "IPM", elotech: "Elotech", nacional: "Nacional" }[m.sistema]}${m.sistema === "ipm" ? "" : " (em breve)"}</option>`).join("")}</select></div>`
     : tipo === "senha"
     ? `<div class="campo-form"><label>${rotulo}</label><span class="campo-senha"><input data-campo="${campo}" type="password" class="mono" value="${escaparHtml(empresa[campo] || "")}" autocomplete="new-password" spellcheck="false"><button type="button" class="olho" data-olho title="Mostrar senha" aria-label="Mostrar senha">${icone("olho")}</button></span></div>`
     : `<div class="campo-form"><label>${rotulo}</label><input data-campo="${campo}" ${tipo ? `type="${tipo}"` : ""} ${placeholder ? `placeholder="${placeholder}"` : ""} ${extra === "mono" ? 'class="mono"' : ""} value="${escaparHtml(empresa[campo] || "")}" autocomplete="off" spellcheck="false"></div>`

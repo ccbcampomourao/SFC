@@ -255,7 +255,7 @@ function renderizarListaEmpresasIC() {
     <label class="ic-empresa-item" data-busca="${escaparHtml(((e.nome || "") + " " + e.cnpj + " " + limparDigitos(e.cnpj)).toLowerCase())}">
       <input type="checkbox" class="ic-empresa-check" data-cnpj="${escaparHtml(e.cnpj)}" data-nome="${escaparHtml(e.nome)}" checked>
       <span class="ic-empresa-nome" title="${escaparHtml(e.nome)}">${escaparHtml(e.nome)}</span>
-      <span class="ic-empresa-cnpj">${escaparHtml(e.cnpj)}</span>
+      <span class="ic-empresa-cnpj">${escaparHtml(formatarDocumento(e.cnpj))}</span>
     </label>`).join("");
   atualizarContadorSelecionadas();
 }

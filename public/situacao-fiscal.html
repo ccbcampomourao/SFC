@@ -61,8 +61,9 @@
   /* ---------- Visão geral ---------- */
   .overview-table{ background:#fff; border-radius:var(--raio); box-shadow:var(--sombra); overflow:auto; border:1.3px solid var(--line); }
   .overview-table table{ width:100%; border-collapse:collapse; min-width:820px; }
-  .overview-table th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); padding:12px 16px; border-bottom:1.3px solid var(--line); background:var(--paper-2); position:sticky; top:0; }
-  .overview-table td{ padding:12px 16px; border-bottom:1px solid var(--line); font-size:13px; vertical-align:middle; font-variant-numeric:tabular-nums; }
+  .overview-table th{ text-align:left; font-size:12.5px; font-weight:600; color:var(--ink-soft); padding:11px 12px; border-bottom:1.3px solid var(--line); background:var(--paper-2); position:sticky; top:0; vertical-align:bottom; }
+  .overview-table td{ padding:12px 12px; border-bottom:1px solid var(--line); font-size:13px; vertical-align:middle; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .overview-table td:first-child{ white-space:normal; }
   .overview-table tr:last-child td{ border-bottom:none; }
   .overview-table tr.clickable{ transition:background-color .12s ease; cursor:pointer; }
   .overview-table tr.clickable:hover{ background:#F5F1EA; }
@@ -113,9 +114,11 @@
 
   .sf-cards{ display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:18px; }
   .sf-card{ text-align:left; background:#fff; border:1.3px solid var(--line); border-radius:var(--raio); padding:13px 15px; display:flex; flex-direction:column; gap:3px; box-shadow:var(--sombra); position:relative; overflow:hidden; transition:border-color .15s ease; }
-  .sf-card::before{ content:""; position:absolute; left:0; right:0; top:0; height:3px; background:var(--line-strong); }
+  .sf-card::before{ content:""; position:absolute; left:15px; top:19px; width:7px; height:7px; border-radius:50%; background:var(--line-strong); }
+  .sf-card .sf-card-rotulo{ padding-left:14px; }
+  .faixa-titulo h1{ font-size:clamp(22px, 2.2vw, 30px); line-height:1.15; }
   .sf-card:hover{ border-color:var(--line-strong); }
-  .sf-card-rotulo{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-soft); }
+  .sf-card-rotulo{ font-size:12.5px; font-weight:600; color:var(--ink-soft); }
   .sf-card-valor{ font-family:'Fraunces',sans-serif; font-size:20px; font-weight:750; font-variant-numeric:tabular-nums; }
   .sf-card-sub{ font-size:12px; color:var(--ink-soft); }
   .sf-card-erro::before{ background:var(--vermelho); } .sf-card-erro .sf-card-valor{ color:var(--vermelho); }
@@ -139,7 +142,7 @@
   .sf-secao.fechada .sf-chevron{ transform:rotate(-90deg); }
   .sf-secao-corpo{ padding:2px 16px 14px; border-top:1px solid var(--line); }
   .sf-secao.fechada .sf-secao-corpo{ display:none; }
-  .sf-subtitulo{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3); margin:14px 0 4px; }
+  .sf-subtitulo{ font-size:12.5px; font-weight:600; color:var(--ink-soft); margin:14px 0 4px; }
 
   /* Grupo por tributo (expansível) */
   .sf-grupo{ border-bottom:1px solid var(--line); }
@@ -154,7 +157,7 @@
   .sf-valor{ font-weight:800; font-size:14px; font-variant-numeric:tabular-nums; white-space:nowrap; color:var(--vermelho-escuro); }
   .sf-valor-mini{ font-weight:700; font-size:12.5px; font-variant-numeric:tabular-nums; white-space:nowrap; color:var(--ink-soft); }
   .sf-tabela{ width:100%; border-collapse:collapse; margin:0 0 12px; font-size:12.5px; font-variant-numeric:tabular-nums; }
-  .sf-tabela th{ text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-3); font-weight:700; padding:6px 10px; background:var(--paper-2); }
+  .sf-tabela th{ text-align:left; font-size:12px; color:var(--ink-soft); font-weight:600; padding:7px 10px; background:var(--paper-2); }
   .sf-tabela td{ padding:7px 10px; border-top:1px solid var(--line); }
 
   /* Linhas genéricas */
