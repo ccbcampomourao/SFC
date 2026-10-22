@@ -285,3 +285,6 @@ Camada "REFINO" no fim do `public/style.css`, que não muda nenhum comportamento
 - Abaixo dos indicadores da tela Empresas há um cartão por grupo: total de empresas, fechadas no mês (barra e %) e status (OK / atenção / pendente). Clicar abre o grupo.
 - Marcar ou desmarcar "Fechado" atualiza na hora os indicadores e o cartão do grupo; na aba "Fechadas", a empresa reaberta sai da lista.
 - O aviso de "Salvar" compara com o que está gravado: se você mexe e volta ao que era (status, município da NFS-e, sócios, tarefas etc.), o aviso some.
+
+## Status "Sem movimento"
+- Marcação cinza "Sem movimento", independente do status: pode ficar ligada junto com OK, Pendente ou Atenção (esses três continuam trocando entre si). Aparece no cartão da empresa, na contagem e na barra do grupo, nos cartões por grupo, na aba "Sem mov." e na seleção em lote.

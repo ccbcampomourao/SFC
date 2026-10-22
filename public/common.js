@@ -52,13 +52,14 @@ function classeStatus(status) {
 }
 
 function contarStatus(lista, campoStatus) {
-  let verde = 0, vermelho = 0, atencao = 0;
+  let verde = 0, vermelho = 0, atencao = 0, semMov = 0;
   lista.forEach((item) => {
     if (item[campoStatus] === "VERDE") verde++;
     else if (item[campoStatus] === "VERMELHO") vermelho++;
     else if (item[campoStatus] === "ATENÇÃO") atencao++;
+    if (item.semMovimento) semMov++; // marcação à parte: convive com OK / Pendente / Atenção
   });
-  return { verde, vermelho, atencao };
+  return { verde, vermelho, atencao, semMov };
 }
 
 function botaoCopiaSe(valor, rotulo, classeExtra = "") {
@@ -429,6 +430,7 @@ function aplicarDados(dados) {
   ESTADO.parcelamentos = ESTADO.parcelamentos || [];
   ESTADO.grupos.forEach((g) => (g.empresas || (g.empresas = [])).forEach((e) => {
     e.id = e.id || crypto.randomUUID();
+    if (e.status === "SEM_MOVIMENTO") { e.status = "SEM"; e.semMovimento = true; } // versão anterior usava como status
     e.comentarios = e.comentarios || [];
     e.anexos = e.anexos || [];
   }));
@@ -817,10 +819,10 @@ function montarColunaAnexos(entidade, { aoMudar, nomeAlvo = "neste cadastro" } =
 }
 
 // Botões de status (OK / Pendente / Atenção) — clique de novo desmarca.
-function htmlBotoesStatus(atual) {
+function htmlBotoesStatus(atual, semMovimento) {
   const b = (valor, base, ic, rotulo) =>
     `<button type="button" class="pill-toggle ${atual === valor ? base + "-on" : base + "-off"}" data-status="${valor}" aria-pressed="${atual === valor}">${icone(ic)}${rotulo}</button>`;
-  return `<span class="segmentado">${b("VERDE", "ok", "check", "OK") + b("VERMELHO", "erro", "x", "Pendente") + b("ATENÇÃO", "atencao", "alerta", "Atenção")}</span>`;
+  return `<span class="segmentado">${b("VERDE", "ok", "check", "OK") + b("VERMELHO", "erro", "x", "Pendente") + b("ATENÇÃO", "atencao", "alerta", "Atenção")}</span>${semMovimento === undefined ? "" : `<button type="button" class="pill-toggle semmov-toggle ${semMovimento ? "semmov-on" : "semmov-off"}" data-semmov aria-pressed="${!!semMovimento}" title="Fica marcado junto com o status">${icone("proibido")}Sem movimento</button>`}`;
 }
 function atualizarBotoesStatus(barra, atual) {
   barra.querySelectorAll("[data-status]").forEach((btn) => {
@@ -1155,7 +1157,7 @@ async function abrirPaleta() {
       i++;
       const atual = i === ativo ? " ativo" : "";
       if (x.tipo === "empresa") {
-        const st = { VERDE: "ok", VERMELHO: "erro", "ATENÇÃO": "atencao" }[x.e.status];
+        const st = { VERDE: "ok", VERMELHO: "erro", "ATENÇÃO": "atencao" }[x.e.status] || (x.e.semMovimento ? "semmov" : "");
         return `<button type="button" class="paleta-item${atual}" data-i="${i}" role="option"><span class="paleta-ic empresa">${escaparHtml(String(x.e.nome || "?").trim().charAt(0).toUpperCase())}</span><span class="paleta-txt"><b>${escaparHtml(x.e.nome)}</b><small>${escaparHtml(formatarDocumento(x.e.cnpj) || "sem CNPJ")} · ${escaparHtml(x.grupo)}</small></span>${st ? `<span class="paleta-st st-${st}"></span>` : ""}</button>`;
       }
       return `<button type="button" class="paleta-item${atual}" data-i="${i}" role="option"><span class="paleta-ic">${icone(x.ic)}</span><span class="paleta-txt"><b>${escaparHtml(x.rotulo)}</b></span><span class="paleta-tipo">${x.tipo === "acao" ? "ação" : "página"}</span></button>`;

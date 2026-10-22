@@ -11,7 +11,7 @@ const EMPRESAS_ABERTAS = new Set(); // ids de empresas abertas
 const EL_GRUPO = new Map();         // grupo -> elemento do cartão
 const EL_EMPRESA = new Map();       // id da empresa -> elemento do cartão
 let filtroAtual = "";
-let filtroStatus = "";               // "" | "VERMELHO" | "ATENÇÃO" | "fechado" (abas Todas/Pendentes/Atenção/Fechadas)
+let filtroStatus = "";               // "" | "VERMELHO" | "ATENÇÃO" | "SEM_MOVIMENTO" | "fechado" (abas Todas/Pendentes/Atenção/Fechadas)
 const SELECIONADAS = new Set();      // ids marcados para ação em lote
 
 function renderizarPagina() {
@@ -112,7 +112,7 @@ function renderizarCardsGrupos() {
     const g = grupos[i];
     const total = g.empresas.length;
     const fechadas = g.empresas.filter((e) => e.fechado).length;
-    const { verde, vermelho, atencao } = contarStatus(g.empresas, "status");
+    const { verde, vermelho, atencao, semMov } = contarStatus(g.empresas, "status");
     const sem = Math.max(total - verde - atencao - vermelho, 0);
     const pct = total ? Math.round((fechadas / total) * 100) : 0;
     const totalEl = el.querySelector(".gk-total b");
@@ -126,10 +126,10 @@ function renderizarCardsGrupos() {
     el.classList.toggle("completo", total > 0 && fechadas === total);
     const seg = (classe, n) => (n ? `<span class="${classe}" style="flex-grow:${n}"></span>` : "");
     const barra = el.querySelector(".kpi-barra");
-    barra.title = `${verde} OK · ${atencao} atenção · ${vermelho} pendente · ${sem} sem status`;
+    barra.title = `${verde} OK · ${atencao} atenção · ${vermelho} pendente · ${semMov} sem movimento · ${sem} sem status`;
     barra.innerHTML = `${seg("b-ok", verde)}${seg("b-atencao", atencao)}${seg("b-erro", vermelho)}${seg("b-sem", sem)}${total ? "" : '<span class="b-sem" style="flex-grow:1"></span>'}`;
     el.querySelector(".gk-legenda").innerHTML =
-      `<span class="ok" title="OK">${icone("check")}${verde}</span><span class="atencao" title="Atenção">${icone("alerta")}${atencao}</span><span class="erro" title="Pendente">${icone("x")}${vermelho}</span>`;
+      `<span class="ok" title="OK">${icone("check")}${verde}</span><span class="atencao" title="Atenção">${icone("alerta")}${atencao}</span><span class="erro" title="Pendente">${icone("x")}${vermelho}</span>${semMov ? `<span class="semmov" title="Sem movimento">${icone("proibido")}${semMov}</span>` : ""}`;
   });
 }
 $("#dashboard-grupos")?.addEventListener("click", (ev) => {
@@ -179,7 +179,7 @@ $("#btn-expandir-todos")?.addEventListener("click", (e) => {
 });
 
 function empresaPassaFiltro(e) {
-  if (filtroStatus === "fechado" ? !e.fechado : filtroStatus && e.status !== filtroStatus) return false;
+  if (filtroStatus === "fechado" ? !e.fechado : filtroStatus === "SEM_MOVIMENTO" ? !e.semMovimento : filtroStatus && e.status !== filtroStatus) return false;
   if (!filtroAtual) return true;
   const f = filtroAtual;
   return (e.nome || "").toLowerCase().includes(f) || (e.cnpj || "").includes(f) || limparDigitos(e.cnpj).includes(limparDigitos(f) || "\u0000");
@@ -196,7 +196,7 @@ function renderizarGrupos() {
   });
   cont.replaceChildren(frag);
   if (!cont.children.length) {
-    const nomeAba = { VERMELHO: "pendente", "ATENÇÃO": "em atenção", fechado: "fechada" }[filtroStatus];
+    const nomeAba = { VERMELHO: "pendente", "ATENÇÃO": "em atenção", SEM_MOVIMENTO: "sem movimento", fechado: "fechada" }[filtroStatus];
     cont.innerHTML = filtroAtual || filtroStatus
       ? `<div class="vazio">${icone("busca", "ico-xl")}<strong>Nada encontrado</strong><p>${filtroAtual ? `Nenhuma empresa${nomeAba ? " " + nomeAba : ""} com “${escaparHtml(filtroAtual)}” no nome ou CNPJ.` : `Nenhuma empresa ${nomeAba} no momento.`}</p></div>`
       : `<div class="vazio">${icone("camadas", "ico-xl")}<strong>Nenhum grupo ainda</strong><p>Crie um grupo (ex.: Simples Nacional, Lucro Presumido) e adicione as empresas dentro dele.</p></div>`;
@@ -204,7 +204,7 @@ function renderizarGrupos() {
 }
 
 function htmlCabecalhoGrupo(grupo, aberto) {
-  const { verde, vermelho, atencao } = contarStatus(grupo.empresas, "status");
+  const { verde, vermelho, atencao, semMov } = contarStatus(grupo.empresas, "status");
   const total = grupo.empresas.length;
   const sem = Math.max(total - verde - vermelho - atencao, 0);
   const seg = (cls, n) => (n ? `<i class="${cls}" style="flex-grow:${n}"></i>` : "");
@@ -216,8 +216,9 @@ function htmlCabecalhoGrupo(grupo, aberto) {
       ${verde ? `<span class="cont cont-ok" title="OK">${verde} OK</span>` : ""}
       ${atencao ? `<span class="cont cont-atencao" title="Atenção">${atencao} atenção</span>` : ""}
       ${vermelho ? `<span class="cont cont-erro" title="Pendente">${vermelho} pend.</span>` : ""}
+      ${semMov ? `<span class="cont cont-semmov" title="Sem movimento">${semMov} s/ mov.</span>` : ""}
     </span>
-    <span class="grupo-barra" title="${verde} OK · ${atencao} atenção · ${vermelho} pendente · ${sem} sem status">${seg("b-ok", verde)}${seg("b-atencao", atencao)}${seg("b-erro", vermelho)}${seg("b-sem", sem)}${total ? "" : '<i class="b-sem" style="flex-grow:1"></i>'}</span>
+    <span class="grupo-barra" title="${verde} OK · ${atencao} atenção · ${vermelho} pendente · ${semMov} sem movimento · ${sem} sem status">${seg("b-ok", verde)}${seg("b-atencao", atencao)}${seg("b-erro", vermelho)}${seg("b-sem", sem)}${total ? "" : '<i class="b-sem" style="flex-grow:1"></i>'}</span>
     <button type="button" class="btn-icone neutro" data-grupo-menu title="Opções do grupo" aria-label="Opções do grupo">${icone("maisOpcoes")}</button>`;
 }
 
@@ -382,6 +383,7 @@ function htmlCabecalhoEmpresa(empresa) {
     <div class="selos-linha">${htmlSelosEmpresa(empresa)}</div>
     <div class="empresa-situacao">
       ${st ? `<span class="selo-st selo-st-${st[0]}">${st[1]}</span>` : ""}
+      ${empresa.semMovimento ? `<span class="selo-st selo-st-semmov" title="Sem movimento">Sem mov.</span>` : ""}
       ${empresa.fechado ? `<span class="selo-fechado">${icone("cadeado")}Fechado</span>` : ""}
     </div>
     ${das}
@@ -420,7 +422,7 @@ function itensCopiaEmpresa(e) {
 function criarEmpresaCard(empresa) {
   const aberto = EMPRESAS_ABERTAS.has(empresa.id);
   const wrap = document.createElement("div");
-  wrap.className = `empresa-card ${classeStatus(empresa.status)}${aberto ? " aberto" : ""}${SELECIONADAS.has(empresa.id) ? " selecionada" : ""}`;
+  wrap.className = `empresa-card ${classeStatus(empresa.status)}${empresa.semMovimento ? " SEM_MOV" : ""}${aberto ? " aberto" : ""}${SELECIONADAS.has(empresa.id) ? " selecionada" : ""}`;
   wrap.dataset.id = empresa.id;
 
   const header = document.createElement("div");
@@ -482,7 +484,7 @@ function alternarEmpresa(empresa) {
 function atualizarEmpresa(empresa) {
   const wrap = EL_EMPRESA.get(empresa.id);
   if (!wrap) return;
-  wrap.className = `empresa-card ${classeStatus(empresa.status)}${wrap.classList.contains("aberto") ? " aberto" : ""}${SELECIONADAS.has(empresa.id) ? " selecionada" : ""}`;
+  wrap.className = `empresa-card ${classeStatus(empresa.status)}${empresa.semMovimento ? " SEM_MOV" : ""}${wrap.classList.contains("aberto") ? " aberto" : ""}${SELECIONADAS.has(empresa.id) ? " selecionada" : ""}`;
   wrap.querySelector(".empresa-header").innerHTML = htmlCabecalhoEmpresa(empresa);
   const info = wrap.querySelector(".info-das");
   if (info) info.innerHTML = htmlInfoDas(empresa);
@@ -550,7 +552,7 @@ function criarCorpoEmpresa(empresa) {
   barra.className = "barra-opcoes";
   const chk = (campo, rotulo, extra = "") =>
     `<label class="chip-check ${extra}"><input type="checkbox" data-cb="${campo}" ${empresa[campo] ? "checked" : ""}><span class="caixa">${icone("check")}</span>${rotulo}</label>`;
-  barra.innerHTML = `${htmlBotoesStatus(empresa.status)}<span class="segmentado segmentado-checks">${chk("nfs", "NFS")}${chk("nfe", "NFE")}${chk("nfc", "NFC")}</span>${chk("fechado", `${icone("cadeado", "ico-sm")}Fechado`, "fechado")}
+  barra.innerHTML = `${htmlBotoesStatus(empresa.status, !!empresa.semMovimento)}<span class="segmentado segmentado-checks">${chk("nfs", "NFS")}${chk("nfe", "NFE")}${chk("nfc", "NFC")}</span>${chk("fechado", `${icone("cadeado", "ico-sm")}Fechado`, "fechado")}
     <span class="barra-copias">
       ${botaoCopiaSe(empresa.cnpj, "CNPJ")}
       ${sociosDe(empresa).some((s) => s.cpf) ? `<button type="button" class="chip-copia" data-copiar="CPF">${icone("copiar")}CPF</button>` : ""}
@@ -560,6 +562,14 @@ function criarCorpoEmpresa(empresa) {
   barra.addEventListener("click", (e) => {
     const copia = e.target.closest("[data-copiar]");
     if (copia) return copiarCampoEmpresa(empresa, copia.dataset.copiar, copia);
+    const sm = e.target.closest("[data-semmov]");
+    if (sm) {
+      // marcação independente: não mexe no OK / Pendente / Atenção
+      empresa.semMovimento = !empresa.semMovimento;
+      sm.className = `pill-toggle semmov-toggle ${empresa.semMovimento ? "semmov-on" : "semmov-off"}`;
+      sm.setAttribute("aria-pressed", empresa.semMovimento);
+      return mudouStatus(empresa);
+    }
     const btn = e.target.closest("[data-status]");
     if (!btn) return;
     empresa.status = empresa.status === btn.dataset.status ? "SEM" : btn.dataset.status;
@@ -1817,7 +1827,7 @@ function atualizarBarraSelecao() {
   barra.classList.toggle("oculto", !n);
   if (!n) return;
   const sel = ESTADO.grupos.flatMap((g) => g.empresas).filter((e) => SELECIONADAS.has(e.id));
-  const todasFechadas = sel.every((e) => e.fechado), todasNfs = sel.every((e) => e.nfs);
+  const todasFechadas = sel.every((e) => e.fechado), todasNfs = sel.every((e) => e.nfs), todasSemMov = sel.every((e) => e.semMovimento);
   barra.innerHTML = `
     <span class="sel-qtd"><b>${n}</b> selecionada${n > 1 ? "s" : ""}</span>
     <span class="sel-grupo">
@@ -1828,6 +1838,7 @@ function atualizarBarraSelecao() {
     </span>
     <span class="sel-grupo">
       <button type="button" data-lote-flag="fechado" title="${todasFechadas ? "Todas já estão fechadas: o clique reabre" : "Marcar como fechadas"}">${icone("cadeado")}${todasFechadas ? "Reabrir" : "Fechado"}</button>
+      <button type="button" data-lote-flag="semMovimento" title="${todasSemMov ? "Todas já estão sem movimento: o clique desmarca" : "Marcar sem movimento (o status continua)"}">${icone("proibido")}${todasSemMov ? "Tirar sem mov." : "Sem movimento"}</button>
       <button type="button" data-lote-flag="nfs" title="${todasNfs ? "Todas já têm NFS: o clique desmarca" : "Marcar NFS"}">${todasNfs ? "Tirar NFS" : "NFS"}</button>
     </span>
     <button type="button" class="sel-limpar" data-lote-limpar>${icone("x")}Limpar</button>`;

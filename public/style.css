@@ -1473,3 +1473,32 @@ body { background: var(--paper); color: var(--ink); }
 @media (max-width: 600px) { .dash-grupos { display: flex; flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; scroll-snap-type: x mandatory; gap: 10px; margin-left: -16px; margin-right: -16px; padding: 2px 16px 6px; scrollbar-width: none; } .dash-grupos::-webkit-scrollbar { display: none; } .dash-grupos > .grupo-kpi { flex: 0 0 78%; scroll-snap-align: center; } .grupo-kpi:hover { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .grupo-kpi.entrando, .grupo-card.destacado { animation: none; } }
 @media print { .dash-grupos { display: none; } }
+
+/* ---------- Status "Sem movimento" (cinza) ---------- */
+:root { --cinza-mov: #6B7586; --cinza-mov-vivo: #8A94A6; --cinza-mov-bg: #E9ECF1; }
+.empresa-card.SEM_MOV:not(.VERDE):not(.VERMELHO):not(.ATENCAO)::before { background: var(--cinza-mov-vivo); }
+.pill-toggle.semmov-off:hover { border-color: var(--line-strong); color: var(--cinza-mov); }
+.pill-toggle.semmov-on { background: var(--cinza-mov); border-color: var(--cinza-mov); color: #fff; font-weight: 600; }
+.selo-st-semmov { background: var(--cinza-mov-bg); color: var(--cinza-mov); }
+.cont-semmov { background: var(--cinza-mov-bg); color: var(--cinza-mov); }
+.grupo-barra .b-semmov, .kpi-barra .b-semmov { background: var(--cinza-mov-vivo); }
+.kpi-legenda .semmov, .gk-legenda .semmov { color: var(--cinza-mov); }
+.paleta-st.st-semmov { background: var(--cinza-mov-vivo); }
+.mini-status .semmov { color: var(--cinza-mov); } .mini-status .semmov::before { background: var(--cinza-mov-vivo); }
+/* botão de status ligado não "apaga" ao passar o mouse */
+.segmentado > .pill-toggle.ok-on:hover { background: var(--verde); }
+.segmentado > .pill-toggle.erro-on:hover { background: var(--vermelho); }
+.segmentado > .pill-toggle.atencao-on:hover { background: var(--amber-vivo); }
+.segmentado > .pill-toggle.semmov-on:hover { background: var(--cinza-mov); }
+.filtros-status button { white-space: nowrap; }
+@media (max-width: 600px) {
+  .filtros-status { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .filtros-status::-webkit-scrollbar { display: none; }
+  .filtros-status button { flex-shrink: 0; }
+}
+
+/* "Sem movimento" é uma marcação à parte (convive com o status) */
+.pill-toggle.semmov-toggle { border: 1px solid var(--line-strong); border-radius: 6px; white-space: nowrap; }
+.pill-toggle.semmov-toggle.semmov-off { background: var(--paper-panel); color: var(--ink); }
+.pill-toggle.semmov-toggle.semmov-off:hover { color: var(--cinza-mov); border-color: var(--cinza-mov-vivo); }
+.pill-toggle.semmov-toggle.semmov-on:hover { background: var(--cinza-mov); }
