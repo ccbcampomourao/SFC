@@ -1511,3 +1511,18 @@ body { background: var(--paper); color: var(--ink); }
 #lista-grupos .empresa-card:hover:not(.aberto) { border-color: var(--line); }
 #lista-grupos .empresa-header { transition: none; }
 #lista-grupos .empresa-alca { transition: background-color .12s ease; }
+.tabs-login[hidden] { display: none; }
+
+/* Login: "Esqueci minha senha" */
+.link-esqueci { display: block; margin: 14px auto 0; background: none; border: 0; padding: 4px 6px; font: inherit; font-size: 13px; font-weight: 600; color: var(--blue); cursor: pointer; border-radius: 6px; }
+.link-esqueci:hover { text-decoration: underline; }
+.link-esqueci.oculto { display: none; }
+/* Usuários: bloquear / link de nova senha */
+.linha-usuario { flex-wrap: wrap; }
+.linha-usuario .linha-texto { flex: 1 1 200px; min-width: 0; }
+.linha-usuario .voce { display: inline; font-weight: 500; color: var(--ink-3); }
+.usuario-acoes { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.usuario-acoes .btn-sm { white-space: nowrap; }
+.linha-usuario.bloqueado .avatar-mini, .linha-usuario.bloqueado .linha-texto { opacity: .55; }
+.caixa-minha-senha { background: var(--paper-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px 4px; margin-bottom: 18px; }
+.caixa-minha-senha .modal-secao { margin-top: 0; }

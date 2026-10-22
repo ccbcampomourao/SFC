@@ -233,6 +233,14 @@
   .sf-secao-corpo{ padding:2px 18px 16px; }
   .actions-row .btn-secundario{ font-size:13px; }
   .sf-escondido{ display:none !important; }
+  .overview-table tr[hidden]{ display:none; }
+  .empresa-list .empresa-item[hidden], .empty-side[hidden]{ display:none; }
+  .sf-vazia{ text-align:center; color:var(--ink-3); padding:28px 12px !important; }
+  .sf-resumo-geral .kpi2.ativo{ border-color:var(--ink); box-shadow:0 0 0 1px var(--ink) inset; }
+  .sf-filtro-ativo{ display:flex; align-items:center; gap:8px; margin:-4px 0 12px; padding:8px 10px 8px 14px; border-radius:12px; background:var(--blue-soft); color:var(--blue-escuro); font-size:13px; font-weight:600; }
+  .sf-filtro-ativo[hidden]{ display:none; }
+  .sf-filtro-ativo > span{ flex:1; min-width:0; }
+  .sf-filtro-ativo .ico{ width:15px; height:15px; }
 
   @media (max-width:700px){
     .sf-resumo-geral{ grid-template-columns:1fr; }
@@ -509,7 +517,8 @@ let cacheAnalise = {};    // chave -> resultado processado (cache p/ performance
 async function processarConteudoPdf(nomeArquivo, arrayBuffer, origem) {
   if (typeof garantirWorkerPdfJs === "function") garantirWorkerPdfJs();
   const typedarray = new Uint8Array(arrayBuffer);
-  const pdf = await pdfjsLib.getDocument(typedarray).promise;
+  // isEvalSupported: false fecha a falha CVE-2024-4367 (PDF malicioso executando código)
+  const pdf = await pdfjsLib.getDocument({ data: typedarray, isEvalSupported: false }).promise;
   let fullText = "";
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
@@ -731,6 +740,29 @@ function aplicarFiltroLista() {
   });
   const vazio = document.getElementById('sf-lista-vazia');
   if (vazio) vazio.hidden = visiveis > 0 || !document.querySelector('#empresa-list .empresa-item');
+  // a visão geral (tabela e indicadores) segue o mesmo filtro da lista
+  const linhas = document.querySelectorAll('#content-root tr[data-chave]');
+  let naTabela = 0;
+  linhas.forEach((tr) => {
+    const bateTexto = !termo || tr.dataset.busca.includes(termo) || (digitos.length >= 3 && tr.dataset.busca.includes(digitos));
+    const bate = bateTexto && (!filtroSituacao || tr.dataset.v === filtroSituacao);
+    tr.hidden = !bate;
+    if (bate) naTabela++;
+  });
+  const semLinhas = document.getElementById('sf-tabela-vazia');
+  if (semLinhas) semLinhas.hidden = naTabela > 0 || !linhas.length;
+  document.querySelectorAll('#content-root .sf-resumo-geral [data-filtro]').forEach((b) => b.classList.toggle('ativo', b.dataset.filtro === filtroSituacao));
+  const aviso = document.getElementById('sf-filtro-ativo');
+  if (aviso) {
+    const nomes = { pendente: 'com pendências', suspensa: 'regulares com parcelamento', regular: 'regulares' };
+    const partes = [filtroSituacao && nomes[filtroSituacao], termo && `“${termo}”`].filter(Boolean);
+    aviso.hidden = !partes.length;
+    aviso.querySelector('span').textContent = partes.length ? `Mostrando ${naTabela} de ${linhas.length}: ${partes.join(' · ')}` : '';
+  }
+}
+function limparFiltrosSf() {
+  document.getElementById('sf-filtro').value = '';
+  escolherFiltroSituacao('');
 }
 
 function renderSidebar() {
@@ -825,7 +857,7 @@ function renderOverview() {
     const parc = t.qtdParcelamentos ? `${t.qtdParcelamentos}${t.qtdParcelamentosAtraso ? ` <span class="sf-mini-erro">${t.qtdParcelamentosAtraso} em atraso</span>` : ''}` : '0';
     const simples = r.simplesResumo ? `<span class="sf-mini-${r.simplesResumo.tipo}">${r.simplesResumo.exclusaoAgendada ? 'Exclusão ' + r.simplesResumo.exclusaoAgendada : r.simplesResumo.optante ? 'Optante' : 'Excluída'}</span>` : '<span class="zero">—</span>';
     return `
-      <tr class="clickable" data-chave="${escapeHtml(chave)}">
+      <tr class="clickable" data-chave="${escapeHtml(chave)}" data-v="${r.veredito.chave}" data-busca="${escapeHtml(`${emp.nome} ${emp.cnpj || ''} ${(emp.cnpj || '').replace(/\D/g, '')}`.toLowerCase())}">
         <td><strong>${escapeHtml(emp.nome)}</strong><div class="sf-cnpj-mini"><span class="mono">${escapeHtml(emp.cnpj || '—')}</span> · relatório de ${escapeHtml((r.dataRelatorio || '—').split(' ')[0])}</div></td>
         <td><span class="pill sf-v-${r.veredito.chave}">${r.veredito.rotulo}</span>${r.simplesResumo ? `<div class="sf-simples-linha">${simples}</div>` : ''}</td>
         <td class="num ${t.emAbertoRfb ? 'sf-txt-erro' : 'zero'}">${fmtMoeda(t.emAbertoRfb)}</td>
@@ -843,18 +875,21 @@ function renderOverview() {
       <button type="button" class="kpi2 kpi2-atencao" data-filtro="suspensa"><span class="kpi2-icone">${icone('parcelamentos')}</span><span class="kpi2-txt"><span class="kpi2-nome">Regulares com parcelamento</span><span class="kpi2-linha"><b class="kpi2-num">${cont.suspensa}</b><small>ou suspensão</small></span></span></button>
       <button type="button" class="kpi2 kpi2-ok" data-filtro="regular"><span class="kpi2-icone">${icone('escudo')}</span><span class="kpi2-txt"><span class="kpi2-nome">Regulares</span><span class="kpi2-linha"><b class="kpi2-num">${cont.regular}</b><small>tiram certidão negativa</small></span></span></button>
     </div>
+    <div class="sf-filtro-ativo" id="sf-filtro-ativo" hidden>${icone('busca')}<span></span><button type="button" class="btn-ghost btn-sm" id="sf-limpar-filtro">${icone('x')}Limpar filtro</button></div>
     <div class="overview-table anim-aparecer">
       <table>
         <thead><tr>
           <th>Empresa</th><th>Situação</th><th class="num">Em aberto</th><th class="num">Dívida ativa</th>
           <th class="num">Parcelamentos</th><th class="num">Omissões</th>
         </tr></thead>
-        <tbody>${rows}</tbody>
+        <tbody>${rows}<tr id="sf-tabela-vazia" hidden><td colspan="6" class="sf-vazia">Nenhuma empresa com esse filtro.</td></tr></tbody>
       </table>
     </div>`;
 
   root.querySelectorAll('tr[data-chave]').forEach(tr => tr.addEventListener('click', () => selecionarEmpresa(tr.dataset.chave)));
-  root.querySelectorAll('[data-filtro]').forEach((b) => b.addEventListener('click', () => escolherFiltroSituacao(b.dataset.filtro)));
+  root.querySelectorAll('[data-filtro]').forEach((b) => b.addEventListener('click', () => escolherFiltroSituacao(b.dataset.filtro === filtroSituacao ? '' : b.dataset.filtro)));
+  document.getElementById('sf-limpar-filtro').addEventListener('click', limparFiltrosSf);
+  aplicarFiltroLista(); // mantém o filtro que já estava escolhido
 }
 
 /* ================= RENDER: DETALHE DE EMPRESA ================= */

@@ -80,12 +80,65 @@ async function conferirSenha(senha, hashSalvo, saltSalvo) {
   return hash === hashSalvo;
 }
 
+const REDEFINICAO_TTL_SEGUNDOS = 60 * 60;   // link de nova senha vale 1 hora
+const REDEFINICAO_ESPERA_SEGUNDOS = 120;    // no máximo um e-mail de nova senha a cada 2 min por usuário
+const SENHA_MINIMA = 8;
+
+async function enviarEmailRedefinicao(env, origin, destinatario, nome, token) {
+  const link = `${origin}/?redefinir=${token}`;
+  await WorkerMailer.send(
+    {
+      host: "smtp.gmail.com", port: 465, secure: true, authType: "login",
+      credentials: { username: env.GMAIL_USER, password: env.GMAIL_APP_PASSWORD },
+    },
+    {
+      from: env.GMAIL_USER,
+      to: destinatario,
+      subject: "Criar uma nova senha — Prumo",
+      text:
+        `Olá, ${nome}!\n\n` +
+        `Recebemos um pedido para criar uma nova senha no Prumo. Para continuar, abra o link abaixo (vale por 1 hora e só funciona uma vez):\n\n${link}\n\n` +
+        `Se não foi você, ignore esta mensagem: sua senha atual continua valendo.`,
+    }
+  );
+}
+
+// Cria o link de nova senha e manda por e-mail. Respeita a espera entre envios.
+async function pedirRedefinicao(env, origin, usuario) {
+  if (!usuario || !usuario.email || usuario.bloqueado) return { enviado: false };
+  const espera = `redefinir-espera:${usuario.username}`;
+  if (await env.SFC_KV.get(espera)) return { enviado: false, aguarde: true };
+  const token = bufParaHex(crypto.getRandomValues(new Uint8Array(24)));
+  await env.SFC_KV.put(`redefinir:${token}`, JSON.stringify({ username: usuario.username, criadoEm: Date.now() }), { expirationTtl: REDEFINICAO_TTL_SEGUNDOS });
+  await env.SFC_KV.put(espera, "1", { expirationTtl: REDEFINICAO_ESPERA_SEGUNDOS });
+  await enviarEmailRedefinicao(env, origin, usuario.email, usuario.nome || usuario.username, token);
+  return { enviado: true };
+}
+
+// Derruba as sessões abertas de um usuário (ao bloquear ou trocar a senha).
+// As sessões guardam o usuário nos metadados da chave, então dá para achar só listando.
+async function encerrarSessoesDe(env, username, exceto = null) {
+  let cursor;
+  do {
+    const pagina = await env.SFC_KV.list({ prefix: "session:", cursor });
+    for (const k of pagina.keys) {
+      const token = k.name.slice(8);
+      if (token === exceto) continue;
+      let dono = k.metadata && k.metadata.username;
+      if (!dono) { const s = await env.SFC_KV.get(k.name, "json"); dono = s && s.username; } // sessões antigas, sem metadados
+      if (dono === username) await env.SFC_KV.delete(k.name);
+    }
+    cursor = pagina.list_complete ? null : pagina.cursor;
+  } while (cursor);
+}
+
 // Sessão por inatividade: cada uso "renova" a sessão por mais 4h. Para não gravar no KV a cada
 // clique, a renovação acontece no máximo a cada 30 min — e a validade é 4h + 30 min a partir dela,
 // então o sistema desloga entre 4h e 4h30 depois do último uso (nunca antes de 4h).
 async function gravarSessao(env, token, username) {
   await env.SFC_KV.put(`session:${token}`, JSON.stringify({ username, renovadaEm: Date.now() }), {
     expirationTtl: Math.ceil((SESSION_INATIVIDADE_MS + SESSION_RENOVA_MS) / 1000),
+    metadata: { username },
   });
 }
 
@@ -868,11 +921,22 @@ export default {
     const { pathname } = url;
 
     try {
-      // ---------- CADASTRO (disponível a qualquer momento, sempre com confirmação por e-mail) ----------
+      // ---------- CADASTRO PÚBLICO: só existe enquanto o sistema não tem nenhum usuário ----------
+      // (primeiro acesso). Depois disso, contas novas só são criadas por quem já está logado
+      // (menu Usuários) — antes qualquer pessoa na internet podia criar conta e ver os dados.
+      if (pathname === "/api/auth/pode-cadastrar" && request.method === "GET") {
+        const usuarios = (await env.SFC_KV.get("users", "json")) || [];
+        return json({ cadastroAberto: usuarios.length === 0 });
+      }
+
       if (pathname === "/api/auth/cadastro" && request.method === "POST") {
+        const existentes = (await env.SFC_KV.get("users", "json")) || [];
+        if (existentes.length) {
+          return json({ erro: "O cadastro pela tela de login está fechado. Peça a quem já usa o sistema para criar seu acesso no menu Usuários." }, 403);
+        }
         const { username, password, nome, email } = await request.json();
-        if (!username || !password || password.length < 6) {
-          return json({ erro: "Usuário e senha (mín. 6 caracteres) são obrigatórios." }, 400);
+        if (!username || !password || password.length < SENHA_MINIMA) {
+          return json({ erro: "Usuário e senha (mín. 8 caracteres) são obrigatórios." }, 400);
         }
         if (!emailValido(email)) {
           return json({ erro: "Informe um e-mail válido." }, 400);
@@ -906,7 +970,9 @@ export default {
         if (usuario.confirmado) {
           return json({ erro: "Essa conta já está confirmada. Tente entrar normalmente." }, 400);
         }
-        if (email) {
+        // Sem login, só dá para INFORMAR um e-mail em conta antiga que não tinha nenhum;
+        // trocar o e-mail de uma conta pendente por aqui permitiria desviar o link de confirmação.
+        if (email && !usuario.email) {
           if (!emailValido(email)) return json({ erro: "Informe um e-mail válido." }, 400);
           usuario.email = email;
           await env.SFC_KV.put("users", JSON.stringify(usuarios));
@@ -933,6 +999,9 @@ export default {
         const usuario = usuarios.find((u) => u.username === username);
         if (!usuario || !(await conferirSenha(password, usuario.hash, usuario.salt))) {
           return json({ erro: "Usuário ou senha inválidos." }, 401);
+        }
+        if (usuario.bloqueado) {
+          return json({ erro: "Seu acesso está bloqueado. Fale com o responsável pelo sistema no escritório.", bloqueado: true }, 403);
         }
         if (!usuario.confirmado) {
           return json(
@@ -1000,6 +1069,42 @@ export default {
         });
       }
 
+      // ---------- ESQUECI MINHA SENHA ----------
+      // A resposta é sempre a mesma, exista ou não o usuário — assim ninguém usa esta tela
+      // para descobrir quais logins/e-mails existem no sistema.
+      if (pathname === "/api/auth/esqueci" && request.method === "POST") {
+        const { identificador } = await request.json().catch(() => ({}));
+        const id = String(identificador || "").trim().toLowerCase();
+        const mensagem = "Se esse usuário ou e-mail estiver cadastrado, enviamos um link para criar uma nova senha. Confira o e-mail (e o spam). O link vale por 1 hora.";
+        if (!id) return json({ erro: "Informe seu usuário ou e-mail." }, 400);
+        const usuarios = (await env.SFC_KV.get("users", "json")) || [];
+        const usuario = usuarios.find((u) => String(u.username).toLowerCase() === id || String(u.email || "").toLowerCase() === id);
+        try { await pedirRedefinicao(env, url.origin, usuario); } catch { /* falha de e-mail não muda a resposta */ }
+        return json({ ok: true, mensagem });
+      }
+
+      if (pathname === "/api/auth/redefinir" && request.method === "GET") {
+        const token = url.searchParams.get("token") || "";
+        const reg = /^[a-f0-9]{48}$/.test(token) ? await env.SFC_KV.get(`redefinir:${token}`, "json") : null;
+        return json({ valido: !!reg, usuario: reg ? reg.username : null });
+      }
+
+      if (pathname === "/api/auth/redefinir" && request.method === "POST") {
+        const { token, senha } = await request.json().catch(() => ({}));
+        const reg = /^[a-f0-9]{48}$/.test(String(token || "")) ? await env.SFC_KV.get(`redefinir:${token}`, "json") : null;
+        if (!reg) return json({ erro: "Esse link expirou ou já foi usado. Peça um novo em “Esqueci minha senha”." }, 400);
+        if (typeof senha !== "string" || senha.length < SENHA_MINIMA) return json({ erro: `A nova senha precisa ter pelo menos ${SENHA_MINIMA} caracteres.` }, 400);
+        const usuarios = (await env.SFC_KV.get("users", "json")) || [];
+        const usuario = usuarios.find((u) => u.username === reg.username);
+        if (!usuario || usuario.bloqueado) return json({ erro: "Não foi possível trocar a senha desse usuário. Fale com o responsável pelo sistema." }, 400);
+        const { hash, salt } = await hashSenha(senha);
+        Object.assign(usuario, { hash, salt, confirmado: true, senhaTrocadaEm: new Date().toISOString() }); // o link chegou no e-mail dele: e-mail confirmado
+        await env.SFC_KV.put("users", JSON.stringify(usuarios));
+        await env.SFC_KV.delete(`redefinir:${token}`);
+        await encerrarSessoesDe(env, usuario.username); // quem estava logado com a senha antiga sai
+        return json({ ok: true, usuario: usuario.username });
+      }
+
       // ---------- LINK PÚBLICO DE DOWNLOAD (enviado ao cliente pelo WhatsApp) ----------
       // Não exige login: quem tem o link baixa SÓ os arquivos daquele envio, até a data de validade.
       if (pathname.startsWith("/d/") && request.method === "GET") {
@@ -1038,13 +1143,61 @@ export default {
       // ---------- USUÁRIOS (adicionar novo funcionário) ----------
       if (pathname === "/api/users" && request.method === "GET") {
         const usuarios = (await env.SFC_KV.get("users", "json")) || [];
-        return json({ usuarios: usuarios.map((u) => ({ username: u.username, nome: u.nome, email: u.email, confirmado: !!u.confirmado })) });
+        return json({ usuarios: usuarios.map((u) => ({ username: u.username, nome: u.nome, email: u.email, confirmado: !!u.confirmado, bloqueado: !!u.bloqueado, bloqueadoEm: u.bloqueadoEm || null, voce: u.username === username })) });
+      }
+
+      // ---------- BLOQUEAR / DESBLOQUEAR USUÁRIO ----------
+      if (pathname === "/api/users/bloqueio" && request.method === "POST") {
+        const { username: alvo, bloquear } = await request.json().catch(() => ({}));
+        if (alvo === username) return json({ erro: "Você não pode bloquear o seu próprio acesso." }, 400);
+        const usuarios = (await env.SFC_KV.get("users", "json")) || [];
+        const usuario = usuarios.find((u) => u.username === alvo);
+        if (!usuario) return json({ erro: "Usuário não encontrado." }, 404);
+        if (bloquear) {
+          Object.assign(usuario, { bloqueado: true, bloqueadoEm: new Date().toISOString(), bloqueadoPor: username });
+        } else {
+          delete usuario.bloqueado; delete usuario.bloqueadoEm; delete usuario.bloqueadoPor;
+        }
+        await env.SFC_KV.put("users", JSON.stringify(usuarios));
+        if (bloquear) await encerrarSessoesDe(env, alvo); // sai na hora de todos os aparelhos
+        return json({ ok: true, bloqueado: !!bloquear });
+      }
+
+      // ---------- ENVIAR LINK DE NOVA SENHA PARA OUTRO USUÁRIO ----------
+      if (pathname === "/api/users/enviar-redefinicao" && request.method === "POST") {
+        const { username: alvo } = await request.json().catch(() => ({}));
+        const usuarios = (await env.SFC_KV.get("users", "json")) || [];
+        const usuario = usuarios.find((u) => u.username === alvo);
+        if (!usuario) return json({ erro: "Usuário não encontrado." }, 404);
+        if (usuario.bloqueado) return json({ erro: "Esse usuário está bloqueado. Desbloqueie antes de enviar o link." }, 400);
+        if (!usuario.email) return json({ erro: "Esse usuário não tem e-mail cadastrado." }, 400);
+        try {
+          const r = await pedirRedefinicao(env, url.origin, usuario);
+          if (r.aguarde) return json({ erro: "Um link acabou de ser enviado para esse usuário. Espere 2 minutos para mandar outro." }, 429);
+        } catch (err) {
+          return json({ erro: "Não consegui enviar o e-mail: " + err.message }, 500);
+        }
+        return json({ ok: true, email: usuario.email });
+      }
+
+      // ---------- TROCAR A PRÓPRIA SENHA ----------
+      if (pathname === "/api/users/minha-senha" && request.method === "POST") {
+        const { atual, nova } = await request.json().catch(() => ({}));
+        if (typeof nova !== "string" || nova.length < SENHA_MINIMA) return json({ erro: `A nova senha precisa ter pelo menos ${SENHA_MINIMA} caracteres.` }, 400);
+        const usuarios = (await env.SFC_KV.get("users", "json")) || [];
+        const usuario = usuarios.find((u) => u.username === username);
+        if (!usuario || !(await conferirSenha(String(atual || ""), usuario.hash, usuario.salt))) return json({ erro: "A senha atual não confere." }, 400);
+        const { hash, salt } = await hashSenha(nova);
+        Object.assign(usuario, { hash, salt, senhaTrocadaEm: new Date().toISOString() });
+        await env.SFC_KV.put("users", JSON.stringify(usuarios));
+        await encerrarSessoesDe(env, username, lerCookies(request)[SESSION_COOKIE]); // derruba os outros aparelhos, mantém este
+        return json({ ok: true });
       }
 
       if (pathname === "/api/users" && request.method === "POST") {
         const { username: novoUser, password, nome, email } = await request.json();
-        if (!novoUser || !password || password.length < 6) {
-          return json({ erro: "Usuário e senha (mín. 6 caracteres) são obrigatórios." }, 400);
+        if (!novoUser || !password || password.length < SENHA_MINIMA) {
+          return json({ erro: "Usuário e senha (mín. 8 caracteres) são obrigatórios." }, 400);
         }
         if (!emailValido(email)) {
           return json({ erro: "Informe um e-mail válido." }, 400);

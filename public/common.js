@@ -261,7 +261,8 @@ async function extrairTextoPdf(arquivo) {
   if (!window.pdfjsLib) throw new Error("O leitor de PDF ainda está carregando. Tente de novo em alguns segundos.");
   garantirWorkerPdfJs();
   const buf = await arquivo.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  // isEvalSupported: false fecha a falha CVE-2024-4367 (PDF malicioso executando código)
+  const pdf = await pdfjsLib.getDocument({ data: buf, isEvalSupported: false }).promise;
   let texto = "";
   for (let i = 1; i <= pdf.numPages; i++) {
     const pagina = await pdf.getPage(i);
@@ -630,7 +631,28 @@ $("#input-importar-backup")?.addEventListener("change", async (e) => {
 // ============================================================================
 // USUÁRIOS
 // ============================================================================
-$("#btn-usuarios")?.addEventListener("click", async () => {
+$("#btn-usuarios")?.addEventListener("click", abrirUsuarios);
+
+function _htmlLinhaUsuario(u) {
+  const etiqueta = u.bloqueado
+    ? `<span class="etiqueta etiqueta-erro">${icone("cadeado")}Bloqueado</span>`
+    : u.confirmado
+      ? `<span class="etiqueta etiqueta-ok">${icone("check")}Ativo</span>`
+      : `<span class="etiqueta etiqueta-aviso">${icone("relogio")}Aguardando e-mail</span>`;
+  const acoes = u.voce
+    ? `<button type="button" class="btn-ghost btn-sm" data-minha-senha>${icone("chave")}Trocar minha senha</button>`
+    : `${u.bloqueado ? "" : `<button type="button" class="btn-ghost btn-sm" data-link-senha="${escaparHtml(u.username)}" title="Manda para ${escaparHtml(u.email || "o e-mail da pessoa")} um link para ela criar uma senha nova">${icone("email")}Link de nova senha</button>`}
+       <button type="button" class="btn-sm ${u.bloqueado ? "btn-secundario" : "btn-perigo-outline"}" data-bloqueio="${escaparHtml(u.username)}" data-bloquear="${u.bloqueado ? "0" : "1"}">${icone(u.bloqueado ? "cadeado" : "proibido")}${u.bloqueado ? "Desbloquear" : "Bloquear"}</button>`;
+  return `
+    <div class="linha-item linha-usuario${u.bloqueado ? " bloqueado" : ""}">
+      <span class="avatar-mini">${escaparHtml((u.nome || u.username || "?").charAt(0).toUpperCase())}</span>
+      <span class="linha-texto"><b>${escaparHtml(u.nome || u.username)}${u.voce ? ' <small class="voce">(você)</small>' : ""}</b><small>${escaparHtml(u.username)} · ${escaparHtml(u.email || "sem e-mail")}</small></span>
+      ${etiqueta}
+      <span class="usuario-acoes">${acoes}</span>
+    </div>`;
+}
+
+async function abrirUsuarios() {
   let usuarios = [];
   try {
     ({ usuarios } = await api("/api/users"));
@@ -640,15 +662,15 @@ $("#btn-usuarios")?.addEventListener("click", async () => {
   }
   abrirModal(`
     <h2>Usuários do sistema</h2>
-    <div class="lista-linhas" style="margin-bottom:18px">
-      ${usuarios.map((u) => `
-        <div class="linha-item">
-          <span class="avatar-mini">${escaparHtml((u.nome || u.username || "?").charAt(0).toUpperCase())}</span>
-          <span class="linha-texto"><b>${escaparHtml(u.nome || u.username)}</b><small>${escaparHtml(u.username)} · ${escaparHtml(u.email || "sem e-mail")}</small></span>
-          ${u.confirmado
-            ? `<span class="etiqueta etiqueta-ok">${icone("check")}Ativo</span>`
-            : `<span class="etiqueta etiqueta-aviso">${icone("relogio")}Aguardando e-mail</span>`}
-        </div>`).join("")}
+    <p class="modal-sub">Quem for bloqueado sai na hora de todos os aparelhos e não consegue entrar até ser desbloqueado.</p>
+    <div class="lista-linhas" id="uu-lista" style="margin-bottom:18px">${usuarios.map(_htmlLinhaUsuario).join("")}</div>
+    <div id="uu-minha-senha" class="caixa-minha-senha oculto">
+      <h3 class="modal-secao">Trocar minha senha</h3>
+      <div class="linha-dois-campos">
+        <div class="campo-form"><label>Senha atual</label><input id="ms-atual" type="password" autocomplete="current-password"></div>
+        <div class="campo-form"><label>Nova senha (mín. 8 caracteres)</label><input id="ms-nova" type="password" autocomplete="new-password"></div>
+      </div>
+      <div class="modal-rodape" style="margin-top:0"><button class="btn-primario btn-sm" id="ms-salvar">${icone("chave")}Salvar nova senha</button></div>
     </div>
     <h3 class="modal-secao">Adicionar funcionário</h3>
     <p class="modal-sub">A pessoa só consegue entrar depois de confirmar o link enviado para o e-mail informado.</p>
@@ -658,7 +680,7 @@ $("#btn-usuarios")?.addEventListener("click", async () => {
     </div>
     <div class="linha-dois-campos">
       <div class="campo-form"><label>E-mail</label><input id="uu-email" type="email" autocomplete="off"></div>
-      <div class="campo-form"><label>Senha (mín. 6 caracteres)</label><input id="uu-senha" type="password" autocomplete="new-password"></div>
+      <div class="campo-form"><label>Senha (mín. 8 caracteres)</label><input id="uu-senha" type="password" autocomplete="new-password"></div>
     </div>
     <div id="uu-status" class="mensagem-sucesso oculto"></div>
     <div class="modal-rodape">
@@ -666,22 +688,62 @@ $("#btn-usuarios")?.addEventListener("click", async () => {
       <button class="btn-primario" id="uu-salvar">${icone("mais")}Adicionar</button>
     </div>
   `);
+  const status = $("#uu-status");
+  const mostrar = (texto, ok = true) => { status.className = ok ? "mensagem-sucesso" : "mensagem-erro"; status.textContent = texto; };
+  const recarregarLista = async () => {
+    try { ({ usuarios } = await api("/api/users")); $("#uu-lista").innerHTML = usuarios.map(_htmlLinhaUsuario).join(""); } catch {}
+  };
   $("#uu-cancelar").addEventListener("click", fecharModal);
+  $("#uu-lista").addEventListener("click", async (ev) => {
+    if (ev.target.closest("[data-minha-senha]")) {
+      const caixa = $("#uu-minha-senha");
+      caixa.classList.toggle("oculto");
+      if (!caixa.classList.contains("oculto")) $("#ms-atual").focus();
+      return;
+    }
+    const link = ev.target.closest("[data-link-senha]");
+    if (link) {
+      return comCarregando(link, async () => {
+        try {
+          const r = await api("/api/users/enviar-redefinicao", { method: "POST", body: JSON.stringify({ username: link.dataset.linkSenha }) });
+          mostrar(`Link de nova senha enviado para ${r.email}. Ele vale por 1 hora.`);
+        } catch (err) { mostrar(err.message, false); }
+      });
+    }
+    const bl = ev.target.closest("[data-bloqueio]");
+    if (bl) {
+      const bloquear = bl.dataset.bloquear === "1";
+      const u = usuarios.find((x) => x.username === bl.dataset.bloqueio);
+      if (bloquear && !(await confirmar(`${u ? u.nome || u.username : "Esse usuário"} sai do sistema na hora, em todos os aparelhos, e não consegue mais entrar até ser desbloqueado.`, { titulo: "Bloquear acesso?", textoOk: "Bloquear", perigo: true }))) return;
+      return comCarregando(bl, async () => {
+        try {
+          await api("/api/users/bloqueio", { method: "POST", body: JSON.stringify({ username: bl.dataset.bloqueio, bloquear }) });
+          notificar(bloquear ? "Usuário bloqueado" : "Usuário desbloqueado", "ok");
+          await recarregarLista();
+        } catch (err) { mostrar(err.message, false); }
+      });
+    }
+  });
+  $("#ms-salvar").addEventListener("click", (ev) => comCarregando(ev.currentTarget, async () => {
+    try {
+      await api("/api/users/minha-senha", { method: "POST", body: JSON.stringify({ atual: $("#ms-atual").value, nova: $("#ms-nova").value }) });
+      $("#ms-atual").value = ""; $("#ms-nova").value = "";
+      $("#uu-minha-senha").classList.add("oculto");
+      mostrar("Senha trocada! Os outros aparelhos onde você estava logado foram desconectados.");
+    } catch (err) { mostrar(err.message, false); }
+  }));
   $("#uu-salvar").addEventListener("click", (ev) => comCarregando(ev.currentTarget, async () => {
-    const status = $("#uu-status");
     try {
       const resp = await api("/api/users", {
         method: "POST",
         body: JSON.stringify({ username: $("#uu-usuario").value.trim(), password: $("#uu-senha").value, nome: $("#uu-nome").value.trim(), email: $("#uu-email").value.trim() }),
       });
-      status.className = "mensagem-sucesso";
-      status.textContent = resp.emailFalhou ? `Usuário criado, mas o e-mail de confirmação falhou (${resp.erroEmail}).` : "Usuário criado! Um link de confirmação foi enviado para o e-mail informado.";
-    } catch (err) {
-      status.className = "mensagem-erro";
-      status.textContent = err.message;
-    }
+      mostrar(resp.emailFalhou ? `Usuário criado, mas o e-mail de confirmação falhou (${resp.erroEmail}).` : "Usuário criado! Um link de confirmação foi enviado para o e-mail informado.");
+      await recarregarLista();
+      ["#uu-nome", "#uu-usuario", "#uu-email", "#uu-senha"].forEach((sel) => ($(sel).value = ""));
+    } catch (err) { mostrar(err.message, false); }
   }));
-});
+}
 
 // ============================================================================
 // BLOCOS DE DETALHE (Comentários e Documentos) — usados em Empresas e Parcelamentos.

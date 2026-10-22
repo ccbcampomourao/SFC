@@ -288,3 +288,10 @@ Camada "REFINO" no fim do `public/style.css`, que não muda nenhum comportamento
 
 ## Status "Sem movimento"
 - Marcação cinza "Sem movimento", independente do status: pode ficar ligada junto com OK, Pendente ou Atenção (esses três continuam trocando entre si). Aparece no cartão da empresa, na contagem e na barra do grupo, nos cartões por grupo, na aba "Sem mov." e na seleção em lote.
+
+## Segurança (auditoria de 22/10/2026)
+- **Cadastro público fechado:** "Criar conta" só aparece no primeiro acesso (sistema sem nenhum usuário). Depois disso, contas novas são criadas por quem já está logado, no menu Usuários. O reenvio de confirmação não troca mais o e-mail de uma conta pendente.
+- **Leitor de PDF protegido:** todos os PDFs abrem com `isEvalSupported: false`, que fecha a falha CVE-2024-4367 (PDF malicioso executando código no sistema).
+- **Bloquear usuários:** menu Usuários → Bloquear. A pessoa sai na hora de todos os aparelhos e não entra até ser desbloqueada (não dá para bloquear a si mesmo).
+- **Recuperar senha:** "Esqueci minha senha" na tela de login manda um link por e-mail (vale 1 hora, uma vez só, no máximo um a cada 2 min). No menu Usuários dá para mandar esse link para outra pessoa e trocar a própria senha. Trocar a senha derruba as outras sessões abertas.
+- Senha mínima de 8 caracteres para contas e senhas novas (as senhas atuais continuam valendo).

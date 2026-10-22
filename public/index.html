@@ -36,7 +36,7 @@
         <h2 id="login-titulo">Bem-vindo de volta</h2>
         <p id="login-subtitulo" class="login-subtitulo">Entre com seu usuário e senha</p>
 
-        <div class="tabs-login" role="tablist">
+        <div class="tabs-login" role="tablist" id="tabs-login" hidden>
           <button type="button" class="tab-login-btn ativa" data-modo="login" role="tab">Entrar</button>
           <button type="button" class="tab-login-btn" data-modo="cadastro" role="tab">Criar conta</button>
         </div>
@@ -45,17 +45,24 @@
           <label id="campo-nome-setup" class="oculto">Seu nome
             <span class="campo-icone"><svg class="ico" aria-hidden="true"><use href="#i-usuario"/></svg><input type="text" id="login-nome" autocomplete="name" /></span>
           </label>
-          <label>Usuário
+          <label id="campo-usuario"><span id="rotulo-usuario">Usuário</span>
             <span class="campo-icone"><svg class="ico" aria-hidden="true"><use href="#i-usuario"/></svg><input type="text" id="login-usuario" autocomplete="username" autocapitalize="none" spellcheck="false" required /></span>
           </label>
           <label id="campo-email-setup" class="oculto">Seu e-mail
             <span class="campo-icone"><svg class="ico" aria-hidden="true"><use href="#i-email"/></svg><input type="email" id="login-email" autocomplete="email" /></span>
           </label>
-          <label>Senha
+          <label id="campo-senha">Senha
             <span class="campo-icone"><svg class="ico" aria-hidden="true"><use href="#i-senha"/></svg><input type="password" id="login-senha" autocomplete="current-password" required /></span>
+          </label>
+          <label id="campo-nova-senha" class="oculto">Nova senha (mín. 8 caracteres)
+            <span class="campo-icone"><svg class="ico" aria-hidden="true"><use href="#i-senha"/></svg><input type="password" id="login-nova-senha" autocomplete="new-password" minlength="8" /></span>
+          </label>
+          <label id="campo-confirma-senha" class="oculto">Repita a nova senha
+            <span class="campo-icone"><svg class="ico" aria-hidden="true"><use href="#i-senha"/></svg><input type="password" id="login-confirma-senha" autocomplete="new-password" minlength="8" /></span>
           </label>
           <div id="login-erro" class="mensagem-erro oculto"></div>
           <button type="submit" id="btn-login-submit" class="btn-primario"><span>Entrar</span></button>
+          <button type="button" class="link-esqueci" id="btn-esqueci">Esqueci minha senha</button>
         </form>
       </div>
     </main>
