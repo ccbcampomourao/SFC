@@ -1429,3 +1429,44 @@ body { background: var(--paper); color: var(--ink); }
 .busca-menu kbd.kbd-paleta { cursor: pointer; pointer-events: auto; display: inline-block; }
 .busca-menu kbd.kbd-paleta:hover { color: #fff; border-color: #8E9AAE; }
 .busca-menu input { padding-right: 66px; text-overflow: ellipsis; }
+
+/* ---------- Cartões por grupo (Empresas) ---------- */
+.dash-grupos { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin: 14px 0 18px; }
+.dash-grupos[hidden] { display: none; }
+.grupo-kpi { display: flex; flex-direction: column; gap: 9px; text-align: left; font: inherit; color: var(--ink); background: var(--paper-panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px 13px; cursor: pointer; min-width: 0; position: relative; overflow: hidden;
+  transition: transform .2s var(--ease), box-shadow .2s var(--ease), border-color .2s ease; }
+.grupo-kpi:hover { transform: translateY(-2px); border-color: var(--line-strong); box-shadow: 0 10px 24px -14px rgba(22,32,46,.35); }
+.grupo-kpi:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.grupo-kpi.entrando { animation: fz-surgir .35s var(--ease) both; animation-delay: calc(var(--i) * 50ms); }
+.gk-topo { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.gk-ic { width: 32px; height: 32px; border-radius: 10px; display: inline-grid; place-items: center; flex-shrink: 0; background: var(--tinta); color: var(--blue-bright); }
+.gk-ic .ico { width: 16px; height: 16px; }
+.gk-id { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.gk-nome { font-size: 14px; font-weight: 650; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gk-total { font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
+.gk-total b { font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.gk-total small { font-size: 11.5px; }
+.gk-fech { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; color: var(--ink-soft); }
+.gk-fech b { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+.gk-fech small { font-size: 12px; }
+.gk-pct { font-weight: 700; font-size: 12px; color: var(--verde); font-variant-numeric: tabular-nums; }
+.gk-prog { display: block; height: 6px; border-radius: 99px; background: #E6EAF0; overflow: hidden; margin-top: -4px; }
+.gk-prog i { display: block; height: 100%; border-radius: 99px; background: var(--verde-vivo); transition: width .45s var(--ease); }
+.grupo-kpi.completo { border-color: var(--verde-vivo); }
+.grupo-kpi.completo .gk-ic { background: var(--verde-bg); color: var(--verde); }
+.gk-selo { display: none; align-items: center; gap: 4px; flex-shrink: 0; font-size: 11px; font-weight: 700; color: var(--verde); background: var(--verde-bg); border-radius: 99px; padding: 3px 9px 3px 7px; }
+.gk-selo .ico { width: 12px; height: 12px; stroke-width: 2.8; }
+.grupo-kpi.completo .gk-selo { display: inline-flex; animation: fz-surgir .3s var(--ease) both; }
+.gk-status { display: flex; align-items: center; gap: 10px; }
+.gk-status .kpi-barra { flex: 1; height: 4px; }
+.gk-legenda { display: flex; gap: 8px; font-size: 11.5px; font-weight: 650; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.gk-legenda span { display: inline-flex; align-items: center; gap: 3px; }
+.gk-legenda .ico { width: 12px; height: 12px; stroke-width: 2.4; }
+.gk-legenda .ok { color: var(--verde); } .gk-legenda .atencao { color: var(--amber); } .gk-legenda .erro { color: var(--vermelho); }
+.grupo-card { scroll-margin-top: 96px; }
+.grupo-card.destacado { animation: gk-destaque 1.6s ease both; }
+@keyframes gk-destaque { 0%, 40% { box-shadow: 0 0 0 3px var(--blue-bright); } 100% { box-shadow: 0 0 0 0 transparent; } }
+.empresa-card.saindo-filtro { transition: opacity .35s ease, transform .35s var(--ease); opacity: 0; transform: translateX(14px); }
+@media (max-width: 600px) { .dash-grupos { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 10px; margin-left: -16px; margin-right: -16px; padding: 2px 16px 6px; scrollbar-width: none; } .dash-grupos::-webkit-scrollbar { display: none; } .grupo-kpi { flex: 0 0 78%; scroll-snap-align: center; } .grupo-kpi:hover { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .grupo-kpi.entrando, .grupo-card.destacado { animation: none; } }
+@media print { .dash-grupos { display: none; } }

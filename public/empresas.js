@@ -84,7 +84,77 @@ function renderizarDashboard() {
   });
   const nav = $("#nav-cont-empresas");
   if (nav) nav.textContent = total || "";
+  renderizarCardsGrupos();
 }
+
+// Um cartão por grupo: quantas empresas, quantas já fechadas no mês e a
+// distribuição de status. Atualiza no lugar (sem piscar); clicar abre o grupo.
+function renderizarCardsGrupos() {
+  const cont = $("#dashboard-grupos");
+  if (!cont) return;
+  const grupos = ESTADO.grupos;
+  const chave = grupos.map((g) => g.nome).join("\u0001");
+  if (cont.dataset.chave !== chave) {
+    const primeira = !cont.dataset.chave;
+    cont.dataset.chave = chave;
+    cont.innerHTML = grupos.map((g, i) => `
+      <button type="button" class="grupo-kpi${primeira ? " entrando" : ""}" data-grupo-idx="${i}" style="--i:${i}" title="Abrir o grupo ${escaparHtml(g.nome)}">
+        <span class="gk-topo"><span class="gk-ic">${icone("pasta")}</span><span class="gk-id"><span class="gk-nome">${escaparHtml(g.nome)}</span><span class="gk-total"><b>0</b> <small>empresas</small></span></span><span class="gk-selo">${icone("check")}Tudo fechado</span></span>
+        <span class="gk-fech"><span>Fechadas <b class="gk-fech-n">0</b><small class="gk-fech-de"></small></span><span class="gk-pct">0%</span></span>
+        <span class="gk-prog"><i style="width:0%"></i></span>
+        <span class="gk-status"><span class="kpi-barra"></span><span class="gk-legenda"></span></span>
+      </button>`).join("");
+    cont.getBoundingClientRect();
+  }
+  cont.hidden = !grupos.length;
+  [...cont.querySelectorAll(".grupo-kpi")].forEach((el, i) => {
+    const g = grupos[i];
+    const total = g.empresas.length;
+    const fechadas = g.empresas.filter((e) => e.fechado).length;
+    const { verde, vermelho, atencao } = contarStatus(g.empresas, "status");
+    const sem = Math.max(total - verde - atencao - vermelho, 0);
+    const pct = total ? Math.round((fechadas / total) * 100) : 0;
+    const totalEl = el.querySelector(".gk-total b");
+    _contar(totalEl, Number(totalEl.textContent) || 0, total);
+    el.querySelector(".gk-total small").textContent = total === 1 ? "empresa" : "empresas";
+    const fn = el.querySelector(".gk-fech-n");
+    _contar(fn, Number(fn.textContent) || 0, fechadas);
+    el.querySelector(".gk-fech-de").textContent = ` de ${total}`;
+    el.querySelector(".gk-pct").textContent = `${pct}%`;
+    el.querySelector(".gk-prog i").style.width = `${pct}%`;
+    el.classList.toggle("completo", total > 0 && fechadas === total);
+    const seg = (classe, n) => (n ? `<span class="${classe}" style="flex-grow:${n}"></span>` : "");
+    const barra = el.querySelector(".kpi-barra");
+    barra.title = `${verde} OK · ${atencao} atenção · ${vermelho} pendente · ${sem} sem status`;
+    barra.innerHTML = `${seg("b-ok", verde)}${seg("b-atencao", atencao)}${seg("b-erro", vermelho)}${seg("b-sem", sem)}${total ? "" : '<span class="b-sem" style="flex-grow:1"></span>'}`;
+    el.querySelector(".gk-legenda").innerHTML =
+      `<span class="ok" title="OK">${icone("check")}${verde}</span><span class="atencao" title="Atenção">${icone("alerta")}${atencao}</span><span class="erro" title="Pendente">${icone("x")}${vermelho}</span>`;
+  });
+}
+$("#dashboard-grupos")?.addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-grupo-idx]");
+  if (!b) return;
+  const grupo = ESTADO.grupos[Number(b.dataset.grupoIdx)];
+  if (!grupo) return;
+  if (!GRUPOS_ABERTOS.has(grupo)) { GRUPOS_ABERTOS.add(grupo); redesenharGrupo(grupo); }
+  const card = EL_GRUPO.get(grupo);
+  if (card) {
+    // os cartões de empresa usam content-visibility: o tamanho real só aparece
+    // quando entram na tela, então confere a posição e corrige se preciso
+    const ir = () => card.scrollIntoView({ behavior: _semMovimento() ? "auto" : "smooth", block: "start" });
+    ir();
+    let tentativas = 0;
+    const conferir = () => {
+      const topo = card.getBoundingClientRect().top;
+      const alvo = parseFloat(getComputedStyle(card).scrollMarginTop) || 0;
+      const noFim = innerHeight + scrollY >= document.documentElement.scrollHeight - 2;
+      if (Math.abs(topo - alvo) > 12 && !noFim && tentativas++ < 3) { ir(); setTimeout(conferir, 450); }
+    };
+    setTimeout(conferir, 500);
+    card.classList.remove("destacado"); card.getBoundingClientRect(); card.classList.add("destacado");
+    setTimeout(() => card.classList.remove("destacado"), 1600);
+  } else notificar("Esse grupo não aparece com o filtro atual.", "info");
+});
 
 // ---------------------------------------------------------------------------
 // GRUPOS
@@ -426,6 +496,23 @@ function mudouStatus(empresa) {
   if (grupo) atualizarCabecalhoGrupo(grupo);
   renderizarDashboard();
   marcarAlterado();
+  sairDoFiltroSePreciso(empresa);
+}
+
+// Numa aba filtrada (Fechadas, Pendentes, Atenção), a empresa que deixou de
+// combinar com a aba sai da lista depois de um instante — dá tempo de ver o clique.
+function sairDoFiltroSePreciso(empresa) {
+  if (!filtroStatus || empresaPassaFiltro(empresa)) return;
+  const wrap = EL_EMPRESA.get(empresa.id);
+  const sair = () => {
+    if (empresaPassaFiltro(empresa)) return; // marcou de novo antes de sair
+    EMPRESAS_ABERTAS.delete(empresa.id);
+    const grupo = grupoDaEmpresa(empresa);
+    if (grupo) redesenharGrupo(grupo); else renderizarGrupos();
+  };
+  if (!wrap || _semMovimento()) return sair();
+  wrap.classList.add("saindo-filtro");
+  setTimeout(sair, 420);
 }
 
 async function excluirEmpresa(empresa) {
@@ -482,7 +569,11 @@ function criarCorpoEmpresa(empresa) {
     if (!cb) return;
     empresa[cb.dataset.cb] = cb.checked;
     atualizarEmpresa(empresa);
+    const grupo = grupoDaEmpresa(empresa);
+    if (grupo) atualizarCabecalhoGrupo(grupo);
+    renderizarDashboard();
     marcarAlterado();
+    sairDoFiltroSePreciso(empresa);
   });
   corpo.appendChild(barra);
 

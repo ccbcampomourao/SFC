@@ -276,3 +276,11 @@ Camada "REFINO" no fim do `public/style.css`, que não muda nenhum comportamento
 - **Arrastar PDFs** para qualquer ponto da página mostra o aviso "Solte os PDFs para ler".
 - **Visão geral:** indicadores no padrão do sistema (clicar em um filtra a lista) e tabela ordenada por gravidade (pendências primeiro, maior valor em aberto no topo), com o Simples e a data do relatório dentro das colunas existentes.
 - **Empresa aberta:** cabeçalho com o nome e o veredito, números maiores, seções no mesmo estilo dos outros painéis. O leitor dos relatórios não mudou.
+
+## Relatório da empresa (Situação Fiscal)
+- Cada empresa abre com uma capa: nome, CNPJ (clique para copiar), resultado, **certidão prevista** e um anel com os 4 requisitos (Receita, declarações, PGFN, parcelamentos). Clicar num requisito leva à seção.
+- Valores em cartões e gráfico "De onde vem o valor em aberto" por tributo. "Exportar" gera um PDF limpo do relatório.
+
+## Cartões por grupo e "Fechado"
+- Abaixo dos indicadores da tela Empresas há um cartão por grupo: total de empresas, fechadas no mês (barra e %) e status (OK / atenção / pendente). Clicar abre o grupo.
+- Marcar ou desmarcar "Fechado" atualiza na hora os indicadores e o cartão do grupo; na aba "Fechadas", a empresa reaberta sai da lista.
