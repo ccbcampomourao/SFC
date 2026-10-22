@@ -151,3 +151,94 @@ function mostrarAvisoNaoConfirmado(usuario, temEmail) {
 }
 
 iniciarLogin();
+
+// ============================================================================
+// Prumo da tela de login: reage ao mouse (inclina de leve na direção do cursor,
+// balança quando o cursor "esbarra" nele e pode ser puxado e solto).
+// Leve: só calcula enquanto está se mexendo; parado, não gasta nada.
+// ============================================================================
+(function prumoInterativo() {
+  const prumo = document.querySelector(".hero-prumo");
+  const painel = document.querySelector(".painel-hero");
+  if (!prumo || !painel) return;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches || !matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+  const peso = prumo.querySelector("img");
+
+  let ang = 0, vel = 0, alvo = 0;       // graus, graus/s, ângulo para onde ele "quer" ir
+  let ativo = false, ultimo = 0, quadro = 0, arrastando = null;
+  let mouseX = 0, mouseT = 0;
+  const MAX_INCLINA = 7, MAX_ANG = 38;
+
+  const pivo = () => { const r = prumo.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top }; };
+  const centroPeso = () => { const r = peso.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height * 0.55 }; };
+  const desenhar = () => { prumo.style.transform = `rotate(${ang.toFixed(2)}deg)`; };
+
+  function passo(t) {
+    const dt = Math.min(0.033, (t - (ultimo || t)) / 1000) || 0.016;
+    ultimo = t;
+    if (!arrastando) {
+      // mola amortecida: volta para o alvo balançando cada vez menos
+      const acel = -38 * (ang - alvo) - 2.6 * vel;
+      vel += acel * dt;
+      ang += vel * dt;
+    }
+    desenhar();
+    if (arrastando || Math.abs(vel) > 0.05 || Math.abs(ang - alvo) > 0.05) quadro = requestAnimationFrame(passo);
+    else { ativo = false; ultimo = 0; ang = alvo; desenhar(); }
+  }
+  function acordar() { if (!ativo && document.visibilityState === "visible") { ativo = true; ultimo = 0; quadro = requestAnimationFrame(passo); } }
+
+  // o balanço de entrada (CSS) termina e o JS assume dali em diante
+  const assumir = () => { prumo.style.animation = "none"; desenhar(); };
+  prumo.addEventListener("animationend", assumir, { once: true });
+  setTimeout(assumir, 4200); // garantia, caso o evento não chegue
+
+  painel.addEventListener("pointermove", (e) => {
+    if (arrastando) return;
+    const p = pivo();
+    // inclina um pouco na direção do cursor, como se fosse atraído
+    const graus = -Math.atan2(e.clientX - p.x, Math.max(80, e.clientY - p.y)) * 180 / Math.PI;
+    alvo = Math.max(-MAX_INCLINA, Math.min(MAX_INCLINA, graus * 0.22));
+    // esbarrão: cursor rápido passando perto do peso dá um empurrão
+    const agora = performance.now();
+    const vx = mouseT ? (e.clientX - mouseX) / Math.max(1, agora - mouseT) : 0; // px/ms
+    mouseX = e.clientX; mouseT = agora;
+    const c = centroPeso();
+    if (Math.hypot(e.clientX - c.x, e.clientY - c.y) < 70 && Math.abs(vx) > 0.25) vel -= Math.max(-90, Math.min(90, vx * 55));
+    acordar();
+  });
+  painel.addEventListener("pointerleave", () => { if (!arrastando) { alvo = 0; mouseT = 0; acordar(); } });
+
+  // puxar e soltar o peso
+  peso.style.pointerEvents = "auto";
+  peso.style.cursor = "grab";
+  peso.draggable = false;
+  peso.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    peso.setPointerCapture(e.pointerId);
+    arrastando = { ultimoAng: ang, ultimoT: performance.now() };
+    peso.style.cursor = "grabbing";
+    acordar();
+  });
+  peso.addEventListener("pointermove", (e) => {
+    if (!arrastando) return;
+    const p = pivo();
+    const novo = Math.max(-MAX_ANG, Math.min(MAX_ANG, -Math.atan2(e.clientX - p.x, Math.max(40, e.clientY - p.y)) * 180 / Math.PI));
+    const agora = performance.now();
+    const dt = Math.max(8, agora - arrastando.ultimoT) / 1000;
+    vel = (novo - arrastando.ultimoAng) / dt;        // velocidade do arraste vira o impulso ao soltar
+    arrastando.ultimoAng = novo; arrastando.ultimoT = agora;
+    ang = novo;
+  });
+  const soltar = () => {
+    if (!arrastando) return;
+    arrastando = null;
+    vel = Math.max(-260, Math.min(260, vel));
+    peso.style.cursor = "grab";
+    alvo = 0;
+    acordar();
+  };
+  peso.addEventListener("pointerup", soltar);
+  peso.addEventListener("pointercancel", soltar);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState !== "visible") { cancelAnimationFrame(quadro); ativo = false; } });
+})();
