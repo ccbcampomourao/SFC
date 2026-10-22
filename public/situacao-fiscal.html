@@ -20,31 +20,49 @@
   }
   .mono{ font-family:'IBM Plex Mono',monospace; }
 
-  /* ---------- Menu lateral: upload + lista de empresas ---------- */
-  .sf-upload{
-    display:flex; flex-direction:column; align-items:center; gap:4px;
-    border:1.5px dashed #3A4A62; border-radius:12px; padding:14px;
-    text-align:center; cursor:pointer; margin:0 0 8px; background:#1F2B3D;
-    transition:border-color .15s ease, background-color .15s ease;
-  }
-  .sf-upload:hover, .sf-upload.arrastando{ border-color:var(--blue-bright); background:#223045; }
-  .sf-upload .ico{ width:22px; height:22px; color:var(--blue-bright); }
-  .sf-upload strong{ color:#EFE7D8; font-size:13px; }
-  .sf-upload span{ font-size:11.5px; color:#8E9AAE; }
+  /* ---------- Layout: painel de relatórios à esquerda, conteúdo à direita ---------- */
+  .sf-layout{ display:grid; grid-template-columns:300px minmax(0,1fr); gap:20px; align-items:start; }
+  .sf-principal{ min-width:0; }
+  .sf-painel{ position:sticky; top:118px; max-height:calc(100vh - 136px); display:flex; flex-direction:column; gap:12px; background:var(--paper-panel); border:1px solid var(--line); border-radius:var(--raio); box-shadow:var(--sombra-painel); padding:16px; }
+  .sf-painel-cab{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .sf-painel-cab h2{ font-size:19px; display:flex; align-items:center; gap:8px; }
   #pdf-upload{ display:none; }
-  .sf-dica{ font-size:11px; color:#7F8BA0; margin:0 4px 14px; line-height:1.5; }
-  .sf-lista-titulo{ display:flex; align-items:center; justify-content:space-between; }
-  .sf-lista-titulo .contador-pilula{ background:#26344A; color:#CBD3DF; margin-right:6px; }
-  .empresa-list{ flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:2px; min-height:0; margin:0 -4px; padding:0 4px; scrollbar-width:thin; scrollbar-color:#2C3A50 transparent; }
-  .empresa-item{ display:flex; align-items:center; gap:10px; padding:8px; border-radius:9px; cursor:pointer; border:1px solid transparent; transition:background-color .12s ease, border-color .12s ease; }
-  .empresa-item:hover{ background:#1F2B3D; }
-  .empresa-item.active{ background:#26344A; border-color:#3E4C63; }
-  .empresa-avatar{ width:30px; height:30px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; color:#fff; font-family:'Fraunces',sans-serif; }
-  .empresa-info{ min-width:0; flex:1; }
-  .empresa-info .nome{ font-size:12.5px; color:#EFE7D8; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .empresa-info .cnpj{ font-size:10.5px; color:#7F8BA0; }
-  .empresa-badge{ font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:20px; flex-shrink:0; font-variant-numeric:tabular-nums; }
-  .empty-side{ color:#7F8BA0; font-size:12px; padding:14px 6px; text-align:center; }
+  .sf-filtro{ width:100%; max-width:none; }
+  .sf-filtros{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:3px; padding:3px; background:var(--paper); border-radius:12px; }
+  .sf-filtros button{ display:flex; align-items:center; justify-content:space-between; gap:6px; border:0; background:transparent; border-radius:9px; padding:6px 9px; font-size:12.5px; font-weight:500; color:var(--ink-soft); cursor:pointer; transition:background-color .15s ease, color .15s ease; }
+  .sf-filtros button em{ font-style:normal; font-size:11.5px; font-weight:600; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+  .sf-filtros button:hover{ color:var(--ink); }
+  .sf-filtros button.ativo{ background:#fff; color:var(--ink); font-weight:600; box-shadow:0 1px 2px rgba(22,32,46,.10); }
+  .sf-filtros button[data-f="pendente"].ativo em{ color:var(--vermelho); } .sf-filtros button[data-f="suspensa"].ativo em{ color:var(--amber); } .sf-filtros button[data-f="regular"].ativo em{ color:var(--verde); }
+  .sf-item-geral{ display:flex; align-items:center; gap:10px; width:100%; border:1px solid var(--line); background:transparent; border-radius:12px; padding:9px 10px; cursor:pointer; text-align:left; transition:background-color .15s ease, border-color .15s ease; }
+  .sf-item-geral:hover{ background:var(--paper-2); }
+  .sf-item-geral.ativo{ background:var(--tinta); border-color:var(--tinta); color:#fff; }
+  .sf-geral-ic{ width:32px; height:32px; border-radius:10px; display:inline-grid; place-items:center; background:var(--paper); color:var(--ink-soft); flex-shrink:0; }
+  .sf-item-geral.ativo .sf-geral-ic{ background:rgba(255,255,255,.1); color:var(--blue-bright); }
+  .sf-geral-txt b{ display:block; font-size:13.5px; } .sf-geral-txt small{ display:block; font-size:11.5px; color:var(--ink-3); } .sf-item-geral.ativo .sf-geral-txt small{ color:#AAB4C4; }
+  .empresa-list{ flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:2px; min-height:120px; margin:0 -6px; padding:0 6px; scrollbar-width:thin; }
+  .empresa-item{ display:flex; align-items:center; gap:10px; width:100%; padding:8px; border:0; border-radius:11px; background:transparent; cursor:pointer; text-align:left; position:relative; transition:background-color .12s ease; }
+  .empresa-item:hover{ background:var(--paper); }
+  .empresa-item.active{ background:var(--paper); box-shadow:inset 3px 0 0 var(--blue); }
+  .empresa-avatar{ width:32px; height:32px; border-radius:10px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:14px; font-family:'Fraunces',serif; }
+  .sf-av-pendente{ background:var(--vermelho-bg); color:var(--vermelho); } .sf-av-suspensa{ background:var(--amber-bg); color:var(--amber); } .sf-av-regular{ background:var(--verde-bg); color:var(--verde); }
+  .empresa-info{ min-width:0; flex:1; display:flex; flex-direction:column; }
+  .empresa-info .nome{ font-size:13px; color:var(--ink); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .empresa-info .cnpj{ font-size:11px; color:var(--ink-3); }
+  .empresa-badge{ font-size:11.5px; font-weight:700; min-width:24px; text-align:center; padding:2px 7px; border-radius:99px; flex-shrink:0; font-variant-numeric:tabular-nums; }
+  .sf-b-pendente{ background:var(--vermelho-bg); color:var(--vermelho); } .sf-b-suspensa{ background:var(--amber-bg); color:var(--amber); } .sf-b-regular{ background:var(--verde-bg); color:var(--verde); }
+  .empresa-ok{ color:var(--verde-vivo); display:inline-flex; } .empresa-ok .ico{ width:16px; height:16px; }
+  .empty-side{ color:var(--ink-3); font-size:12.5px; padding:16px 6px; text-align:center; }
+  .sf-dica{ display:flex; gap:7px; font-size:11.5px; color:var(--ink-3); margin:0; line-height:1.45; }
+  .sf-dica .ico{ flex-shrink:0; margin-top:1px; }
+  /* aviso de "solte os PDFs" */
+  .sf-soltar{ position:fixed; inset:0; z-index:1400; display:none; align-items:center; justify-content:center; background:rgba(22,32,46,.55); padding:24px; }
+  .sf-soltar.ativo{ display:flex; animation:fz-aparecer .15s ease both; }
+  .sf-soltar > span{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:36px 48px; border:2px dashed var(--blue-bright); border-radius:22px; background:var(--paper-panel); color:var(--ink); }
+  .sf-soltar .ico{ width:34px; height:34px; color:var(--blue); } .sf-soltar b{ font-size:17px; } .sf-soltar small{ color:var(--ink-soft); }
+  .sf-painel .sf-filtro{ order:0 !important; width:100% !important; max-width:none !important; }
+  @media (max-width:700px){ .sf-principal .sf-resumo-geral{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width:1000px){ .sf-layout{ grid-template-columns:minmax(0,1fr); } .sf-painel{ position:static; max-height:none; } .empresa-list{ max-height:320px; } }
 
   /* ---------- Faixa superior: busca + filtro ---------- */
   .filter-chip{ display:none; align-items:center; gap:8px; color:#fff; font-size:12.5px; font-weight:700; padding:6px 6px 6px 12px; border-radius:20px; }
@@ -82,7 +100,10 @@
   .risk-label strong{ display:block; font-size:13.5px; }
 
   /* ---------- Visão geral ---------- */
-  .sf-resumo-geral{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
+  .sf-resumo-geral{ display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:12px; margin-bottom:16px; }
+  .sf-resumo-geral .kpi2{ text-align:left; cursor:pointer; font:inherit; color:inherit; }
+  .sf-resumo-geral .kpi2-linha{ margin-top:2px; }
+  .overview-table th.num, .overview-table td.num{ text-align:right; }
   .sf-kpi{ background:#fff; border:1.3px solid var(--line); border-radius:var(--raio); padding:14px 16px; display:flex; align-items:baseline; gap:10px; box-shadow:var(--sombra); border-left:4px solid var(--line-strong); }
   .sf-kpi b{ font-family:'Fraunces',sans-serif; font-size:26px; line-height:1; font-variant-numeric:tabular-nums; }
   .sf-kpi span{ color:var(--ink-soft); font-size:13px; }
@@ -116,7 +137,6 @@
   .sf-card{ text-align:left; background:#fff; border:1.3px solid var(--line); border-radius:var(--raio); padding:13px 15px; display:flex; flex-direction:column; gap:3px; box-shadow:var(--sombra); position:relative; overflow:hidden; transition:border-color .15s ease; }
   .sf-card::before{ content:""; position:absolute; left:15px; top:19px; width:7px; height:7px; border-radius:50%; background:var(--line-strong); }
   .sf-card .sf-card-rotulo{ padding-left:14px; }
-  .faixa-titulo h1{ font-size:clamp(22px, 2.2vw, 30px); line-height:1.15; }
   .sf-card:hover{ border-color:var(--line-strong); }
   .sf-card-rotulo{ font-size:12.5px; font-weight:600; color:var(--ink-soft); }
   .sf-card-valor{ font-family:'Fraunces',sans-serif; font-size:20px; font-weight:750; font-variant-numeric:tabular-nums; }
@@ -196,6 +216,22 @@
   .sf-nota-aviso{ color:var(--amber); background:var(--amber-bg); margin:0 0 14px; }
   .sf-nota-ok{ color:var(--verde); background:var(--verde-bg); }
 
+  /* detalhe: cabeçalho e números no padrão do sistema */
+  .sf-cabecalho{ border:1px solid var(--line); box-shadow:var(--sombra-painel); padding:22px 24px; }
+  .sf-cabecalho h2{ font-family:'Fraunces',serif; font-size:24px; font-weight:600; line-height:1.2; }
+  .sf-cards{ grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); }
+  .overview-table table{ min-width:0; }
+  .overview-table th, .overview-table td{ padding-left:10px; padding-right:10px; }
+  .overview-table td:first-child{ min-width:220px; }
+  .sf-simples-linha{ margin-top:5px; } .sf-simples-linha > span{ font-size:11px; }
+  .overview-table th{ white-space:nowrap; }
+  .sf-card{ border:1px solid var(--line); box-shadow:var(--sombra-painel); padding:16px 18px; gap:4px; cursor:pointer; font:inherit; color:inherit; transition:transform .2s var(--ease), box-shadow .2s var(--ease); }
+  .sf-card:hover{ transform:translateY(-2px); }
+  .sf-card-valor{ font-size:25px; font-weight:600; line-height:1.1; margin-top:2px; }
+  .sf-secao{ border:1px solid var(--line); box-shadow:var(--sombra-painel); }
+  .sf-secao-cab{ padding:15px 18px; }
+  .sf-secao-corpo{ padding:2px 18px 16px; }
+  .actions-row .btn-secundario{ font-size:13px; }
   .sf-escondido{ display:none !important; }
 
   @media (max-width:700px){
@@ -215,6 +251,178 @@
 
   @media print{
     .actions-row, .filter-chip{ display:none !important; }
+  }
+
+  /* =====================================================================
+     RELATÓRIO DA EMPRESA — capa, requisitos da certidão, números e seções
+     ===================================================================== */
+  .sf-relatorio{ display:flex; flex-direction:column; }
+  .sf-hero{ position:relative; overflow:hidden; border-radius:20px; padding:24px 26px 22px; color:#fff;
+    background:
+      radial-gradient(120% 140% at 100% 0%, rgba(227,149,92,.20) 0%, rgba(227,149,92,0) 46%),
+      radial-gradient(90% 120% at 0% 100%, rgba(90,120,170,.22) 0%, rgba(90,120,170,0) 55%),
+      linear-gradient(160deg, #1D2A3D 0%, var(--tinta) 62%);
+    box-shadow:0 18px 40px -22px rgba(22,32,46,.55), 0 2px 6px rgba(22,32,46,.10);
+    animation:fz-surgir .3s var(--ease) both; }
+  .sf-hero::after{ content:""; position:absolute; inset:0; pointer-events:none; opacity:.07;
+    background-image:linear-gradient(rgba(255,255,255,.9) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.9) 1px, transparent 1px);
+    background-size:28px 28px; mask-image:linear-gradient(110deg, transparent 35%, #000 100%); -webkit-mask-image:linear-gradient(110deg, transparent 35%, #000 100%); }
+  .sf-hero > *{ position:relative; z-index:1; }
+  .sf-hero-topo{ display:flex; align-items:flex-start; gap:16px; }
+  .sf-hero-avatar{ width:52px; height:52px; border-radius:16px; flex-shrink:0; display:grid; place-items:center; font-family:'Fraunces',serif; font-size:24px; font-weight:600;
+    background:linear-gradient(145deg, var(--blue-bright), var(--blue)); color:#fff; box-shadow:0 6px 16px -6px rgba(180,83,42,.7), inset 0 1px 0 rgba(255,255,255,.25); }
+  .sf-hero-id{ flex:1; min-width:0; }
+  .sf-hero-sobre{ display:block; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:#AAB4C4; font-weight:600; }
+  .sf-hero h2{ font-family:'Fraunces',serif; font-size:27px; font-weight:600; line-height:1.15; margin:4px 0 10px; color:#fff; letter-spacing:-.01em; text-wrap:balance; }
+  .sf-hero-meta{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .sf-hero-cnpj{ display:inline-flex; align-items:center; gap:7px; font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#fff; background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.14); border-radius:99px; padding:4px 11px; cursor:pointer; transition:background-color .15s ease; }
+  .sf-hero-cnpj:hover{ background:rgba(255,255,255,.18); }
+  .sf-hero-cnpj .ico{ width:13px; height:13px; opacity:.7; }
+  .sf-hero-chip{ font-size:11.5px; font-weight:600; color:#D5DBE4; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); border-radius:99px; padding:4px 10px; white-space:nowrap; }
+  .sf-hero-chip.ok{ color:#A9E0B4; border-color:rgba(120,200,140,.28); background:rgba(80,170,110,.12); }
+  .sf-hero-chip.erro{ color:#FFB4A3; border-color:rgba(255,140,120,.30); background:rgba(220,90,70,.14); }
+  .sf-hero-acoes{ display:flex; gap:6px; flex-shrink:0; }
+  .sf-hero-btn{ display:inline-flex; align-items:center; gap:7px; font:inherit; font-size:12.5px; font-weight:600; color:#E6EAF0; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14); border-radius:11px; padding:8px 12px; cursor:pointer; transition:background-color .15s ease, transform .15s ease; }
+  .sf-hero-btn:hover{ background:rgba(255,255,255,.16); transform:translateY(-1px); }
+  .sf-hero-btn.ativo{ background:#fff; color:var(--tinta); }
+  .sf-hero-btn .ico{ width:15px; height:15px; }
+
+  .sf-hero-veredito{ display:flex; align-items:center; gap:18px; margin-top:22px; padding:16px 18px; border-radius:16px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); backdrop-filter:blur(2px); }
+  .sf-selo{ position:relative; width:64px; height:64px; flex-shrink:0; }
+  .sf-selo-anel{ width:64px; height:64px; transform:rotate(-90deg); }
+  .sf-selo-trilho{ fill:none; stroke:rgba(255,255,255,.12); stroke-width:6; }
+  .sf-selo-progresso{ fill:none; stroke-width:6; stroke-linecap:round; stroke-dasharray:var(--c); stroke-dashoffset:var(--o); animation:sf-anel .9s .15s var(--ease) both; }
+  @keyframes sf-anel{ from{ stroke-dashoffset:var(--c); } }
+  .sf-selo-centro{ position:absolute; inset:0; display:grid; place-items:center; }
+  .sf-selo-centro .ico{ width:24px; height:24px; }
+  .sf-hero-pendente .sf-selo-progresso{ stroke:#FF8A70; } .sf-hero-pendente .sf-selo-centro{ color:#FF9E88; }
+  .sf-hero-suspensa .sf-selo-progresso{ stroke:#F2C063; } .sf-hero-suspensa .sf-selo-centro{ color:#F2C063; }
+  .sf-hero-regular  .sf-selo-progresso{ stroke:#7FD493; } .sf-hero-regular  .sf-selo-centro{ color:#8EDB9F; }
+  .sf-hero-veredito-txt{ flex:1; min-width:0; }
+  .sf-hero-rotulo{ display:inline-flex; align-items:center; gap:7px; font-size:17px; font-weight:700; }
+  .sf-hero-rotulo::before{ content:""; width:9px; height:9px; border-radius:50%; background:currentColor; box-shadow:0 0 0 4px rgba(255,255,255,.08); }
+  .sf-hero-pendente .sf-hero-rotulo{ color:#FFB4A3; } .sf-hero-suspensa .sf-hero-rotulo{ color:#F6D08A; } .sf-hero-regular .sf-hero-rotulo{ color:#A9E0B4; }
+  .sf-hero-pendente .sf-hero-rotulo::before{ animation:sf-pulso 2s ease-in-out infinite; }
+  @keyframes sf-pulso{ 50%{ box-shadow:0 0 0 7px rgba(255,138,112,.12); } }
+  .sf-hero-veredito-txt p{ margin:4px 0 0; font-size:13px; line-height:1.5; color:#C3CBD7; max-width:560px; }
+  .sf-hero-certidao{ flex-shrink:0; text-align:right; padding-left:18px; border-left:1px solid rgba(255,255,255,.12); }
+  .sf-hero-certidao small{ display:block; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:#AAB4C4; font-weight:600; }
+  .sf-hero-certidao b{ display:block; font-family:'Fraunces',serif; font-size:19px; font-weight:600; margin:3px 0 2px; max-width:200px; line-height:1.2; }
+  .sf-hero-certidao span{ font-size:12px; color:#AAB4C4; }
+
+  /* requisitos para a certidão */
+  .sf-requisitos{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px; margin:14px 0 16px; }
+  .sf-req{ display:flex; align-items:center; gap:11px; text-align:left; font:inherit; color:var(--ink); background:#fff; border:1px solid var(--line); border-radius:14px; padding:12px 13px; cursor:pointer; box-shadow:var(--sombra-painel); position:relative; overflow:hidden;
+    transition:transform .2s var(--ease), box-shadow .2s var(--ease), border-color .2s ease; animation:fz-surgir .35s var(--ease) both; animation-delay:calc(var(--i) * 60ms + 120ms); }
+  .sf-req::after{ content:""; position:absolute; left:0; right:0; bottom:0; height:3px; background:var(--line); }
+  .sf-req:hover{ transform:translateY(-2px); border-color:var(--line-strong); }
+  .sf-req-marca{ width:30px; height:30px; border-radius:50%; flex-shrink:0; display:grid; place-items:center; }
+  .sf-req-marca .ico{ width:15px; height:15px; stroke-width:2.6; }
+  .sf-req-txt{ min-width:0; }
+  .sf-req-txt b{ display:block; font-size:13px; font-weight:650; }
+  .sf-req-txt small{ display:block; font-size:12px; color:var(--ink-soft); margin-top:1px; }
+  .sf-req-ok .sf-req-marca{ background:var(--verde-bg); color:var(--verde); } .sf-req-ok::after{ background:var(--verde-vivo); }
+  .sf-req-erro .sf-req-marca{ background:var(--vermelho); color:#fff; box-shadow:0 4px 10px -4px rgba(178,59,41,.6); } .sf-req-erro::after{ background:var(--vermelho); }
+  .sf-req-erro .sf-req-txt small{ color:var(--vermelho); font-weight:600; }
+  .sf-req-neutro .sf-req-marca{ background:var(--paper); color:var(--ink-3); } .sf-req-neutro::after{ background:var(--line); }
+
+  /* números + composição */
+  .sf-numeros{ display:grid; grid-template-columns:minmax(0,1fr); gap:12px; margin-bottom:18px; }
+    .sf-numeros .sf-cards{ margin:0; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); align-content:start; }
+    .sf-card{ flex-direction:row; flex-wrap:wrap; align-items:center; column-gap:12px; row-gap:0; padding:16px 18px; border-radius:16px; }
+  .sf-card::before{ display:none; }
+  .sf-card .sf-card-rotulo{ padding-left:0; }
+  .sf-card-ic{ width:40px; height:40px; border-radius:12px; display:grid; place-items:center; flex-shrink:0; grid-row:span 3; background:var(--paper); color:var(--ink-soft); align-self:center; }
+  .sf-card-ic .ico{ width:19px; height:19px; }
+  .sf-card{ display:grid; grid-template-columns:auto minmax(0,1fr); }
+  .sf-card > :not(.sf-card-ic){ grid-column:2; }
+  .sf-card-erro .sf-card-ic{ background:var(--vermelho-bg); color:var(--vermelho); }
+  .sf-card-ok .sf-card-ic{ background:var(--verde-bg); color:var(--verde); }
+  .sf-card-info .sf-card-ic{ background:var(--blue-soft); color:var(--blue); }
+  .sf-card-ok .sf-card-valor{ color:var(--ink-3); }
+  .sf-card-info .sf-card-valor{ color:var(--ink); }
+  .sf-card-valor{ font-size:24px; }
+  .sf-composicao{ background:#fff; border:1px solid var(--line); border-radius:16px; box-shadow:var(--sombra-painel); padding:16px 18px; }
+  .sf-comp-cab{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+  .sf-comp-cab b{ font-size:14px; } .sf-comp-cab small{ font-size:12px; color:var(--ink-soft); }
+  .sf-comp-lista{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px; }
+  .sf-comp-item{ display:grid; grid-template-columns:minmax(120px,220px) minmax(0,1fr) auto; align-items:center; gap:12px; padding:3px 6px; margin:0 -6px; border-radius:8px; transition:background-color .12s ease; }
+  .sf-comp-item:hover{ background:var(--paper-2); }
+  .sf-comp-nome{ font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sf-comp-trilho{ height:10px; border-radius:99px; background:var(--paper); overflow:hidden; }
+  .sf-comp-barra{ display:block; height:100%; width:var(--w); border-radius:99px; background:var(--tinta); transform-origin:left; animation:sf-barra .7s var(--ease) both; animation-delay:calc(var(--i) * 70ms + 200ms); }
+  .sf-comp-barra.multa{ background:repeating-linear-gradient(135deg, var(--tinta) 0 5px, #3A4A61 5px 8px); }
+  @keyframes sf-barra{ from{ transform:scaleX(0); } }
+  .sf-comp-valor{ font-size:12.5px; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; text-align:right; min-width:118px; }
+  .sf-comp-valor small{ font-weight:600; color:var(--ink-3); margin-left:7px; display:inline-block; min-width:30px; }
+
+  /* seções com acento lateral */
+  .sf-secao{ border-radius:16px; position:relative; }
+  .sf-secao::before{ content:""; position:absolute; left:0; top:14px; bottom:14px; width:3px; border-radius:0 3px 3px 0; background:var(--line-strong); }
+  .sf-secao-erro::before{ background:var(--vermelho); }
+  .sf-secao-ok::before{ background:var(--verde-vivo); }
+  .sf-secao-neutro::before{ background:var(--ink-3); opacity:.5; }
+  .sf-secao-titulo h3{ font-size:15px; }
+  .sf-secao-icone{ width:38px; height:38px; border-radius:12px; }
+  .sf-secao-corpo{ border-top:1px solid var(--line); }
+  .sf-grupo summary{ padding:12px 6px; margin:0 -6px; border-radius:10px; transition:background-color .12s ease; }
+  .sf-grupo summary:hover{ background:var(--paper-2); }
+  .sf-grupo[open] summary{ background:var(--paper-2); }
+  .sf-grupo[open] .sf-tabela{ animation:fz-aparecer .2s ease both; }
+  .sf-tabela{ border:1px solid var(--line); border-radius:12px; border-collapse:separate; border-spacing:0; overflow:hidden; margin:6px 0 14px; }
+  .sf-tabela th{ border-bottom:1px solid var(--line); }
+  .sf-tabela td{ border-top:0; border-bottom:1px solid var(--line); }
+  .sf-tabela tr:last-child td{ border-bottom:0; }
+  .sf-tabela td:nth-child(n+3), .sf-tabela th:nth-child(n+3){ text-align:right; }
+  .sf-tabela tbody tr:hover td{ background:var(--paper-2); }
+  .sf-linha{ padding:11px 6px; margin:0 -6px; border-radius:10px; transition:background-color .12s ease; }
+  .sf-linha:hover{ background:var(--paper-2); }
+  .sf-parc{ border-radius:14px; border:1px solid var(--line); border-left:4px solid var(--verde-vivo); padding:14px 16px; }
+  .sf-parc.atraso{ border-left-color:var(--vermelho); background:linear-gradient(90deg, #FDF5F3, #fff 60%); }
+  .sf-sistema{ background:var(--tinta); border-radius:7px; padding:4px 8px; }
+
+  .sf-rodape{ margin-top:18px; padding-top:14px; border-top:1px dashed var(--line-strong); font-size:11.5px; color:var(--ink-3); line-height:1.5; }
+  .raw-panel{ scroll-margin-top:90px; }
+
+  @media (max-width:1180px){
+    .sf-requisitos{ grid-template-columns:repeat(2, minmax(0,1fr)); }
+  }
+  @media (max-width:700px){
+    .sf-hero{ padding:18px 16px; border-radius:18px; }
+    .sf-hero-topo{ flex-wrap:wrap; }
+    .sf-hero-avatar{ width:44px; height:44px; font-size:20px; border-radius:13px; }
+    .sf-hero h2{ font-size:21px; }
+    .sf-hero-acoes{ width:100%; order:3; }
+    .sf-hero-btn{ flex:1; justify-content:center; }
+    .sf-hero-veredito{ flex-wrap:wrap; gap:14px; padding:14px; }
+    .sf-hero-veredito-txt{ flex:1 1 180px; }
+    .sf-hero-certidao{ width:100%; text-align:left; border-left:0; border-top:1px solid rgba(255,255,255,.12); padding:12px 0 0; }
+    .sf-hero-certidao b{ max-width:none; }
+    .sf-requisitos{ gap:8px; }
+    .sf-req{ padding:10px; gap:9px; }
+    .sf-req-txt small{ white-space:normal; }
+    .sf-comp-item{ grid-template-columns:minmax(0,1fr) auto; row-gap:5px; }
+    .sf-comp-trilho{ grid-column:1 / -1; grid-row:2; }
+    .sf-comp-valor{ min-width:0; }
+  }
+  @media (prefers-reduced-motion:reduce){
+    .sf-hero, .sf-req, .sf-comp-barra, .sf-selo-progresso{ animation:none !important; }
+    .sf-hero-pendente .sf-hero-rotulo::before{ animation:none; }
+  }
+
+  /* impressão / PDF: só o relatório, capa preservada em cores */
+  @media print{
+    @page{ size:A4; margin:12mm; }
+    .sf-painel, .faixa-superior, .app-sidebar, .sf-hero-acoes, .sf-soltar{ display:none !important; }
+    .sf-layout{ display:block !important; }
+    .conteudo{ padding:0 !important; margin:0 !important; }
+    .sf-hero, .sf-req, .sf-comp-barra, .sf-card, .sf-secao::before, .sf-req::after, .sf-req-marca, .sf-card-ic{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .sf-hero{ box-shadow:none; animation:none; }
+    .sf-req, .sf-card, .sf-composicao, .sf-secao{ box-shadow:none !important; animation:none !important; transform:none !important; }
+    .sf-comp-barra, .sf-selo-progresso{ animation:none !important; }
+    .sf-secao, .sf-parc, .sf-grupo, .sf-linha, .sf-composicao, .sf-req{ break-inside:avoid; }
+    .sf-chevron{ display:none; }
+    .raw-panel{ display:none !important; }
   }
 </style>
 </head>
@@ -236,20 +444,6 @@
         <a href="/integracontador.html" class="app-nav-link"><svg class="ico" aria-hidden="true"><use href="#i-link"/></svg><span>IntegraContador</span></a>
       </nav>
 
-      <label class="sf-upload" for="pdf-upload" id="sf-upload">
-        <svg class="ico" aria-hidden="true"><use href="#i-nuvem"/></svg>
-        <strong>Carregar relatórios</strong>
-        <span>Clique ou arraste os PDFs do e-CAC</span>
-      </label>
-      <input type="file" id="pdf-upload" multiple accept="application/pdf,.pdf" />
-      <p class="sf-dica">Relatórios baixados pelo IntegraContador aparecem sozinhos. PDFs carregados à mão ficam só nesta janela.</p>
-
-      <div class="app-sidebar-titulo sf-lista-titulo">Empresas <span class="contador-pilula" id="sf-contador"></span></div>
-      <div class="empresa-list" id="empresa-list">
-        <div class="empty-side" id="empty-side-msg">Nenhum relatório carregado ainda.</div>
-      </div>
-
-      <button class="btn-ghost-side" id="btn-overview" style="margin-top:8px"><svg class="ico" aria-hidden="true"><use href="#i-grafico"/></svg><span>Visão geral de todas</span></button>
 
       <div class="usuario-chip">
         <span class="avatar-mini" id="usuario-avatar">·</span>
@@ -263,7 +457,7 @@
     <header class="faixa-superior">
       <button class="btn-toggle-sidebar" id="btn-toggle-sidebar" title="Abrir/fechar menu" aria-label="Abrir/fechar menu"><svg class="ico" aria-hidden="true"><use href="#i-menu"/></svg></button>
       <div class="faixa-titulo">
-        <h1 id="page-title">Visão geral</h1>
+        <h1 id="page-title">Situação Fiscal</h1>
         <span id="page-sub">Carregue um ou mais relatórios de situação fiscal do e-CAC para começar.</span>
       </div>
       <div class="faixa-direita">
@@ -272,8 +466,28 @@
       </div>
     </header>
 
-    <main class="conteudo">
-      <div id="content-root"></div>
+    <main class="conteudo sf-layout">
+      <section class="sf-painel" id="sf-painel" aria-label="Relatórios">
+        <div class="sf-painel-cab">
+          <h2>Relatórios <span class="contador-pilula" id="sf-contador"></span></h2>
+          <label class="btn-secundario btn-sm" for="pdf-upload" id="sf-upload" title="Abrir PDFs de Situação Fiscal do e-CAC (também dá para arrastar)"><svg class="ico " aria-hidden="true"><use href="#i-nuvem"/></svg>Carregar PDFs</label>
+          <input type="file" id="pdf-upload" multiple accept="application/pdf,.pdf" />
+        </div>
+        <label class="campo-busca sf-filtro"><svg class="ico " aria-hidden="true"><use href="#i-busca"/></svg><input type="search" id="sf-filtro" placeholder="Filtrar empresa ou CNPJ" autocomplete="off" /></label>
+        <div class="sf-filtros" id="sf-filtros" role="tablist" aria-label="Filtrar por situação">
+          <button type="button" class="ativo" data-f="">Todas<em></em></button>
+          <button type="button" data-f="pendente">Pendências<em></em></button>
+          <button type="button" data-f="suspensa">Parcelamento<em></em></button>
+          <button type="button" data-f="regular">Regulares<em></em></button>
+        </div>
+        <button type="button" class="sf-item-geral ativo" id="btn-overview"><span class="sf-geral-ic"><svg class="ico " aria-hidden="true"><use href="#i-grafico"/></svg></span><span class="sf-geral-txt"><b>Visão geral</b><small>Todas as empresas lado a lado</small></span></button>
+        <div class="empresa-list" id="empresa-list">
+          <div class="empty-side" id="empty-side-msg">Nenhum relatório carregado ainda.</div>
+        </div>
+        <p class="sf-dica"><svg class="ico ico-sm" aria-hidden="true"><use href="#i-info"/></svg>Os relatórios baixados pelo IntegraContador aparecem sozinhos. PDFs abertos aqui ficam só nesta janela.</p>
+      </section>
+      <div class="sf-principal"><div id="content-root"></div></div>
+      <div class="sf-soltar" id="sf-soltar" aria-hidden="true"><span><svg class="ico " aria-hidden="true"><use href="#i-nuvem"/></svg><b>Solte os PDFs para ler</b><small>Relatórios de Situação Fiscal do e-CAC</small></span></div>
     </main>
   </div>
 
@@ -337,11 +551,15 @@ document.getElementById('pdf-upload').addEventListener('change', function (e) {
   carregarArquivosPdf(e.target.files);
   e.target.value = '';
 });
+// Arrastar PDFs para qualquer ponto da página: aparece um aviso "solte aqui".
 (function () {
-  const zona = document.getElementById('sf-upload');
-  zona.addEventListener('dragover', (e) => { e.preventDefault(); zona.classList.add('arrastando'); });
-  zona.addEventListener('dragleave', () => zona.classList.remove('arrastando'));
-  zona.addEventListener('drop', (e) => { e.preventDefault(); zona.classList.remove('arrastando'); carregarArquivosPdf(e.dataTransfer.files); });
+  const aviso = document.getElementById('sf-soltar');
+  let profundidade = 0;
+  const temArquivo = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+  addEventListener('dragenter', (e) => { if (!temArquivo(e)) return; profundidade++; aviso.classList.add('ativo'); });
+  addEventListener('dragleave', (e) => { if (!temArquivo(e)) return; if (--profundidade <= 0) { profundidade = 0; aviso.classList.remove('ativo'); } });
+  addEventListener('dragover', (e) => { if (temArquivo(e)) e.preventDefault(); });
+  addEventListener('drop', (e) => { if (!temArquivo(e)) return; e.preventDefault(); profundidade = 0; aviso.classList.remove('ativo'); carregarArquivosPdf(e.dataTransfer.files); });
 })();
 
 /* ============ IMPORTAÇÃO DO INTEGRACONTADOR, COM CACHE LOCAL ============ */
@@ -497,6 +715,22 @@ function corAvatar(nome) {
 
 function marcarAtivaNaSidebar() {
   document.querySelectorAll('#empresa-list .empresa-item').forEach(el => el.classList.toggle('active', el.dataset.chave === empresaAtiva));
+  document.getElementById('btn-overview').classList.toggle('ativo', !empresaAtiva);
+}
+
+let filtroSituacao = '';
+function aplicarFiltroLista() {
+  const termo = (document.getElementById('sf-filtro').value || '').trim().toLowerCase();
+  const digitos = termo.replace(/\D/g, '');
+  let visiveis = 0;
+  document.querySelectorAll('#empresa-list .empresa-item').forEach((el) => {
+    const bateTexto = !termo || el.dataset.busca.includes(termo) || (digitos.length >= 3 && el.dataset.busca.includes(digitos));
+    const bate = bateTexto && (!filtroSituacao || el.dataset.v === filtroSituacao);
+    el.hidden = !bate;
+    if (bate) visiveis++;
+  });
+  const vazio = document.getElementById('sf-lista-vazia');
+  if (vazio) vazio.hidden = visiveis > 0 || !document.querySelector('#empresa-list .empresa-item');
 }
 
 function renderSidebar() {
@@ -504,31 +738,51 @@ function renderSidebar() {
   const chaves = chavesOrdenadas();
   const contador = document.getElementById('sf-contador');
   if (contador) contador.textContent = chaves.length || '';
+  const cont = { '': chaves.length, pendente: 0, suspensa: 0, regular: 0 };
   if (!chaves.length) {
     list.innerHTML = '<div class="empty-side" id="empty-side-msg">Nenhum relatório carregado ainda.</div>';
-    return;
+  } else {
+    const frag = document.createDocumentFragment();
+    chaves.forEach(chave => {
+      const emp = empresasMap[chave];
+      const r = analisarEmpresa(chave);
+      const v = r.veredito.chave;
+      cont[v] = (cont[v] || 0) + 1;
+      const div = document.createElement('button');
+      div.type = 'button';
+      div.className = 'empresa-item' + (chave === empresaAtiva ? ' active' : '');
+      div.dataset.chave = chave;
+      div.dataset.v = v;
+      div.dataset.busca = `${emp.nome} ${emp.cnpj || ''} ${(emp.cnpj || '').replace(/\D/g, '')}`.toLowerCase();
+      div.title = `${emp.nome} · ${r.veredito.rotulo}`;
+      div.innerHTML = `
+        <span class="empresa-avatar sf-av-${v}">${escapeHtml((emp.nome||'?').trim().charAt(0).toUpperCase())}</span>
+        <span class="empresa-info">
+          <span class="nome">${escapeHtml(emp.nome)}</span>
+          <span class="cnpj mono">${escapeHtml(emp.cnpj || 'CNPJ não identificado')}</span>
+        </span>
+        ${r.qtdPendencias ? `<span class="empresa-badge sf-b-${v}" title="${r.qtdPendencias} pendência(s)">${r.qtdPendencias}</span>` : `<span class="empresa-ok" title="Sem pendências">${icone('check')}</span>`}`;
+      div.addEventListener('click', () => selecionarEmpresa(chave));
+      frag.appendChild(div);
+    });
+    const vazio = document.createElement('div');
+    vazio.className = 'empty-side'; vazio.id = 'sf-lista-vazia'; vazio.hidden = true;
+    vazio.textContent = 'Nenhuma empresa com esse filtro.';
+    frag.appendChild(vazio);
+    list.replaceChildren(frag);
   }
-  const frag = document.createDocumentFragment();
-  chaves.forEach(chave => {
-    const emp = empresasMap[chave];
-    const resultado = analisarEmpresa(chave);
-    const risco = nivelRisco(resultado);
-    const div = document.createElement('div');
-    div.className = 'empresa-item' + (chave === empresaAtiva ? ' active' : '');
-    div.dataset.chave = chave;
-    div.innerHTML = `
-      <div class="empresa-avatar" style="background:${corAvatar(emp.nome)}">${escapeHtml((emp.nome||'?').trim().charAt(0).toUpperCase())}</div>
-      <div class="empresa-info">
-        <div class="nome">${escapeHtml(emp.nome)}</div>
-        <div class="cnpj mono">${escapeHtml(emp.cnpj || 'CNPJ não identificado')}</div>
-      </div>
-      <div class="empresa-badge" style="background:${risco.color}22; color:${risco.color}">${resultado.qtdPendencias}</div>
-    `;
-    div.addEventListener('click', () => selecionarEmpresa(chave));
-    frag.appendChild(div);
-  });
-  list.replaceChildren(frag);
+  document.querySelectorAll('#sf-filtros button').forEach((b) => { b.querySelector('em').textContent = cont[b.dataset.f] || 0; });
+  marcarAtivaNaSidebar();
+  aplicarFiltroLista();
 }
+
+document.getElementById('sf-filtro').addEventListener('input', () => aplicarFiltroLista());
+function escolherFiltroSituacao(f) {
+  filtroSituacao = f;
+  document.querySelectorAll('#sf-filtros button').forEach((x) => { const a = x.dataset.f === f; x.classList.toggle('ativo', a); x.setAttribute('aria-selected', a); });
+  aplicarFiltroLista();
+}
+document.getElementById('sf-filtros').addEventListener('click', (e) => { const b = e.target.closest('[data-f]'); if (b) escolherFiltroSituacao(b.dataset.f); });
 
 /* ================= RENDER: VISÃO GERAL ================= */
 document.getElementById('btn-overview').addEventListener('click', async () => {
@@ -541,62 +795,66 @@ document.getElementById('btn-overview').addEventListener('click', async () => {
 });
 
 function renderOverview() {
-  document.getElementById('page-title').textContent = 'Visão geral';
+  document.getElementById('page-title').textContent = 'Situação Fiscal';
   document.getElementById('search-box').classList.add('oculto');
   const chaves = chavesOrdenadas();
   const root = document.getElementById('content-root');
 
   if (!chaves.length) {
-    document.getElementById('page-sub').textContent = 'Carregue um ou mais relatórios de situação fiscal do e-CAC para começar.';
+    document.getElementById('page-sub').textContent = 'Relatórios de situação fiscal da Receita e da PGFN, empresa por empresa';
     root.innerHTML = `
       <div class="placeholder">
         ${icone('situacao')}
         <h3>Nenhum relatório carregado</h3>
-        <p>Baixe pelo IntegraContador (aparecem aqui sozinhos) ou use “Carregar relatórios” no menu para abrir os PDFs de Situação Fiscal do e-CAC. Pode carregar vários de uma vez.</p>
+        <p>Baixe pelo IntegraContador (eles aparecem aqui sozinhos), ou clique em “Carregar PDFs” e escolha os relatórios de Situação Fiscal do e-CAC. Também dá para arrastar vários PDFs de uma vez para esta tela.</p>
       </div>`;
     return;
   }
 
-  const analises = chaves.map((chave) => ({ chave, emp: empresasMap[chave], r: analisarEmpresa(chave) }));
+  const ordemV = { pendente: 0, suspensa: 1, regular: 2 };
+  const analises = chaves.map((chave) => ({ chave, emp: empresasMap[chave], r: analisarEmpresa(chave) }))
+    .sort((a, b) => (ordemV[a.r.veredito.chave] - ordemV[b.r.veredito.chave]) || (b.r.totais.emAbertoRfb - a.r.totais.emAbertoRfb) || (b.r.qtdPendencias - a.r.qtdPendencias));
   const cont = { pendente: 0, suspensa: 0, regular: 0 };
   analises.forEach(({ r }) => cont[r.veredito.chave]++);
-  document.getElementById('page-sub').textContent = `${chaves.length} empresa(s) · ${cont.pendente} com pendências · ${cont.suspensa} regulares com parcelamento/suspensão · ${cont.regular} regulares`;
+  document.getElementById('page-sub').textContent = `Visão geral de ${chaves.length} empresa${chaves.length > 1 ? 's' : ''}, das que pedem mais atenção para as regulares`;
+  const totalAberto = analises.reduce((s, { r }) => s + (r.totais.emAbertoRfb || 0), 0);
 
-  const celulaNum = (n, txt) => `<td class="${n ? '' : 'zero'}">${txt ?? n}</td>`;
+  const celulaNum = (n, txt) => `<td class="num ${n ? '' : 'zero'}">${txt ?? n}</td>`;
   const rows = analises.map(({ chave, emp, r }) => {
     const t = r.totais;
     const parc = t.qtdParcelamentos ? `${t.qtdParcelamentos}${t.qtdParcelamentosAtraso ? ` <span class="sf-mini-erro">${t.qtdParcelamentosAtraso} em atraso</span>` : ''}` : '0';
     const simples = r.simplesResumo ? `<span class="sf-mini-${r.simplesResumo.tipo}">${r.simplesResumo.exclusaoAgendada ? 'Exclusão ' + r.simplesResumo.exclusaoAgendada : r.simplesResumo.optante ? 'Optante' : 'Excluída'}</span>` : '<span class="zero">—</span>';
     return `
       <tr class="clickable" data-chave="${escapeHtml(chave)}">
-        <td><strong>${escapeHtml(emp.nome)}</strong><div class="mono sf-cnpj-mini">${escapeHtml(emp.cnpj || '—')}</div></td>
-        <td><span class="pill sf-v-${r.veredito.chave}">${r.veredito.rotulo}</span></td>
-        ${celulaNum(t.emAbertoRfb, fmtMoeda(t.emAbertoRfb))}
+        <td><strong>${escapeHtml(emp.nome)}</strong><div class="sf-cnpj-mini"><span class="mono">${escapeHtml(emp.cnpj || '—')}</span> · relatório de ${escapeHtml((r.dataRelatorio || '—').split(' ')[0])}</div></td>
+        <td><span class="pill sf-v-${r.veredito.chave}">${r.veredito.rotulo}</span>${r.simplesResumo ? `<div class="sf-simples-linha">${simples}</div>` : ''}</td>
+        <td class="num ${t.emAbertoRfb ? 'sf-txt-erro' : 'zero'}">${fmtMoeda(t.emAbertoRfb)}</td>
         ${celulaNum(t.qtdInscricoesCobranca)}
-        <td class="${t.qtdParcelamentos ? '' : 'zero'}">${parc}</td>
+        <td class="num ${t.qtdParcelamentos ? '' : 'zero'}">${parc}</td>
         ${celulaNum(t.qtdOmissoes)}
-        <td>${simples}</td>
-        <td class="sf-data-rel">${escapeHtml(r.dataRelatorio || '—')}</td>
+
       </tr>`;
   }).join('');
 
   root.innerHTML = `
-    <div class="sf-resumo-geral anim-aparecer">
-      <div class="sf-kpi sf-k-pendente"><b>${cont.pendente}</b><span>com pendências</span></div>
-      <div class="sf-kpi sf-k-suspensa"><b>${cont.suspensa}</b><span>regulares com parcelamento</span></div>
-      <div class="sf-kpi sf-k-regular"><b>${cont.regular}</b><span>regulares</span></div>
+    <div class="sf-resumo-geral">
+      <button type="button" class="kpi2 kpi2-cobre" data-filtro=""><span class="kpi2-icone">${icone('empresas')}</span><span class="kpi2-txt"><span class="kpi2-nome">Empresas</span><span class="kpi2-linha"><b class="kpi2-num">${chaves.length}</b><small>com relatório</small></span></span></button>
+      <button type="button" class="kpi2 kpi2-erro" data-filtro="pendente"><span class="kpi2-icone">${icone('alerta')}</span><span class="kpi2-txt"><span class="kpi2-nome">Com pendências</span><span class="kpi2-linha"><b class="kpi2-num">${cont.pendente}</b><small>${totalAberto ? fmtMoeda(totalAberto) + ' na Receita' : 'impedem a certidão'}</small></span></span></button>
+      <button type="button" class="kpi2 kpi2-atencao" data-filtro="suspensa"><span class="kpi2-icone">${icone('parcelamentos')}</span><span class="kpi2-txt"><span class="kpi2-nome">Regulares com parcelamento</span><span class="kpi2-linha"><b class="kpi2-num">${cont.suspensa}</b><small>ou suspensão</small></span></span></button>
+      <button type="button" class="kpi2 kpi2-ok" data-filtro="regular"><span class="kpi2-icone">${icone('escudo')}</span><span class="kpi2-txt"><span class="kpi2-nome">Regulares</span><span class="kpi2-linha"><b class="kpi2-num">${cont.regular}</b><small>tiram certidão negativa</small></span></span></button>
     </div>
     <div class="overview-table anim-aparecer">
       <table>
         <thead><tr>
-          <th>Empresa</th><th>Situação</th><th>Em aberto (Receita)</th><th>Dívida ativa em cobrança</th>
-          <th>Parcelamentos</th><th>Declarações omissas</th><th>Simples</th><th>Relatório de</th>
+          <th>Empresa</th><th>Situação</th><th class="num">Em aberto</th><th class="num">Dívida ativa</th>
+          <th class="num">Parcelamentos</th><th class="num">Omissões</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
 
   root.querySelectorAll('tr[data-chave]').forEach(tr => tr.addEventListener('click', () => selecionarEmpresa(tr.dataset.chave)));
+  root.querySelectorAll('[data-filtro]').forEach((b) => b.addEventListener('click', () => escolherFiltroSituacao(b.dataset.filtro)));
 }
 
 /* ================= RENDER: DETALHE DE EMPRESA ================= */
@@ -738,13 +996,14 @@ function renderDetalheEmpresa(chave) {
   const r = analisarEmpresa(chave);
   const t = r.totais;
 
-  document.getElementById('page-title').textContent = emp.nome;
-  document.getElementById('page-sub').textContent = `${r.veredito.rotulo} · relatório de ${r.dataRelatorio || 'data não identificada'}`;
+  document.getElementById('page-title').textContent = 'Situação Fiscal';
+  document.getElementById('page-sub').textContent = `Relatório de ${r.dataRelatorio || 'data não identificada'}${emp.origem ? ' · baixado pelo IntegraContador' : ''}`;
   document.getElementById('search-box').classList.remove('oculto');
   document.getElementById('search-input').value = '';
 
-  const cartao = (alvo, tipo, valor, rotulo, sub) => `
+  const cartao = (alvo, tipo, valor, rotulo, sub, ic = 'info') => `
     <button type="button" class="sf-card sf-card-${tipo}" data-ir="${alvo}">
+      <span class="sf-card-ic">${icone(ic)}</span>
       <span class="sf-card-rotulo">${rotulo}</span>
       <span class="sf-card-valor">${valor}</span>
       ${sub ? `<span class="sf-card-sub">${sub}</span>` : ''}
@@ -766,31 +1025,108 @@ function renderDetalheEmpresa(chave) {
 
   const nadaReconhecido = !r.secoesReconhecidas && !r.rfbSemPendencias && !r.pgfnSemPendencias;
 
+  // ---------- Cabeçalho do relatório (capa) ----------
+  const v = r.veredito.chave;
+  const certidaoPrevista = { pendente: 'Positiva', suspensa: 'Positiva com efeitos de negativa', regular: 'Negativa (CND)' }[v];
+  const pendRfbQtd = t.qtdDebitosAbertos + r.processos.filter((p) => !p.suspenso).length + r.outrasPendencias.length;
+  const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
+  const requisitos = [
+    { alvo: 'sec-rfb', icone: 'situacao', titulo: 'Débitos na Receita', ok: !pendRfbQtd,
+      sub: pendRfbQtd ? plural(pendRfbQtd, 'pendência', 'pendências') : 'Nada em aberto' },
+    { alvo: 'sec-rfb', icone: 'documento', titulo: 'Declarações', ok: !t.qtdOmissoes,
+      sub: t.qtdOmissoes ? `${plural(t.qtdOmissoes, 'omissa', 'omissas')}` : 'Todas entregues' },
+    { alvo: 'sec-pgfn', icone: 'governo', titulo: 'Dívida ativa (PGFN)', ok: !t.qtdInscricoesCobranca,
+      sub: t.qtdInscricoesCobranca ? `${plural(t.qtdInscricoesCobranca, 'inscrição', 'inscrições')} em cobrança` : 'Nada em cobrança' },
+    { alvo: 'sec-parc', icone: 'parcelamentos', titulo: 'Parcelamentos', ok: !t.qtdParcelamentosAtraso, neutro: !t.qtdParcelamentos,
+      sub: t.qtdParcelamentosAtraso ? `${plural(t.qtdParcelamentosAtraso, 'em atraso', 'em atraso')}` : t.qtdParcelamentos ? `${plural(t.qtdParcelamentos, 'em dia', 'em dia')}` : 'Nenhum' },
+  ];
+  const okCount = requisitos.filter((q) => q.ok).length;
+  const htmlRequisitos = requisitos.map((q, i) => `
+    <button type="button" class="sf-req ${q.ok ? (q.neutro ? 'sf-req-neutro' : 'sf-req-ok') : 'sf-req-erro'}" data-ir="${q.alvo}" style="--i:${i}">
+      <span class="sf-req-marca">${icone(q.ok ? 'check' : 'x')}</span>
+      <span class="sf-req-txt"><b>${q.titulo}</b><small>${q.sub}</small></span>
+    </button>`).join('');
+
+  // selo: anel com quantos requisitos da certidão estão cumpridos
+  const C = 2 * Math.PI * 26;
+  const selo = `
+    <div class="sf-selo">
+      <svg class="sf-selo-anel" viewBox="0 0 64 64" aria-hidden="true">
+        <circle cx="32" cy="32" r="26" class="sf-selo-trilho"/>
+        <circle cx="32" cy="32" r="26" class="sf-selo-progresso" style="--c:${C.toFixed(1)};--o:${(C * (1 - okCount / 4)).toFixed(1)}"/>
+      </svg>
+      <span class="sf-selo-centro">${icone(v === 'pendente' ? 'alerta' : 'escudo')}</span>
+    </div>`;
+
+  // valores: só o que tem dinheiro envolvido
+  const cartoesValor = [
+    cartao('sec-rfb', t.emAbertoRfb ? 'erro' : 'ok', fmtMoeda(t.emAbertoRfb), 'Em aberto na Receita', t.qtdDebitosAbertos ? plural(t.qtdDebitosAbertos, 'débito vencido', 'débitos vencidos') : 'nenhum débito vencido', 'situacao'),
+    t.valorParcelasAtraso ? cartao('sec-parc', 'erro', fmtMoeda(t.valorParcelasAtraso), 'Parcelas em atraso', 'em parcelamentos', 'parcelamentos') : '',
+    t.suspensoParcelado ? cartao('sec-parc', 'info', fmtMoeda(t.suspensoParcelado), 'Saldo parcelado', 'suspenso — não é cobrado à parte', 'parcelamentos') : '',
+    t.qtdAVencer ? cartao('sec-susp', 'neutro', fmtMoeda(t.aVencer), 'A vencer', 'ainda não é dívida', 'relogio') : '',
+  ].filter(Boolean);
+
+  // composição do valor em aberto (barras horizontais, uma cor só)
+  const grupos = r.gruposAbertos.slice().sort((a, b) => b.total - a.total);
+  const maior = grupos.length ? grupos[0].total : 0;
+  const composicao = grupos.length > 1 ? `
+    <div class="sf-composicao">
+      <div class="sf-comp-cab"><b>De onde vem o valor em aberto</b><small>${plural(grupos.length, 'tributo', 'tributos')} · ${fmtMoeda(t.emAbertoRfb)}</small></div>
+      <ul class="sf-comp-lista">${grupos.map((g, i) => {
+        const pct = t.emAbertoRfb ? (g.total / t.emAbertoRfb) * 100 : 0;
+        return `<li class="sf-comp-item" title="${escapeHtml(g.tributo)}: ${fmtMoeda(g.total)} (${pct.toFixed(1).replace('.', ',')}% do total)" style="--i:${i}">
+          <span class="sf-comp-nome">${escapeHtml(g.tributo)}</span>
+          <span class="sf-comp-trilho"><span class="sf-comp-barra ${g.multa ? 'multa' : ''}" style="--w:${Math.max(2, (g.total / maior) * 100).toFixed(1)}%"></span></span>
+          <span class="sf-comp-valor">${fmtMoeda(g.total)}<small>${pct.toFixed(0)}%</small></span>
+        </li>`; }).join('')}</ul>
+    </div>` : '';
+
+  const simplesChip = r.simplesResumo
+    ? `<span class="sf-hero-chip ${r.simplesResumo.tipo === 'erro' ? 'erro' : r.simplesResumo.optante ? 'ok' : ''}">${r.simplesResumo.exclusaoAgendada ? `Simples: exclusão em ${escapeHtml(r.simplesResumo.exclusaoAgendada)}` : r.simplesResumo.optante ? 'Optante pelo Simples' : `Fora do Simples desde ${escapeHtml(r.simples[r.simples.length - 1].fim || '')}`}</span>`
+    : '';
+
   document.getElementById('content-root').innerHTML = `
-    <div class="sf-cabecalho">
-      <div class="sf-cab-info">
-        <h2>${escapeHtml(emp.nome)}</h2>
-        <div class="cnpj-line mono">CNPJ ${escapeHtml(emp.cnpj || 'não identificado')}${r.situacaoCadastral ? ' · ' + escapeHtml(r.situacaoCadastral) : ''}${r.porte ? ' · ' + escapeHtml(r.porte) : ''}</div>
-        <div class="sf-cab-chips">
-          ${r.simplesResumo ? etiqueta(r.simplesResumo.exclusaoAgendada ? `Simples: exclusão agendada para ${r.simplesResumo.exclusaoAgendada}` : r.simplesResumo.optante ? 'Optante pelo Simples' : `Excluída do Simples (${r.simples[r.simples.length - 1].fim})`, r.simplesResumo.tipo === 'erro' ? 'erro' : r.simplesResumo.optante ? 'ok' : 'neutro') : ''}
-          ${etiqueta(`Relatório de ${r.dataRelatorio || '—'}`, 'neutro')}
-          ${emp.arquivos.length > 1 ? etiqueta(`${emp.arquivos.length} arquivos combinados`, 'neutro') : ''}
+    <article class="sf-relatorio">
+    <header class="sf-hero sf-hero-${v}">
+      <div class="sf-hero-topo">
+        <span class="sf-hero-avatar">${escapeHtml((emp.nome || '?').trim().charAt(0))}</span>
+        <div class="sf-hero-id">
+          <span class="sf-hero-sobre">Relatório de situação fiscal · ${escapeHtml(r.dataRelatorio || 'data não identificada')}${emp.origem ? ' · IntegraContador' : ''}</span>
+          <h2>${escapeHtml(emp.nome)}</h2>
+          <div class="sf-hero-meta">
+            <button type="button" class="sf-hero-cnpj" id="btn-copiar-cnpj" title="Copiar CNPJ">${escapeHtml(emp.cnpj || 'CNPJ não identificado')}${emp.cnpj ? icone('copiar') : ''}</button>
+            ${r.situacaoCadastral ? `<span class="sf-hero-chip">${escapeHtml(r.situacaoCadastral)}</span>` : ''}
+            ${r.porte ? `<span class="sf-hero-chip">${escapeHtml(r.porte)}</span>` : ''}
+            ${simplesChip}
+            ${emp.arquivos.length > 1 ? `<span class="sf-hero-chip">${emp.arquivos.length} arquivos combinados</span>` : ''}
+          </div>
+        </div>
+        <div class="sf-hero-acoes">
+          <button type="button" class="sf-hero-btn" id="btn-raw" title="Ver o texto extraído do PDF">${icone('olho')}<span>Texto do PDF</span></button>
+          <button type="button" class="sf-hero-btn" id="btn-print" title="Exportar em PDF ou imprimir">${icone('imprimir')}<span>Exportar</span></button>
         </div>
       </div>
-      <div class="sf-veredito sf-v-${r.veredito.chave}">
-        <span class="sf-veredito-icone">${icone(r.veredito.chave === 'pendente' ? 'alerta' : 'ok')}</span>
-        <span><b>${r.veredito.rotulo}</b><small>${escapeHtml(r.veredito.texto)}</small></span>
+      <div class="sf-hero-veredito">
+        ${selo}
+        <div class="sf-hero-veredito-txt">
+          <span class="sf-hero-rotulo">${r.veredito.rotulo}</span>
+          <p>${escapeHtml(r.veredito.texto)}</p>
+        </div>
+        <div class="sf-hero-certidao">
+          <small>Certidão prevista</small>
+          <b>${certidaoPrevista}</b>
+          <span>${okCount} de 4 requisitos ok</span>
+        </div>
       </div>
-    </div>
+    </header>
 
-    ${nadaReconhecido ? `<div class="sf-nota sf-nota-aviso">${icone('alerta')}Não reconheci as seções deste relatório. Use “Ver texto extraído” abaixo para conferir.</div>` : ''}
+    <div class="sf-requisitos" aria-label="Requisitos para a certidão">${htmlRequisitos}</div>
 
-    <div class="sf-cards">
-      ${cartao('sec-rfb', t.emAbertoRfb ? 'erro' : 'ok', fmtMoeda(t.emAbertoRfb), 'Em aberto na Receita', `${t.qtdDebitosAbertos} débito(s)`)}
-      ${cartao('sec-pgfn', t.qtdInscricoesCobranca ? 'erro' : 'ok', t.qtdInscricoesCobranca, 'Dívida ativa em cobrança', 'inscrições na PGFN')}
-      ${cartao('sec-parc', t.qtdParcelamentosAtraso ? 'erro' : t.qtdParcelamentos ? 'info' : 'ok', t.qtdParcelamentos, 'Parcelamentos e transações', t.qtdParcelamentosAtraso ? `${t.qtdParcelamentosAtraso} em atraso` : t.qtdParcelamentos ? 'todos em dia' : 'nenhum')}
-      ${cartao('sec-rfb', t.qtdOmissoes ? 'erro' : 'ok', t.qtdOmissoes, 'Declarações omissas', t.qtdOmissoes ? 'não entregues' : 'nenhuma')}
-      ${t.qtdAVencer ? cartao('sec-susp', 'neutro', fmtMoeda(t.aVencer), 'A vencer', 'ainda não é dívida') : ''}
+    ${nadaReconhecido ? `<div class="sf-nota sf-nota-aviso">${icone('alerta')}Não reconheci as seções deste relatório. Use “Texto do PDF” no topo para conferir.</div>` : ''}
+
+    <div class="sf-numeros ${composicao ? 'com-composicao' : ''}">
+      <div class="sf-cards">${cartoesValor.join('')}</div>
+      ${composicao}
     </div>
 
     ${secao('sec-rfb', 'Pendências na Receita Federal', 'situacao', pendRfb, { contador: t.qtdDebitosAbertos + t.qtdOmissoes || '', tipo: 'erro', sub: 'Impedem a certidão' })}
@@ -800,14 +1136,13 @@ function renderDetalheEmpresa(chave) {
     ${secao('sec-cad', 'Simples Nacional e certidão', 'documento', htmlSimples(r), { tipo: 'neutro' })}
     ${!pendRfb && !r.inscricoesAbertas.length && !parcelamentosHtml && !suspensosHtml && !nadaReconhecido ? `<div class="sf-nota sf-nota-ok">${icone('ok')}Nenhuma pendência, parcelamento ou suspensão neste relatório.</div>` : ''}
 
-    <div class="actions-row">
-      <button class="btn-secundario" id="btn-raw">${icone('olho')}Ver texto extraído (conferência manual)</button>
-      <button class="btn-secundario" id="btn-print">${icone('imprimir')}Exportar / Imprimir</button>
-    </div>
     <div class="raw-panel" id="raw-panel"></div>
+    <footer class="sf-rodape">Prumo · gerado a partir do Relatório de Situação Fiscal da Receita Federal / PGFN${r.dataRelatorio ? ' de ' + escapeHtml(r.dataRelatorio) : ''}. É uma leitura do relatório, não substitui a certidão oficial.</footer>
+    </article>
   `;
 
   const root = document.getElementById('content-root');
+  document.getElementById('btn-copiar-cnpj').addEventListener('click', () => copiar('CNPJ', emp.cnpj));
   root.querySelectorAll('.sf-secao-cab').forEach((cab) => {
     const alternar = () => cab.parentElement.classList.toggle('fechada');
     cab.addEventListener('click', alternar);
@@ -822,7 +1157,8 @@ function renderDetalheEmpresa(chave) {
   document.getElementById('btn-raw').addEventListener('click', () => {
     const panel = document.getElementById('raw-panel');
     panel.classList.toggle('show');
-    if (panel.classList.contains('show')) panel.textContent = r.fullText;
+    document.getElementById('btn-raw').classList.toggle('ativo', panel.classList.contains('show'));
+    if (panel.classList.contains('show')) { panel.textContent = r.fullText; panel.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
   });
   document.getElementById('btn-print').addEventListener('click', () => {
     root.querySelectorAll('details.sf-grupo').forEach((d) => (d.open = true));
@@ -859,7 +1195,7 @@ document.getElementById('search-input').addEventListener('input', atrasar(() => 
 
 /* init */
 function mostrarCarregandoInicial() {
-  document.getElementById('page-title').textContent = 'Carregando...';
+  document.getElementById('page-title').textContent = 'Situação Fiscal';
   document.getElementById('page-sub').textContent = 'Buscando os relatórios já baixados no IntegraContador...';
   document.getElementById('search-box').classList.add('oculto');
   document.getElementById('content-root').innerHTML = `

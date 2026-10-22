@@ -268,3 +268,11 @@ Camada "REFINO" no fim do `public/style.css`, que não muda nenhum comportamento
 - **Tarefas:** a barra desliza, a tarefa concluída desliza para o fim da lista, e concluir a última faz uma pequena celebração ("Tudo no lugar").
 - **Login:** o prumo pendurado balança e para no eixo vertical.
 - Quem ativou "reduzir movimento" no sistema operacional não vê as animações.
+
+## Situação Fiscal reorganizada
+
+- O menu lateral voltou a ser só de navegação, como nas outras páginas.
+- **Painel "Relatórios"** à esquerda: botão "Carregar PDFs", filtro por nome ou CNPJ, filtros por situação (Todas / Pendências / Parcelamento / Regulares, com a contagem de cada um), "Visão geral" e a lista de empresas. A cor de cada empresa agora mostra a situação (vermelho, amarelo, verde), e não é mais aleatória.
+- **Arrastar PDFs** para qualquer ponto da página mostra o aviso "Solte os PDFs para ler".
+- **Visão geral:** indicadores no padrão do sistema (clicar em um filtra a lista) e tabela ordenada por gravidade (pendências primeiro, maior valor em aberto no topo), com o Simples e a data do relatório dentro das colunas existentes.
+- **Empresa aberta:** cabeçalho com o nome e o veredito, números maiores, seções no mesmo estilo dos outros painéis. O leitor dos relatórios não mudou.
