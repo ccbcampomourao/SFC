@@ -41,12 +41,25 @@ class BuscaNfseIpm {
   async consultar(numeros) {
     const faltam = numeros.filter((n) => !this.cache.has(n));
     for (let i = 0; i < faltam.length; i += IPM_POR_CHAMADA) {
-      const lote = faltam.slice(i, i + IPM_POR_CHAMADA);
+      let lote = faltam.slice(i, i + IPM_POR_CHAMADA);
       this.chamadas++;
-      const r = await api("/api/ipm/consultar", {
-        method: "POST",
-        body: JSON.stringify({ municipio: this.municipio, cnpj: this.e.cnpj, login: limparDigitos(this.e.loginPrefeitura) || undefined, senha: this.e.senhaPrefeitura, cadastro: this.e.cadastroMunicipal, serie: this.e.nfseSerie || "1", numeros: lote, comXml: true, url: _ipmUrl[this.municipio] || undefined }),
-      });
+      let r;
+      for (let tentativa = 0; ; tentativa++) {
+        try {
+          r = await api("/api/ipm/consultar", {
+            method: "POST",
+            body: JSON.stringify({ municipio: this.municipio, cnpj: this.e.cnpj, login: limparDigitos(this.e.loginPrefeitura) || undefined, senha: this.e.senhaPrefeitura, cadastro: this.e.cadastroMunicipal, serie: this.e.nfseSerie || "1", numeros: lote, comXml: true, url: _ipmUrl[this.municipio] || undefined }),
+          });
+          break;
+        } catch (err) {
+          // Limite de consultas por segundo da prefeitura: guarda o que já veio, espera e continua de onde parou
+          if (!err.limite || tentativa >= 4) throw err;
+          for (const nota of err.notas || []) this.cache.set(nota.numero, nota);
+          lote = lote.filter((n) => !this.cache.has(n));
+          if (!lote.length) { r = { notas: [] }; break; }
+          await new Promise((ok) => setTimeout(ok, 2500 * (tentativa + 1)));
+        }
+      }
       if (r.url) _ipmUrl[this.municipio] = r.url; // endereço do webservice que funcionou: as próximas chamadas já vão direto nele
       for (const nota of r.notas) this.cache.set(nota.numero, nota);
     }

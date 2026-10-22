@@ -867,7 +867,27 @@ function lerNotaIpm(xml) {
   };
 }
 
-async function consultarNotaIpm(env, { url, login, senha, cadastro, serie, numero, cookie }) {
+// Limite da IPM: "Limite de requisições (6) por segundo do serviço foi expirado" (código 000989).
+// Espaçamos as consultas e, se mesmo assim o limite estourar, esperamos e tentamos de novo.
+const IPM_INTERVALO_MS = 400;          // ~2,5 por segundo por chamada (o navegador consulta 2 empresas por vez)
+const IPM_ESPERAS_LIMITE_MS = [1200, 2500, 4000];
+function limiteIpm(texto) {
+  const t = String(texto || "").slice(0, 400);
+  return /limite de requisi/i.test(t) || /"code"\s*:\s*"?0*989"?/.test(t);
+}
+let _ultimaConsultaIpm = 0;
+async function consultarNotaIpm(env, dados) {
+  for (let tentativa = 0; ; tentativa++) {
+    const falta = _ultimaConsultaIpm + IPM_INTERVALO_MS - Date.now();
+    if (falta > 0) await esperar(falta);
+    _ultimaConsultaIpm = Date.now();
+    const r = await consultarNotaIpmUmaVez(env, dados);
+    if (!limiteIpm(r.texto) || tentativa >= IPM_ESPERAS_LIMITE_MS.length) return { ...r, limite: limiteIpm(r.texto) };
+    await esperar(IPM_ESPERAS_LIMITE_MS[tentativa]);
+  }
+}
+
+async function consultarNotaIpmUmaVez(env, { url, login, senha, cadastro, serie, numero, cookie }) {
   const xmlPesquisa = `<?xml version="1.0" encoding="ISO-8859-1"?><nfse><pesquisa><numero>${numero}</numero><serie_nfse>${serie}</serie_nfse><cadastro>${cadastro}</cadastro></pesquisa></nfse>`;
   const form = new FormData();
   form.append("xml", new Blob([xmlPesquisa], { type: "text/xml" }), "consulta.xml");
@@ -1596,6 +1616,9 @@ export default {
             }
           } catch (err) {
             return json({ erro: "Não consegui falar com o servidor da prefeitura: " + (err && err.message ? err.message : err), etapa: "conexao", notas }, 502);
+          }
+          if (r.limite) {
+            return json({ erro: "A prefeitura está limitando a quantidade de consultas por segundo. O sistema esperou e tentou de novo, mas o limite continuou. Tente de novo em alguns segundos.", codigo: "limite", limite: true, etapa: "prefeitura", notas, url }, 429);
           }
           if (!negado && r.http >= 500) {
             return json({ erro: `O servidor da prefeitura não respondeu (HTTP ${r.http}${r.http >= 520 && r.http <= 526 ? " — a Cloudflare não conseguiu conectar" : ""}).`, codigo: r.http, dica: "Pode ser instabilidade no Atende.Net. Tente de novo em alguns minutos.", etapa: "conexao", notas, url }, 502);
