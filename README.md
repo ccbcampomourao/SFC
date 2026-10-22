@@ -295,3 +295,4 @@ Camada "REFINO" no fim do `public/style.css`, que não muda nenhum comportamento
 - **Bloquear usuários:** menu Usuários → Bloquear. A pessoa sai na hora de todos os aparelhos e não entra até ser desbloqueada (não dá para bloquear a si mesmo).
 - **Recuperar senha:** "Esqueci minha senha" na tela de login manda um link por e-mail (vale 1 hora, uma vez só, no máximo um a cada 2 min). No menu Usuários dá para mandar esse link para outra pessoa e trocar a própria senha. Trocar a senha derruba as outras sessões abertas.
 - Senha mínima de 8 caracteres para contas e senhas novas (as senhas atuais continuam valendo).
+- **Prumo interativo no login:** depois do balanço de entrada, o prumo inclina de leve na direção do cursor, balança quando o cursor passa rápido por ele e pode ser puxado e solto. Só calcula enquanto se mexe (parado não gasta nada); desligado no celular e para quem pede "reduzir movimento".
