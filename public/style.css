@@ -1502,3 +1502,12 @@ body { background: var(--paper); color: var(--ink); }
 .pill-toggle.semmov-toggle.semmov-off { background: var(--paper-panel); color: var(--ink); }
 .pill-toggle.semmov-toggle.semmov-off:hover { color: var(--cinza-mov); border-color: var(--cinza-mov-vivo); }
 .pill-toggle.semmov-toggle.semmov-on:hover { background: var(--cinza-mov); }
+
+/* ---------- Passar o mouse nas empresas sem "piscar" ----------
+   O destaque da linha agora é instantâneo (sem esmaecer), a borda do cartão
+   não muda no hover e o cartão da empresa não usa mais content-visibility
+   (no Chrome ele obrigava a redesenhar o cartão inteiro a cada hover). */
+#lista-grupos .empresa-card { content-visibility: visible; contain-intrinsic-size: none; transition: box-shadow .15s ease; }
+#lista-grupos .empresa-card:hover:not(.aberto) { border-color: var(--line); }
+#lista-grupos .empresa-header { transition: none; }
+#lista-grupos .empresa-alca { transition: background-color .12s ease; }
