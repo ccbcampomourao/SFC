@@ -92,15 +92,16 @@ function renderizarDashboard() {
 function renderizarCardsGrupos() {
   const cont = $("#dashboard-grupos");
   if (!cont) return;
-  const grupos = ESTADO.grupos;
-  const chave = grupos.map((g) => g.nome).join("\u0001");
+  // grupos sem nenhuma empresa não ganham cartão
+  const grupos = ESTADO.grupos.filter((g) => g.empresas.length);
+  const chave = grupos.map((g) => g.nome + "\u0002" + ESTADO.grupos.indexOf(g)).join("\u0001");
   if (cont.dataset.chave !== chave) {
     const primeira = !cont.dataset.chave;
     cont.dataset.chave = chave;
     cont.innerHTML = grupos.map((g, i) => `
-      <button type="button" class="grupo-kpi${primeira ? " entrando" : ""}" data-grupo-idx="${i}" style="--i:${i}" title="Abrir o grupo ${escaparHtml(g.nome)}">
-        <span class="gk-topo"><span class="gk-ic">${icone("pasta")}</span><span class="gk-id"><span class="gk-nome">${escaparHtml(g.nome)}</span><span class="gk-total"><b>0</b> <small>empresas</small></span></span><span class="gk-selo">${icone("check")}Tudo fechado</span></span>
-        <span class="gk-fech"><span>Fechadas <b class="gk-fech-n">0</b><small class="gk-fech-de"></small></span><span class="gk-pct">0%</span></span>
+      <button type="button" class="grupo-kpi${primeira ? " entrando" : ""}" data-grupo-idx="${ESTADO.grupos.indexOf(g)}" style="--i:${i}" title="Abrir o grupo ${escaparHtml(g.nome)}">
+        <span class="gk-topo"><span class="gk-ic">${icone("pasta")}</span><span class="gk-id"><span class="gk-nome">${escaparHtml(g.nome)}</span><span class="gk-total"><b>0</b> <small>empresas</small></span></span></span>
+        <span class="gk-fech"><span>Fechadas <b class="gk-fech-n">0</b><small class="gk-fech-de"></small></span><span class="gk-pct">0%</span><span class="gk-selo">${icone("check")}Tudo fechado</span></span>
         <span class="gk-prog"><i style="width:0%"></i></span>
         <span class="gk-status"><span class="kpi-barra"></span><span class="gk-legenda"></span></span>
       </button>`).join("");
