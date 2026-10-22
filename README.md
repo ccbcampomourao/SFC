@@ -284,3 +284,4 @@ Camada "REFINO" no fim do `public/style.css`, que não muda nenhum comportamento
 ## Cartões por grupo e "Fechado"
 - Abaixo dos indicadores da tela Empresas há um cartão por grupo: total de empresas, fechadas no mês (barra e %) e status (OK / atenção / pendente). Clicar abre o grupo.
 - Marcar ou desmarcar "Fechado" atualiza na hora os indicadores e o cartão do grupo; na aba "Fechadas", a empresa reaberta sai da lista.
+- O aviso de "Salvar" compara com o que está gravado: se você mexe e volta ao que era (status, município da NFS-e, sócios, tarefas etc.), o aviso some.

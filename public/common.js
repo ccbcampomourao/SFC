@@ -338,17 +338,60 @@ document.addEventListener("keydown", (e) => {
 // ============================================================================
 // ALTERAÇÕES NÃO SALVAS — indicador no botão "Salvar", Ctrl+S e aviso ao sair
 // ============================================================================
+// Em vez de só "mexeu → pede para salvar", compara com o que está gravado:
+// se você muda algo e depois volta ao que era, o aviso some sozinho.
 let _alteracoesPendentes = false;
-function marcarAlterado() {
-  if (_alteracoesPendentes) return;
-  _alteracoesPendentes = true;
-  $("#btn-salvar")?.classList.add("pendente");
+let _assinaturaSalva = null;   // como os dados estavam na última carga/gravação
+let _timerConferir = 0;
+// Forma canônica dos dados: ordem das chaves não importa, e campo vazio
+// (false, "", [], null) vale o mesmo que campo ausente.
+function _assinaturaDados(valor) {
+  const norm = (v) => {
+    if (Array.isArray(v)) return v.map(norm);
+    if (v && typeof v === "object") {
+      // sócios: linhas vazias não contam, e um único sócio sem nome com o
+      // mesmo CPF do campo antigo "cpf" é o mesmo que não ter a lista
+      if (Array.isArray(v.socios)) {
+        const socios = v.socios.filter((s) => s && ((s.nome || "").trim() || (s.cpf || "").trim()));
+        const equivalente = !socios.length || (socios.length === 1 && !(socios[0].nome || "").trim() && socios[0].cpf === v.cpf);
+        v = { ...v, socios: equivalente ? undefined : socios };
+      }
+      const o = {};
+      for (const k of Object.keys(v).sort()) {
+        const x = norm(v[k]);
+        // valores que significam "o padrão": sem status, município padrão da NFS-e
+        if ((k === "status" && x === "SEM") || (k === "municipioNfse" && x === MUNICIPIO_NFSE_PADRAO)) continue;
+        if (x === undefined || x === null || x === false || x === "" || (Array.isArray(x) && !x.length) ||
+            (x && typeof x === "object" && !Array.isArray(x) && !Object.keys(x).length)) continue;
+        o[k] = x;
+      }
+      return o;
+    }
+    return v;
+  };
+  return JSON.stringify(norm(valor));
 }
-function limparAlterado() {
-  _alteracoesPendentes = false;
-  $("#btn-salvar")?.classList.remove("pendente");
+function _mostrarPendente(sim) {
+  _alteracoesPendentes = sim;
+  $("#btn-salvar")?.classList.toggle("pendente", sim);
+}
+function conferirAlteracoes() {
+  clearTimeout(_timerConferir); _timerConferir = 0;
+  if (_assinaturaSalva === null) return _mostrarPendente(true);
+  _mostrarPendente(_assinaturaDados(ESTADO) !== _assinaturaSalva);
+}
+function marcarAlterado() {
+  // várias mudanças seguidas viram uma conferência só (e a mudança já terminou quando ela roda)
+  clearTimeout(_timerConferir);
+  _timerConferir = setTimeout(conferirAlteracoes, 120);
+}
+function limparAlterado(assinatura) {
+  clearTimeout(_timerConferir); _timerConferir = 0;
+  _assinaturaSalva = assinatura || _assinaturaDados(ESTADO);
+  conferirAlteracoes();
 }
 window.addEventListener("beforeunload", (e) => {
+  if (_timerConferir) conferirAlteracoes();
   if (_alteracoesPendentes && $("#btn-salvar")) { e.preventDefault(); e.returnValue = ""; }
 });
 document.addEventListener("keydown", (e) => {
@@ -408,6 +451,7 @@ async function carregarDados() {
 }
 
 $("#btn-sair")?.addEventListener("click", async () => {
+  if (_timerConferir) conferirAlteracoes();
   if (_alteracoesPendentes && $("#btn-salvar")) {
     const ok = await confirmar("Você tem alterações que ainda não foram salvas. Sair mesmo assim?", { titulo: "Sair sem salvar?", textoOk: "Sair", perigo: true });
     if (!ok) return;
@@ -450,8 +494,9 @@ $("#btn-salvar")?.addEventListener("click", () => salvar());
 async function salvar() {
   return comCarregando($("#btn-salvar"), async () => {
     try {
+      const assinatura = _assinaturaDados(ESTADO); // o que está indo agora (edições durante o envio continuam pendentes)
       await api("/api/data", { method: "POST", body: JSON.stringify(ESTADO) });
-      limparAlterado();
+      limparAlterado(assinatura);
       notificar("Tudo salvo", "ok");
       return true;
     } catch (err) {
@@ -981,6 +1026,7 @@ function entrarDeNovo() {
     requestAnimationFrame(() => (usuario ? form.senha : form.usuario).focus());
     const fechar = (ok) => { fundo.remove(); _entrandoDeNovo = null; resolve(ok); };
     fundo.querySelector("[data-sair]").addEventListener("click", async () => {
+      if (_timerConferir) conferirAlteracoes();
       if (_alteracoesPendentes && !(await confirmar("As alterações que ainda não foram salvas vão se perder.", { titulo: "Ir para o login?", textoOk: "Ir mesmo assim", perigo: true }))) return;
       _alteracoesPendentes = false;
       location.href = "/";
