@@ -1526,3 +1526,42 @@ body { background: var(--paper); color: var(--ink); }
 .linha-usuario.bloqueado .avatar-mini, .linha-usuario.bloqueado .linha-texto { opacity: .55; }
 .caixa-minha-senha { background: var(--paper-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px 4px; margin-bottom: 18px; }
 .caixa-minha-senha .modal-secao { margin-top: 0; }
+
+/* =====================================================================
+   MENU LATERAL RECOLHIDO — fica só a coluna de ícones (com o prumo no topo)
+   ===================================================================== */
+.marca-icone { display: none; }
+.dica-menu { position: fixed; z-index: 2000; transform: translateY(-50%) translateX(-4px); background: var(--tinta); color: var(--marfim); font-size: 12.5px; font-weight: 600; padding: 6px 10px; border-radius: 8px; box-shadow: 0 6px 18px rgba(10, 16, 26, .28); border: 1px solid rgba(255, 255, 255, .08); white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .12s ease, transform .12s ease; }
+.dica-menu.visivel { opacity: 1; transform: translateY(-50%); }
+@media (min-width: 901px) {
+  :root { --sidebar-recolhida: 76px; }
+  .sidebar-fechada .app-sidebar { width: var(--sidebar-recolhida); }
+  .sidebar-fechada .app-sidebar-inner { width: var(--sidebar-recolhida); opacity: 1; pointer-events: auto; padding: 22px 12px 14px; align-items: stretch; }
+  /* marca: só o prumo */
+  .sidebar-fechada .marca { margin: 0 0 20px; display: flex; justify-content: center; }
+  .sidebar-fechada .marca-assinatura { display: none; }
+  .sidebar-fechada .marca-icone { display: block; width: 30px; height: auto; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, .35)); transition: transform .3s var(--ease); transform-origin: 50% 0; }
+  .sidebar-fechada .marca:hover .marca-icone { transform: rotate(-6deg); }
+  /* busca vira um botão de lupa (abre a busca rápida) */
+  .sidebar-fechada .busca-menu { height: 40px; margin-bottom: 14px; cursor: pointer; border-radius: 10px; background: #1F2B3D; display: grid; place-items: center; }
+  .sidebar-fechada .busca-menu input, .sidebar-fechada .busca-menu kbd { display: none; }
+  .sidebar-fechada .busca-menu > .ico { position: static; transform: none; margin: 0; color: #AAB4C4; }
+  .sidebar-fechada .busca-menu:hover { background: #26344A; }
+  .sidebar-fechada .busca-menu:hover > .ico { color: #fff; }
+  /* itens: só o ícone, centralizado */
+  .sidebar-fechada .app-nav-link, .sidebar-fechada .btn-ghost-side { justify-content: center; padding: 11px 0; gap: 0; }
+  .sidebar-fechada .app-nav-link > span, .sidebar-fechada .btn-ghost-side > span, .sidebar-fechada .side-sub-seta { display: none; }
+  .sidebar-fechada .app-nav-link .ico { width: 19px; height: 19px; }
+  .sidebar-fechada .app-nav-link.ativo::before { left: -12px; }
+  .sidebar-fechada .nav-contador { position: absolute; top: 4px; right: 6px; margin: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 99px; background: #26344A; color: #CBD3DF; font-size: 10px; line-height: 16px; text-align: center; }
+  .sidebar-fechada .app-nav-link.ativo .nav-contador { background: var(--blue); color: #fff; }
+  /* títulos das seções viram uma linha fina */
+  .sidebar-fechada .app-sidebar-titulo { font-size: 0; height: 1px; margin: 12px 10px; background: #253145; }
+  .sidebar-fechada .side-sub > .btn-ghost-side { padding-left: 0; }
+  .sidebar-fechada .side-sub[open] { background: #1A2433; border-radius: 8px; }
+  /* usuário: avatar em cima, sair embaixo */
+  .sidebar-fechada .usuario-chip { flex-direction: column; gap: 8px; padding: 12px 0 2px; }
+  .sidebar-fechada .usuario-chip .usuario-nome { display: none; }
+  .sidebar-fechada .barra-selecao { left: calc(50% + var(--sidebar-recolhida) / 2); }
+}
+.app-sidebar-inner > .usuario-chip { margin-top: auto; }

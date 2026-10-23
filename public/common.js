@@ -474,6 +474,34 @@ $("#btn-toggle-sidebar")?.addEventListener("click", () => {
   const fechada = raiz.classList.toggle("sidebar-fechada");
   try { localStorage.setItem("fzcont_sidebar_fechada", fechada ? "1" : "0"); } catch {}
 });
+// Menu recolhido (só ícones): cada item ganha a dica com o nome, e a busca vira o atalho da paleta.
+if ($("#barra-lateral")) {
+  $$("#barra-lateral .app-nav-link, #barra-lateral .btn-ghost-side").forEach((el) => {
+    const nome = el.querySelector("span")?.textContent.trim();
+    if (nome) el.dataset.dica = nome;
+  });
+  // dica flutuante ao lado do ícone (o menu corta o que passa da borda, por isso fica no <body>)
+  let dica = null;
+  const esconderDica = () => dica && dica.classList.remove("visivel");
+  $("#barra-lateral").addEventListener("mouseover", (e) => {
+    const alvo = e.target.closest("[data-dica]");
+    if (!alvo || !document.documentElement.classList.contains("sidebar-fechada") || _telaPequena.matches) return esconderDica();
+    if (!dica) { dica = document.createElement("div"); dica.className = "dica-menu"; document.body.appendChild(dica); }
+    const r = alvo.getBoundingClientRect();
+    const cont = alvo.querySelector(".nav-contador")?.textContent.trim();
+    dica.textContent = alvo.dataset.dica + (cont ? ` · ${cont}` : "");
+    dica.style.top = `${r.top + r.height / 2}px`;
+    dica.style.left = `${r.right + 12}px`;
+    dica.classList.add("visivel");
+  });
+  $("#barra-lateral").addEventListener("mouseleave", esconderDica);
+  $("#barra-lateral").addEventListener("click", esconderDica);
+  $("#barra-lateral .busca-menu")?.addEventListener("mousedown", (e) => {
+    if (!document.documentElement.classList.contains("sidebar-fechada") || _telaPequena.matches) return;
+    e.preventDefault();
+    if (typeof abrirPaleta === "function") abrirPaleta();
+  });
+}
 if ($("#barra-lateral")) {
   const veu = document.createElement("div");
   veu.className = "sidebar-veu";
