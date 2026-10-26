@@ -774,7 +774,7 @@ const ROBO_MAX_TAREFAS = 200;
 
 async function lerEstadoRobos(env) {
   const e = (await env.SFC_KV.get("robo:estado", "json")) || {};
-  return { robos: e.robos || [], tarefas: e.tarefas || [] };
+  return { ...e, robos: e.robos || [], tarefas: e.tarefas || [] };
 }
 async function gravarEstadoRobos(env, estado) {
   estado.tarefas = estado.tarefas.slice(-ROBO_MAX_TAREFAS);
@@ -1271,7 +1271,7 @@ export default {
           const cad = (await env.KV_EMPRESAS.get("nfae_cadastros", "json")) || {};
           emitentes = (cad.emitentes || []).map(({ id, nome, usuario }) => ({ id, nome, usuario }));
         }
-        return json({ tarefa: tarefa ? { id: tarefa.id, tipo: tarefa.tipo, dados: tarefa.dados, criadoEm: tarefa.criadoEm } : null, emitentes, pendentes: estado.tarefas.filter((t) => t.status === "pendente").length });
+        return json({ tarefa: tarefa ? { id: tarefa.id, tipo: tarefa.tipo, dados: tarefa.dados, criadoEm: tarefa.criadoEm } : null, emitentes, emitentesVersao: estado.emitentesVersao || 0, pendentes: estado.tarefas.filter((t) => t.status === "pendente").length });
       }
 
       // Resultado da tarefa (com PDF/XML/print da tela) — arquivos vão para o R2
@@ -1870,6 +1870,12 @@ export default {
         const tamanho = JSON.stringify(novo).length;
         if (tamanho > 2 * 1024 * 1024) return json({ erro: "Cadastro grande demais (máx. 2 MB)." }, 400);
         await env.KV_EMPRESAS.put("nfae_cadastros", JSON.stringify(novo));
+        // emitentes mudaram: avisa o robô (ele vê a "versão" na próxima pergunta, sem custo extra)
+        if (JSON.stringify(novo.emitentes) !== JSON.stringify(atual.emitentes || [])) {
+          const estado = await lerEstadoRobos(env);
+          estado.emitentesVersao = Date.now();
+          await gravarEstadoRobos(env, estado);
+        }
         return json({ ok: true, ...novo });
       }
 
