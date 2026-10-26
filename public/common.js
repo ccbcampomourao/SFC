@@ -1173,6 +1173,7 @@ const _PAGINAS_PALETA = [
   { rotulo: "Parcelamentos", ic: "parcelamentos", href: "/parcelamentos.html" },
   { rotulo: "Situação Fiscal", ic: "situacao", href: "/situacao-fiscal.html" },
   { rotulo: "XML NFS-e", ic: "xml", href: "/xml-nfse.html" },
+  { rotulo: "NFA-e (nota avulsa PR)", ic: "documento", href: "/nfae.html" },
   { rotulo: "IntegraContador", ic: "governo", href: "/integracontador.html" },
 ];
 // Ações: só aparecem quando o botão existe na página atual (reaproveita o que o botão já faz).

@@ -762,6 +762,81 @@ async function criarLinkCompartilhado(env, { ids, titulo, expiraMs, username, or
   return { url: `${origem}/d/${token}`, expiraEm, arquivos: arquivos.length };
 }
 
+
+// ---------------------------------------------------------------------------
+// ROBÔS DO ESCRITÓRIO (Agente Prumo num computador do escritório)
+// Tudo fica numa chave só ("robo:estado") para que cada "tem tarefa?" do agente
+// custe UMA leitura no KV. Gravações só quando algo muda (ou o "visto" envelhece).
+// ---------------------------------------------------------------------------
+const ROBO_VISTO_GRAVA_MS = 10 * 60 * 1000;   // atualiza "visto há…" no máximo a cada 10 min
+const ROBO_TAREFA_PRESA_MS = 15 * 60 * 1000;  // tarefa "em andamento" sem resposta vira "interrompida"
+const ROBO_MAX_TAREFAS = 200;
+
+async function lerEstadoRobos(env) {
+  const e = (await env.SFC_KV.get("robo:estado", "json")) || {};
+  return { robos: e.robos || [], tarefas: e.tarefas || [] };
+}
+async function gravarEstadoRobos(env, estado) {
+  estado.tarefas = estado.tarefas.slice(-ROBO_MAX_TAREFAS);
+  await env.SFC_KV.put("robo:estado", JSON.stringify(estado));
+}
+async function sha256Hex(texto) {
+  return bufParaHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(texto)));
+}
+// tarefas que ficaram "em andamento" sem resposta: NÃO voltam sozinhas para a fila
+// (poderia emitir nota em duplicidade) — ficam "interrompida" para alguém conferir.
+function marcarTarefasPresas(estado) {
+  let mudou = false;
+  const agora = Date.now();
+  for (const t of estado.tarefas) {
+    if (t.status === "em_andamento" && agora - Date.parse(t.iniciadoEm || 0) > ROBO_TAREFA_PRESA_MS) {
+      Object.assign(t, { status: "interrompida", mensagem: "O robô parou de responder no meio da tarefa. Confira no portal se a nota saiu antes de mandar de novo.", finalizadoEm: new Date().toISOString() });
+      mudou = true;
+    }
+  }
+  return mudou;
+}
+function roboPublico(r) {
+  return { id: r.id, nome: r.nome, criadoEm: r.criadoEm, vistoEm: r.vistoEm || null, versao: r.versao || null, emitentesComSenha: r.emitentesComSenha || [], online: !!r.vistoEm && Date.now() - Date.parse(r.vistoEm) < ROBO_VISTO_GRAVA_MS + 5 * 60 * 1000 };
+}
+function tarefaPublica(t) {
+  const { dados, ...resto } = t;
+  return { ...resto, resumo: t.tipo === "nfae" && dados ? { cliente: dados.cliente?.nome || dados.cliente?.razao_social, cnpj: dados.cliente?.cnpj, itens: (dados.itens || []).length, total: (dados.itens || []).reduce((s, i) => s + (Number(i.qtd) || 0) * valorBr(i.valor), 0), emitenteId: dados.emitenteId } : null };
+}
+function valorBr(v) {
+  const t = String(v ?? "").trim();
+  if (!t) return 0;
+  return Number(t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t) || 0;
+}
+async function roboDaRequisicao(request, env, estado) {
+  const auth = request.headers.get("Authorization") || "";
+  const token = /^Bearer ([a-f0-9]{64})$/.exec(auth)?.[1];
+  if (!token) return null;
+  const h = await sha256Hex(token);
+  return estado.robos.find((r) => r.tokenHash === h) || null;
+}
+// valida o pedido de NFA-e antes de mandar ao robô (o robô transmite sozinho!)
+function validarPedidoNfae(d, cadastros) {
+  const erros = [];
+  const emitente = (cadastros.emitentes || []).find((e) => e.id === d.emitenteId);
+  if (!emitente) erros.push("Escolha o emitente (login da Receita-PR).");
+  const c = d.cliente || {};
+  const cnpj = String(c.cnpj || "").replace(/\D/g, "");
+  if (cnpj.length !== 14 || !cnpjValido(cnpj)) erros.push("CNPJ do destinatário inválido.");
+  if (!String(c.ie || "").replace(/\D/g, "")) erros.push("Falta a inscrição estadual do destinatário.");
+  for (const campo of ["nome", "cep", "logradouro", "numero", "bairro", "municipio"]) if (!String(c[campo] || "").trim() && !(campo === "nome" && c.razao_social)) erros.push(`Falta “${campo}” do destinatário.`);
+  const itens = Array.isArray(d.itens) ? d.itens : [];
+  if (!itens.length) erros.push("Adicione pelo menos um produto.");
+  if (itens.length > 60) erros.push("No máximo 60 produtos por nota.");
+  itens.forEach((i, n) => {
+    if (!String(i.codigo || "").trim() || !String(i.descricao || "").trim()) erros.push(`Produto ${n + 1}: falta código ou descrição.`);
+    if (!/^\d{8}$/.test(String(i.ncm || "").replace(/\D/g, ""))) erros.push(`Produto ${n + 1}: NCM precisa ter 8 números.`);
+    if (!(Number(i.qtd) > 0)) erros.push(`Produto ${n + 1}: quantidade precisa ser maior que zero.`);
+    if (!(valorBr(i.valor) > 0)) erros.push(`Produto ${n + 1}: valor precisa ser maior que zero.`);
+  });
+  return { erros, emitente };
+}
+
 // ---------------------------------------------------------------------------
 // NFS-e — IPM / Atende.Net (Campo Mourão). Manual: NTE 35/2021 v2.9.
 // Consulta por número + série + cadastro econômico; login = CPF/CNPJ do emissor + senha
@@ -1154,6 +1229,77 @@ export default {
         const ascii = nome.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w.\- ]+/g, "_");
         headers.set("Content-Disposition", `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(nome)}`);
         return new Response(obj.body, { headers });
+      }
+
+      // ---------- AGENTE PRUMO (computador do escritório) — autenticado pela chave da máquina ----------
+      if (pathname === "/api/robo/vincular" && request.method === "POST") {
+        const { codigo, nome } = await request.json().catch(() => ({}));
+        const cod = String(codigo || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+        const reg = cod.length === 6 ? await env.SFC_KV.get(`robo-codigo:${cod}`, "json") : null;
+        if (!reg) return json({ erro: "Código inválido ou vencido. Gere um novo no Prumo (NFA-e → Robôs → Vincular computador)." }, 400);
+        await env.SFC_KV.delete(`robo-codigo:${cod}`); // código vale uma vez só
+        const token = bufParaHex(crypto.getRandomValues(new Uint8Array(32)));
+        const estado = await lerEstadoRobos(env);
+        const robo = { id: crypto.randomUUID(), nome: String(nome || "Computador do escritório").slice(0, 60), tokenHash: await sha256Hex(token), criadoEm: new Date().toISOString(), criadoPor: reg.username, vistoEm: new Date().toISOString(), emitentesComSenha: [] };
+        estado.robos.push(robo);
+        await gravarEstadoRobos(env, estado);
+        return json({ token, robo: roboPublico(robo) });
+      }
+
+      // Um pedido por ciclo: avisa que está vivo, conta quais senhas tem e recebe a próxima tarefa
+      if (pathname === "/api/robo/ciclo" && request.method === "POST") {
+        const estado = await lerEstadoRobos(env);
+        const robo = await roboDaRequisicao(request, env, estado);
+        if (!robo) return json({ erro: "Este computador não está vinculado (ou foi desvinculado no Prumo).", desvinculado: true }, 401);
+        const corpo = await request.json().catch(() => ({}));
+        let mudou = marcarTarefasPresas(estado);
+        const agora = Date.now();
+        const senhas = Array.isArray(corpo.emitentesComSenha) ? corpo.emitentesComSenha.filter((x) => typeof x === "string").slice(0, 50).sort() : robo.emitentesComSenha || [];
+        if (!robo.vistoEm || agora - Date.parse(robo.vistoEm) > ROBO_VISTO_GRAVA_MS || JSON.stringify(senhas) !== JSON.stringify(robo.emitentesComSenha || []) || corpo.versao !== robo.versao) {
+          Object.assign(robo, { vistoEm: new Date().toISOString(), emitentesComSenha: senhas, versao: String(corpo.versao || "").slice(0, 20) || null });
+          mudou = true;
+        }
+        let tarefa = null;
+        const ocupado = estado.tarefas.some((t) => t.status === "em_andamento" && t.roboId === robo.id);
+        if (!ocupado && corpo.livre !== false) {
+          tarefa = estado.tarefas.find((t) => t.status === "pendente");
+          if (tarefa) { Object.assign(tarefa, { status: "em_andamento", roboId: robo.id, roboNome: robo.nome, iniciadoEm: new Date().toISOString() }); mudou = true; }
+        }
+        if (mudou) await gravarEstadoRobos(env, estado);
+        let emitentes = undefined;
+        if (corpo.querEmitentes || tarefa) {
+          const cad = (await env.KV_EMPRESAS.get("nfae_cadastros", "json")) || {};
+          emitentes = (cad.emitentes || []).map(({ id, nome, usuario }) => ({ id, nome, usuario }));
+        }
+        return json({ tarefa: tarefa ? { id: tarefa.id, tipo: tarefa.tipo, dados: tarefa.dados, criadoEm: tarefa.criadoEm } : null, emitentes, pendentes: estado.tarefas.filter((t) => t.status === "pendente").length });
+      }
+
+      // Resultado da tarefa (com PDF/XML/print da tela) — arquivos vão para o R2
+      if (pathname === "/api/robo/resultado" && request.method === "POST") {
+        const estado = await lerEstadoRobos(env);
+        const robo = await roboDaRequisicao(request, env, estado);
+        if (!robo) return json({ erro: "Não vinculado.", desvinculado: true }, 401);
+        const corpo = await request.json().catch(() => ({}));
+        const t = estado.tarefas.find((x) => x.id === corpo.tarefaId);
+        if (!t || t.roboId !== robo.id) return json({ erro: "Tarefa não encontrada para este computador." }, 404);
+        const arquivos = [];
+        for (const a of (Array.isArray(corpo.arquivos) ? corpo.arquivos : []).slice(0, 6)) {
+          const nome = String(a.nome || "arquivo").replace(/[^\w.\- ]+/g, "_").slice(0, 80);
+          if (!a.base64 || a.base64.length > 14 * 1024 * 1024) continue;
+          await env.ANEXOS_R2.put(`robo/${t.id}/${nome}`, Buffer.from(a.base64, "base64"), { httpMetadata: { contentType: String(a.tipo || "application/octet-stream") }, customMetadata: { nome } });
+          arquivos.push({ nome, tipo: String(a.tipo || "") });
+        }
+        const ok = corpo.status === "concluida";
+        Object.assign(t, {
+          status: ok ? "concluida" : corpo.status === "conferir" ? "conferir" : "erro",
+          mensagem: String(corpo.mensagem || (ok ? "Concluída." : "Falhou.")).slice(0, 1500),
+          numeroNota: corpo.numeroNota ? String(corpo.numeroNota).slice(0, 30) : t.numeroNota || null,
+          arquivos: [...(t.arquivos || []), ...arquivos],
+          finalizadoEm: new Date().toISOString(),
+        });
+        robo.vistoEm = new Date().toISOString();
+        await gravarEstadoRobos(env, estado);
+        return json({ ok: true });
       }
 
       // A partir daqui, tudo exige login
@@ -1683,6 +1829,104 @@ export default {
         const id = pathname.replace("/api/anexos/", "");
         await env.ANEXOS_R2.delete(`anexos/${id}`);
         return json({ ok: true });
+      }
+
+      // ---------- ROBÔS: vincular / listar / desvincular ----------
+      if (pathname === "/api/robos" && request.method === "GET") {
+        const estado = await lerEstadoRobos(env);
+        if (marcarTarefasPresas(estado)) await gravarEstadoRobos(env, estado);
+        return json({ robos: estado.robos.map(roboPublico) });
+      }
+      if (pathname === "/api/robos/codigo" && request.method === "POST") {
+        const letras = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sem 0/O/1/I para não confundir
+        const bytes = crypto.getRandomValues(new Uint8Array(6));
+        const codigo = [...bytes].map((b) => letras[b % letras.length]).join("");
+        await env.SFC_KV.put(`robo-codigo:${codigo}`, JSON.stringify({ username }), { expirationTtl: 600 });
+        return json({ codigo: `${codigo.slice(0, 3)}-${codigo.slice(3)}`, expiraEm: new Date(Date.now() + 600000).toISOString() });
+      }
+      if (pathname.startsWith("/api/robos/") && request.method === "DELETE") {
+        const id = pathname.slice("/api/robos/".length);
+        const estado = await lerEstadoRobos(env);
+        const antes = estado.robos.length;
+        estado.robos = estado.robos.filter((r) => r.id !== id);
+        if (estado.robos.length === antes) return json({ erro: "Computador não encontrado." }, 404);
+        await gravarEstadoRobos(env, estado);
+        return json({ ok: true });
+      }
+
+      // ---------- NFA-e: cadastros (emitentes, clientes, produtos) ----------
+      if (pathname === "/api/nfae/cadastros" && request.method === "GET") {
+        const cad = (await env.KV_EMPRESAS.get("nfae_cadastros", "json")) || {};
+        return json({ emitentes: cad.emitentes || [], clientes: cad.clientes || {}, produtos: cad.produtos || {} });
+      }
+      if (pathname === "/api/nfae/cadastros" && request.method === "POST") {
+        const corpo = await request.json().catch(() => ({}));
+        const atual = (await env.KV_EMPRESAS.get("nfae_cadastros", "json")) || {};
+        const novo = {
+          emitentes: Array.isArray(corpo.emitentes) ? corpo.emitentes.slice(0, 50).map((e) => ({ id: String(e.id || crypto.randomUUID()).slice(0, 40), nome: String(e.nome || "").slice(0, 80), usuario: String(e.usuario || "").slice(0, 60) })).filter((e) => e.nome && e.usuario) : atual.emitentes || [],
+          clientes: corpo.clientes && typeof corpo.clientes === "object" ? corpo.clientes : atual.clientes || {},
+          produtos: corpo.produtos && typeof corpo.produtos === "object" ? corpo.produtos : atual.produtos || {},
+        };
+        const tamanho = JSON.stringify(novo).length;
+        if (tamanho > 2 * 1024 * 1024) return json({ erro: "Cadastro grande demais (máx. 2 MB)." }, 400);
+        await env.KV_EMPRESAS.put("nfae_cadastros", JSON.stringify(novo));
+        return json({ ok: true, ...novo });
+      }
+
+      // ---------- NFA-e: tarefas para o robô ----------
+      if (pathname === "/api/nfae/tarefas" && request.method === "GET") {
+        const estado = await lerEstadoRobos(env);
+        if (marcarTarefasPresas(estado)) await gravarEstadoRobos(env, estado);
+        return json({ tarefas: estado.tarefas.filter((t) => t.tipo === "nfae").slice().reverse().map(tarefaPublica), robos: estado.robos.map(roboPublico) });
+      }
+      if (pathname === "/api/nfae/tarefas" && request.method === "POST") {
+        const d = await request.json().catch(() => ({}));
+        const cad = (await env.KV_EMPRESAS.get("nfae_cadastros", "json")) || {};
+        const { erros, emitente } = validarPedidoNfae(d, cad);
+        if (erros.length) return json({ erro: erros.join(" "), erros }, 400);
+        const estado = await lerEstadoRobos(env);
+        // trava contra clique duplo: mesmo pedido idêntico ainda pendente/andando
+        const assinatura = await sha256Hex(JSON.stringify([d.emitenteId, d.cliente?.cnpj, d.itens]));
+        if (estado.tarefas.some((t) => t.assinatura === assinatura && ["pendente", "em_andamento"].includes(t.status))) return json({ erro: "Essa mesma nota já está na fila do robô." }, 409);
+        const tarefa = {
+          id: crypto.randomUUID(), tipo: "nfae", status: "pendente", criadoEm: new Date().toISOString(), criadoPor: username, assinatura,
+          dados: {
+            emitenteId: emitente.id, emitenteNome: emitente.nome,
+            cliente: Object.fromEntries(["cnpj", "ie", "nome", "razao_social", "cep", "logradouro", "numero", "bairro", "municipio", "estado", "complemento"].map((k) => [k, String(d.cliente?.[k] ?? "").trim().slice(0, 120)])),
+            itens: d.itens.map((i) => ({ codigo: String(i.codigo).trim().slice(0, 20), descricao: String(i.descricao).trim().slice(0, 120), ncm: String(i.ncm).replace(/\D/g, ""), qtd: Number(i.qtd), valor: String(i.valor).trim(), cfop: String(i.cfop || "5405").replace(/\D/g, "").slice(0, 4) || "5405", unidade: String(i.unidade || "UN").slice(0, 6) })),
+            observacao: String(d.observacao || "").slice(0, 500),
+          },
+        };
+        estado.tarefas.push(tarefa);
+        await gravarEstadoRobos(env, estado);
+        return json({ ok: true, tarefa: tarefaPublica(tarefa) });
+      }
+      if (/^\/api\/nfae\/tarefas\/[\w-]+\/(cancelar|refazer)$/.test(pathname) && request.method === "POST") {
+        const [, , , , id, acao] = pathname.split("/");
+        const estado = await lerEstadoRobos(env);
+        const t = estado.tarefas.find((x) => x.id === id);
+        if (!t) return json({ erro: "Tarefa não encontrada." }, 404);
+        if (acao === "cancelar") {
+          if (t.status !== "pendente") return json({ erro: "Só dá para cancelar o que ainda não começou." }, 400);
+          Object.assign(t, { status: "cancelada", finalizadoEm: new Date().toISOString(), mensagem: `Cancelada por ${username}.` });
+        } else {
+          if (!["erro", "interrompida", "conferir", "cancelada"].includes(t.status)) return json({ erro: "Essa tarefa não pode ser refeita." }, 400);
+          Object.assign(t, { status: "pendente", mensagem: `Mandada de novo por ${username}.`, roboId: null, iniciadoEm: null, finalizadoEm: null });
+        }
+        await gravarEstadoRobos(env, estado);
+        return json({ ok: true, tarefa: tarefaPublica(t) });
+      }
+      if (pathname.startsWith("/api/nfae/arquivo/") && request.method === "GET") {
+        const [id, ...resto] = pathname.slice("/api/nfae/arquivo/".length).split("/");
+        const nome = decodeURIComponent(resto.join("/"));
+        if (!/^[\w-]+$/.test(id) || !nome || nome.includes("..")) return json({ erro: "Arquivo inválido." }, 400);
+        const obj = await env.ANEXOS_R2.get(`robo/${id}/${nome}`);
+        if (!obj) return json({ erro: "Arquivo não encontrado." }, 404);
+        const headers = new Headers({ "X-Content-Type-Options": "nosniff" });
+        obj.writeHttpMetadata(headers);
+        const exibivel = /^(application\/pdf|image\/(png|jpeg))$/.test(headers.get("content-type") || "");
+        headers.set("Content-Disposition", `${url.searchParams.get("ver") && exibivel ? "inline" : "attachment"}; filename="${encodeURIComponent(nome)}"`);
+        return new Response(obj.body, { headers });
       }
 
       // ---------- BACKUP COMPLETO EM ARQUIVO (exportar/importar .json — cópia offline de um período) ----------

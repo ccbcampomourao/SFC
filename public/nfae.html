@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Prumo · NFA-e</title>
+<link rel="icon" href="/img/prumo-icone.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="/img/prumo-icone-180.png" />
+<meta name="theme-color" content="#16202E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <script src="/icones.js"></script>
+
+  <div id="app" class="app-shell">
+    <aside class="app-sidebar" id="barra-lateral">
+      <div class="app-sidebar-inner">
+        <a class="marca" href="/empresas.html" aria-label="Prumo — início">
+          <img class="marca-assinatura" src="/img/prumo-assinatura-escuro.svg" alt="Prumo · Controle fiscal" width="200" height="69" />
+          <img class="marca-icone" src="/img/prumo-simbolo.svg" alt="" width="26" height="44" />
+        </a>
+        <label class="campo-busca busca-menu"><svg class="ico " aria-hidden="true"><use href="#i-busca"/></svg><input type="search" id="busca" placeholder="Filtrar empresa ou CNPJ..." autocomplete="off" /><kbd>/</kbd></label>
+        <nav class="app-nav" aria-label="Páginas">
+            <a href="/empresas.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-empresas"/></svg><span>Empresas</span><em class="nav-contador" id="nav-cont-empresas"></em></a>
+            <a href="/parcelamentos.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-parcelamentos"/></svg><span>Parcelamentos</span><em class="nav-contador" id="nav-cont-parcelamentos"></em></a>
+            <a href="/situacao-fiscal.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-escudo"/></svg><span>Situação Fiscal</span></a>
+            <a href="/xml-nfse.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-xml"/></svg><span>XML NFS-e</span></a>
+            <a href="/nfae.html" class="app-nav-link ativo" aria-current="page"><svg class="ico " aria-hidden="true"><use href="#i-documento"/></svg><span>NFA-e</span></a>
+            <a href="/integracontador.html" class="app-nav-link"><svg class="ico " aria-hidden="true"><use href="#i-link"/></svg><span>IntegraContador</span></a>
+        </nav>
+
+          <div class="app-sidebar-acoes">
+            <div class="app-sidebar-titulo">Sistema</div>
+            <button class="btn-ghost-side" id="btn-usuarios"><svg class="ico " aria-hidden="true"><use href="#i-usuarios"/></svg><span>Usuários</span></button>
+          </div>
+        <div class="usuario-chip">
+          <span class="avatar-mini" id="usuario-avatar">·</span>
+          <span class="usuario-nome"><span id="usuario-logado">&nbsp;</span><small>Conectado</small></span>
+          <button class="btn-icone-side" id="btn-sair" title="Sair"><svg class="ico " aria-hidden="true"><use href="#i-sair"/></svg></button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="app-conteudo">
+      <header class="faixa-superior">
+        <button class="btn-toggle-sidebar" id="btn-toggle-sidebar" title="Abrir/fechar menu" aria-label="Abrir/fechar menu"><svg class="ico " aria-hidden="true"><use href="#i-menu"/></svg></button>
+        <div class="faixa-titulo">
+          <h1>NFA-e</h1>
+          <span>Nota Fiscal Avulsa da Receita-PR, emitida pelo robô do escritório</span>
+        </div>
+        <div class="faixa-direita"><span class="robo-status" id="robo-status-topo"></span></div>
+      </header>
+
+      <main class="conteudo conteudo-coluna">
+        <div class="nfae-abas" role="tablist" id="nfae-abas">
+          <button type="button" role="tab" data-aba="emitir" class="ativo">Emitir</button>
+          <button type="button" role="tab" data-aba="historico">Histórico <em id="nfae-cont-andamento"></em></button>
+          <button type="button" role="tab" data-aba="cadastros">Cadastros</button>
+          <button type="button" role="tab" data-aba="robo">Robô</button>
+        </div>
+        <section class="nfae-painel" data-painel="emitir"></section>
+        <section class="nfae-painel" data-painel="historico" hidden></section>
+        <section class="nfae-painel" data-painel="cadastros" hidden></section>
+        <section class="nfae-painel" data-painel="robo" hidden></section>
+      </main>
+    </div>
+  </div>
+
+  <div id="modal-fundo" class="modal-fundo oculto">
+    <div id="modal-conteudo" class="modal-conteudo" role="dialog" aria-modal="true"></div>
+  </div>
+
+  <script src="/common.js"></script>
+  <script src="/nfae.js"></script>
+</body>
+</html>
