@@ -20,6 +20,7 @@ import os
 import platform
 import queue
 import re
+import ssl
 import sys
 import threading
 import time
@@ -27,7 +28,7 @@ import traceback
 import urllib.error
 import urllib.request
 
-VERSAO = "1.1.1"
+VERSAO = "1.1.2"
 NO_WINDOWS = platform.system() == "Windows"
 PASTA = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "PrumoRobo") if NO_WINDOWS else os.path.join(os.path.expanduser("~"), ".prumo-robo")
 os.makedirs(PASTA, exist_ok=True)
@@ -113,6 +114,25 @@ def gravar_json(caminho, dados):
 # ---------------------------------------------------------------------------
 # Conversa com o Prumo
 # ---------------------------------------------------------------------------
+_CONTEXTO_SSL = None
+
+
+def contexto_ssl():
+    """Certificados confiáveis = os do Windows + a lista do pacote certifi.
+    No Windows Server o Windows vem com poucos certificados raiz (ele só baixa sob demanda,
+    pelo Edge/Windows Update) e o Python dava "CERTIFICATE_VERIFY_FAILED" ao falar com o Prumo."""
+    global _CONTEXTO_SSL
+    if _CONTEXTO_SSL is None:
+        ctx = ssl.create_default_context()
+        try:
+            import certifi  # vem junto com o Selenium
+            ctx.load_verify_locations(cafile=certifi.where())
+        except Exception:  # noqa: BLE001
+            pass
+        _CONTEXTO_SSL = ctx
+    return _CONTEXTO_SSL
+
+
 class Desvinculado(Exception):
     pass
 
@@ -132,7 +152,7 @@ class Prumo:
         if token:
             req.add_header("Authorization", "Bearer " + abrir(self.cfg["token"]))
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            with urllib.request.urlopen(req, timeout=timeout, context=contexto_ssl()) as r:
                 return json.loads(r.read().decode("utf-8") or "{}")
         except urllib.error.HTTPError as e:
             try:
@@ -142,6 +162,12 @@ class Prumo:
             if e.code == 401 and resposta.get("desvinculado"):
                 raise Desvinculado(resposta.get("erro") or "Computador desvinculado.")
             raise RuntimeError(resposta.get("erro") or f"HTTP {e.code}")
+        except urllib.error.URLError as e:
+            if isinstance(getattr(e, "reason", None), ssl.SSLError) or "CERTIFICATE" in str(e).upper():
+                raise RuntimeError("Erro de certificado ao falar com o Prumo. Neste computador (comum no Windows Server): "
+                                   "abra o endereço do Prumo uma vez no Microsoft Edge e rode o Windows Update; depois tente de novo. "
+                                   f"Detalhe: {e}")
+            raise
 
     def vincular(self, url, codigo, nome):
         url = url.strip().rstrip("/")
