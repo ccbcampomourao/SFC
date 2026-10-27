@@ -116,6 +116,11 @@
       const tipoP = /entrada/i.test(m[2]) ? "Entrada" : "Prestação";
       parcelas.push({ n: Number(m[1]), tipo: tipoP, valor: num(m[3]), saldo: num(m[8]), vencimento: `${ano}-${m[10]}-${m[9]}` });
     }
+    // inscrições em dívida ativa incluídas na negociação ("90 4 23 178241" = 90.4.23.178241)
+    const inscricoes = [];
+    const blocoDeb = (/D[ée]bitos\s+Item\s+d[ée]bitos([\s\S]*?)(?:Demonstrativo|Pagamentos|$)/i.exec(t) || [])[1] || "";
+    const reIns = /\b(\d{2})[\s.](\d)[\s.](\d{2})[\s.](\d{6})(?:[\s.-](\d{2}))?\b/g;
+    while ((m = reIns.exec(blocoDeb || t))) { const n = `${m[1]}.${m[2]}.${m[3]}.${m[4]}`; if (!inscricoes.includes(n)) inscricoes.push(n); }
     const negociacao = so(/Negocia[çc][õo]es:\s*(.+?)\s+Data da/i, t);
     const modalidade = so(/Modalidade:\s*(.+?)\s+(?:N[ºo°] do|Situa[çc][ãa]o:)/i, t);
     return {
@@ -134,6 +139,7 @@
       dataLiquidacao: iso(so(/Data Liquida[çc][ãa]o Neg\.:\s*(\d{2}\/\d{2}\/\d{4})/i, t)),
       dataRescisao: iso(so(/Data da Rescis[ãa]o:\s*(\d{2}\/\d{2}\/\d{4})/i, t)),
       parcelaBasica: (parcelas.find((p) => p.tipo === "Prestação") || parcelas[0] || {}).valor || null,
+      inscricoes,
       pagamentos,
       parcelas,
     };

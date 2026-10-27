@@ -208,6 +208,16 @@
   .sf-parc-nome small{ display:block; font-size:12px; color:var(--ink-soft); }
   .sf-parc-valores{ font-size:12.5px; color:var(--ink-soft); margin-top:8px; }
   .sf-parc-sub{ font-size:12px; color:var(--ink-soft); margin-top:3px; }
+  .sf-sistema.sf-sis-prumo{ background:var(--blue, #B4532A); }
+  .sf-parc.quitado{ border-left-color:#6A5A93; }
+  .sf-parc-barra{ height:6px; border-radius:99px; background:#EFE9DF; margin:10px 0 8px; overflow:hidden; }
+  .sf-parc-barra i{ display:block; height:100%; border-radius:inherit; background:var(--verde-vivo); }
+  .sf-parc.atraso .sf-parc-barra i{ background:var(--vermelho); } .sf-parc.quitado .sf-parc-barra i{ background:#6A5A93; }
+  .sf-parc-grade{ display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:6px 14px; font-size:12.5px; }
+  .sf-parc-grade span{ display:block; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); }
+  .sf-parc-grade b{ font-variant-numeric:tabular-nums; }
+  .sf-parc-fonte{ font-size:11.5px; color:var(--ink-3); margin-top:8px; }
+  .sf-parc-aviso{ font-size:12px; color:var(--vermelho); margin-top:6px; font-weight:600; }
   .sf-contas{ list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:8px; }
   .sf-contas li{ font-size:12.5px; padding:8px 10px; background:var(--paper-2); border-radius:8px; }
   .sf-contas li small{ color:var(--ink-3); }
@@ -505,6 +515,7 @@
 
 <script src="/common.js"></script>
 <script src="/sitfis-parser.js"></script>
+<script src="/parcelamentos-leitor.js"></script>
 <script>
   iniciarPagina();
 </script>
@@ -984,6 +995,83 @@ function htmlParcelamento(p) {
     </div>`;
 }
 
+/* ===== Parcelamentos lançados na aba Parcelamentos (extratos e-CAC/PGFN ou à mão) =====
+   Eles VALEM no lugar do mesmo parcelamento lido no relatório de situação fiscal; os que só existem
+   na aba Parcelamentos também aparecem aqui. */
+const _digSf = (s) => String(s || '').replace(/\D/g, '').replace(/^0+/, '');
+function acordosDoCnpj(cnpj) {
+  if (typeof ESTADO === 'undefined' || !ESTADO || !Array.isArray(ESTADO.parcelamentos)) return [];
+  const alvo = String(cnpj || '').replace(/\D/g, '');
+  if (!alvo) return [];
+  const p = ESTADO.parcelamentos.find((x) => String(x.cnpj || '').replace(/\D/g, '') === alvo);
+  return p && Array.isArray(p.acordos) ? p.acordos : [];
+}
+function mesclarParcelamentosSf(r, cnpj) {
+  const acordos = acordosDoCnpj(cnpj);
+  const sfParc = r.parcelamentos.filter((p) => p.sistema !== 'SISPAR').slice();
+  const grupos = r.negociacoesPgfn.map((g) => ({ ...g, contas: g.contas.slice(), inscricoes: g.inscricoes.slice() }));
+  const itens = acordos.map((a) => {
+    const item = { a, res: typeof resumoAcordo === 'function' ? resumoAcordo(a) : null, sf: [], inscricoes: [] };
+    const tipo = String(a.tipo || '');
+    if (a.orgao === 'PGFN') {
+      for (const g of grupos) {
+        const i = g.contas.findIndex((c) => (_digSf(c.numero) && _digSf(c.numero) === _digSf(a.numero)) || (_digSf(c.contaOrigem) && _digSf(c.contaOrigem) === _digSf(a.numero)));
+        if (i >= 0) { item.sf.push(g.contas[i]); g.contas.splice(i, 1); if (!g.contas.length) { item.inscricoes.push(...g.inscricoes); g.inscricoes = []; } }
+      }
+      const j = sfParc.findIndex((p) => p.orgao === 'PGFN' && _digSf(p.numero) && _digSf(p.numero) === _digSf(a.numero));
+      if (j >= 0) item.sf.push(...sfParc.splice(j, 1));
+      // inscrições que o extrato da PGFN diz serem desta negociação vêm para cá
+      const minhas = (a.inscricoes || []).map((n) => String(n).replace(/\D/g, ''));
+      if (minhas.length) for (const g of grupos) {
+        g.inscricoes = g.inscricoes.filter((ins) => {
+          const d = String(ins.inscricao || '').replace(/\D/g, '');
+          if (minhas.some((x) => d.startsWith(x))) { if (!item.inscricoes.includes(ins)) item.inscricoes.push(ins); return false; }
+          return true;
+        });
+      }
+    } else if (a.orgao === 'RFB') {
+      let j = sfParc.findIndex((p) => p.orgao === 'Receita Federal' && _digSf(p.numero) && _digSf(p.numero) === _digSf(a.numero));
+      if (j < 0 && /SIMPLES|MEI/i.test(tipo)) j = sfParc.findIndex((p) => (/MEI/i.test(tipo) && !/SIMPLES/i.test(tipo) ? p.sistema === 'PARCMEI' : p.sistema === 'PARCSN'));
+      if (j >= 0) item.sf.push(...sfParc.splice(j, 1));
+    }
+    return item;
+  });
+  return { itens, sfParc, grupos: grupos.filter((g) => g.contas.length) };
+}
+const _ORGAO_SF = { RFB: 'Receita Federal', PGFN: 'PGFN', SEFAZ: 'Estado (SEFAZ)', MUN: 'Município', OUTRO: 'Outro' };
+const _ROT_ST_SF = { em_dia: ['Em dia', 'ok'], atraso: ['Em atraso', 'erro'], quitado: ['Quitado', 'neutro'], rescindido: ['Rescindido', 'neutro'] };
+function htmlAcordoSf(it, dataRelatorio) {
+  const { a, res: r } = it;
+  if (!r) return '';
+  const atrasoSf = it.sf.some((x) => x.emAtraso);
+  const st = r.status === 'em_dia' && atrasoSf ? 'atraso' : r.status;
+  const [rot, tom] = _ROT_ST_SF[st] || [st, 'neutro'];
+  const dt = (iso) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—');
+  const mes = (m) => (m ? m.slice(5, 7) + '/' + m.slice(0, 4) : '—');
+  const prox = r.status === 'quitado' || !r.proxima ? '—' : (r.proxima.ref ? mes(r.proxima.ref) : dt(r.proxima.vencimento)) + ' · ' + fmtMoeda(r.proxima.valor);
+  const parcSf = it.sf.find((x) => x.parcelasEmAtraso);
+  return `
+    <div class="sf-parc sf-busca ${st === 'atraso' ? 'atraso' : st === 'quitado' ? 'quitado' : ''}">
+      <div class="sf-parc-topo">
+        <span class="sf-sistema sf-sis-prumo">${escapeHtml(a.orgao === 'PGFN' ? 'PGFN' : a.orgao === 'RFB' ? 'RECEITA' : (_ORGAO_SF[a.orgao] || a.orgao).toUpperCase())}</span>
+        <span class="sf-parc-nome"><b>${escapeHtml(a.tipo || 'Parcelamento')}</b><small>${escapeHtml(_ORGAO_SF[a.orgao] || a.orgao)}${a.numero ? ' · nº <span class="mono">' + escapeHtml(a.numero) + '</span>' : ''}${a.situacao ? ' · ' + escapeHtml(a.situacao) : ''}</small></span>
+        ${etiqueta(r.atrasadas ? `${r.atrasadas} parcela${r.atrasadas > 1 ? 's' : ''} vencida${r.atrasadas > 1 ? 's' : ''}` : rot, tom)}
+      </div>
+      <div class="sf-parc-barra"><i style="width:${Math.round((r.progresso || 0) * 100)}%"></i></div>
+      <div class="sf-parc-grade">
+        <div><span>Pagas</span><b>${r.pagas ?? '—'} de ${r.total ?? '?'}</b></div>
+        <div><span>Em aberto</span><b>${r.status === 'quitado' ? 0 : r.abertas ?? '—'}</b></div>
+        <div><span>Valor da parcela</span><b>${fmtMoeda(r.valorParcela || 0)}</b></div>
+        <div><span>${r.estimado && r.status !== 'quitado' ? 'Saldo estimado' : 'Saldo devedor'}</span><b>${r.status === 'quitado' ? fmtMoeda(0) : (r.estimado ? '≈ ' : '') + fmtMoeda(r.saldo || 0)}</b></div>
+        <div><span>Próxima parcela</span><b>${prox}</b></div>
+        <div><span>Término</span><b>${r.termino ? (r.estimado ? mes(r.termino.slice(0, 7)) : dt(r.termino)) : '—'}</b></div>
+      </div>
+      ${atrasoSf ? `<div class="sf-parc-aviso">${icone('alerta')} O relatório de situação fiscal${dataRelatorio ? ' de ' + escapeHtml(dataRelatorio) : ''} aponta ${parcSf ? parcSf.parcelasEmAtraso + ' parcela(s) em atraso' : 'atraso'} neste parcelamento.</div>` : ''}
+      ${it.inscricoes.length ? `<div class="sf-subtitulo">Inscrições negociadas (${it.inscricoes.length})</div>${it.inscricoes.map(htmlInscricao).join('')}` : ''}
+      <div class="sf-parc-fonte">Dados da aba Parcelamentos · atualizado em ${dt(a.atualizadoEm)}${a.manual ? ' (informado pelo escritório)' : (a.fontes || []).length ? ' (extrato ' + (a.orgao === 'PGFN' ? 'da PGFN' : 'do e-CAC') + ')' : ''}${it.sf.length ? ' · substitui o que o relatório de situação fiscal mostra para este parcelamento' : ''}</div>
+    </div>`;
+}
+
 function htmlNegociacaoPgfn(g) {
   const contas = g.contas.map((c) => `
     <li><span class="mono sf-num">Conta ${escapeHtml(c.numero)}</span> ${escapeHtml(c.descricao)}${c.contaOrigem ? ` <small>(saldo transferido da conta ${escapeHtml(c.contaOrigem)})</small>` : ''}
@@ -1028,10 +1116,15 @@ function htmlSimples(r) {
   return html;
 }
 
+// Quando os dados do sistema (inclusive a aba Parcelamentos) terminam de carregar, refaz a empresa aberta.
+function renderizarPagina() {
+  if (empresaAtiva && empresasMap[empresaAtiva]) renderDetalheEmpresa(empresaAtiva);
+}
+
 function renderDetalheEmpresa(chave) {
   const emp = empresasMap[chave];
   const r = analisarEmpresa(chave);
-  const t = r.totais;
+  const t = { ...r.totais }; // cópia: os parcelamentos da aba Parcelamentos ajustam os números sem mexer no cache
 
   document.getElementById('page-title').textContent = 'Situação Fiscal';
   document.getElementById('page-sub').textContent = `Relatório de ${r.dataRelatorio || 'data não identificada'}${emp.origem ? ' · baixado pelo IntegraContador' : ''}`;
@@ -1050,8 +1143,10 @@ function renderDetalheEmpresa(chave) {
     r.processos.filter((p) => !p.suspenso).map((p) => `<div class="sf-linha sf-busca"><span class="sf-linha-icone erro">${icone('arquivo')}</span><span class="sf-linha-texto"><b>Processo fiscal <span class="mono">${escapeHtml(p.processo)}</span></b><small>${escapeHtml(p.situacao)}${p.localizacao ? ' · ' + escapeHtml(p.localizacao) : ''}</small></span>${etiqueta('Pendente', 'erro')}</div>`).join('') +
     r.outrasPendencias.map((o) => `<div class="sf-linha sf-busca"><span class="sf-linha-icone erro">${icone('alerta')}</span><span class="sf-linha-texto"><b>${escapeHtml(o.titulo)}</b><small>${escapeHtml(o.texto)}</small></span>${etiqueta('Pendente', 'erro')}</div>`).join('');
 
-  const parcelamentosHtml = r.parcelamentos.filter((p) => p.sistema !== 'SISPAR').map(htmlParcelamento).join('') +
-    r.negociacoesPgfn.map(htmlNegociacaoPgfn).join('') +
+  const mescla = mesclarParcelamentosSf(r, emp.cnpj);
+  const parcelamentosHtml = mescla.itens.map((it) => htmlAcordoSf(it, r.dataRelatorio)).join('') +
+    mescla.sfParc.map(htmlParcelamento).join('') +
+    mescla.grupos.map(htmlNegociacaoPgfn).join('') +
     (r.inscricoesNegociadasSemConta.length ? `<div class="sf-subtitulo">Inscrições negociadas sem conta identificada</div>${r.inscricoesNegociadasSemConta.map(htmlInscricao).join('')}` : '');
 
   const suspensosHtml =
@@ -1061,6 +1156,14 @@ function renderDetalheEmpresa(chave) {
     r.processos.filter((p) => p.suspenso).map((p) => `<div class="sf-linha sf-busca"><span class="sf-linha-icone">${icone('arquivo')}</span><span class="sf-linha-texto"><b>Processo <span class="mono">${escapeHtml(p.processo)}</span></b><small>${escapeHtml(p.situacao)} ${escapeHtml(p.localizacao || '')}</small></span>${etiqueta('Suspenso', 'aviso')}</div>`).join('');
 
   const nadaReconhecido = !r.secoesReconhecidas && !r.rfbSemPendencias && !r.pgfnSemPendencias;
+  // parcelamentos já mesclados com a aba Parcelamentos (conta cada parcelamento uma vez só)
+  const ativoAcordo = (it) => it.res && (it.res.status === 'em_dia' || it.res.status === 'atraso');
+  const atrasoAcordo = (it) => it.res && (it.res.status === 'atraso' || (it.res.status === 'em_dia' && it.sf.some((x) => x.emAtraso)));
+  const qtdParcMescla = mescla.itens.filter(ativoAcordo).length + mescla.sfParc.length + mescla.grupos.length;
+  const qtdParcAtrasoMescla = mescla.itens.filter(atrasoAcordo).length + mescla.sfParc.filter((p) => p.emAtraso).length + mescla.grupos.filter((g) => g.emAtraso).length;
+  const saldoAcordos = mescla.itens.filter(ativoAcordo).reduce((s, it) => s + (it.res.saldo || 0), 0);
+  const saldoEstimado = mescla.itens.some((it) => ativoAcordo(it) && it.res.estimado);
+  if (mescla.itens.length) { t.qtdParcelamentos = qtdParcMescla; t.qtdParcelamentosAtraso = qtdParcAtrasoMescla; }
 
   // ---------- Cabeçalho do relatório (capa) ----------
   const v = r.veredito.chave;
@@ -1099,7 +1202,8 @@ function renderDetalheEmpresa(chave) {
   const cartoesValor = [
     cartao('sec-rfb', t.emAbertoRfb ? 'erro' : 'ok', fmtMoeda(t.emAbertoRfb), 'Em aberto na Receita', t.qtdDebitosAbertos ? plural(t.qtdDebitosAbertos, 'débito vencido', 'débitos vencidos') : 'nenhum débito vencido', 'situacao'),
     t.valorParcelasAtraso ? cartao('sec-parc', 'erro', fmtMoeda(t.valorParcelasAtraso), 'Parcelas em atraso', 'em parcelamentos', 'parcelamentos') : '',
-    t.suspensoParcelado ? cartao('sec-parc', 'info', fmtMoeda(t.suspensoParcelado), 'Saldo parcelado', 'suspenso — não é cobrado à parte', 'parcelamentos') : '',
+    saldoAcordos ? cartao('sec-parc', 'info', (saldoEstimado ? '≈ ' : '') + fmtMoeda(saldoAcordos), 'Saldo dos parcelamentos', 'conforme a aba Parcelamentos', 'parcelamentos')
+      : t.suspensoParcelado ? cartao('sec-parc', 'info', fmtMoeda(t.suspensoParcelado), 'Saldo parcelado', 'suspenso — não é cobrado à parte', 'parcelamentos') : '',
     t.qtdAVencer ? cartao('sec-susp', 'neutro', fmtMoeda(t.aVencer), 'A vencer', 'ainda não é dívida', 'relogio') : '',
   ].filter(Boolean);
 
