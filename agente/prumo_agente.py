@@ -28,7 +28,7 @@ import traceback
 import urllib.error
 import urllib.request
 
-VERSAO = "1.1.2"
+VERSAO = "1.1.3"
 NO_WINDOWS = platform.system() == "Windows"
 PASTA = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "PrumoRobo") if NO_WINDOWS else os.path.join(os.path.expanduser("~"), ".prumo-robo")
 os.makedirs(PASTA, exist_ok=True)
@@ -366,6 +366,40 @@ for (const el of document.querySelectorAll(".slds-form-element__help, .slds-has-
 }
 return [...t];
 """
+BOTAO_DANFE_XPATH = ("//*[self::button or self::a][contains(translate(normalize-space(.), 'danfe', 'DANFE'), 'DANFE')] | "
+                     "//*[self::button or self::a]//*[@title='DANFE'] | //*[self::button or self::a][@title='DANFE']")
+MENU_CONSULTA_XPATH = "//a[normalize-space()='NFA-e MEI e NFA-e (Modelo 55)']/following-sibling::div[1]//a[normalize-space()='Consulta']"
+
+# Na tabela da Consulta: primeira linha "Autorizada" com data de hoje (a lista vem da mais nova para a mais antiga)
+LINHA_NOTA_HOJE_JS = r"""
+const hoje = arguments[0];
+const linhas = [...document.querySelectorAll('table tbody tr')].filter((r) => r.querySelector('button'));
+for (let i = 0; i < linhas.length; i++) {
+  const tds = [...linhas[i].children].map((td) => (td.innerText || '').trim());
+  const sit = tds.find((t) => /autorizada/i.test(t)) || '';
+  if (!/^autorizada$/i.test(sit)) continue;
+  if (!tds.some((t) => t.startsWith(hoje))) continue;
+  const chave = (tds.find((t) => /^\d{44}$/.test(t.replace(/\s/g, ''))) || '').replace(/\s/g, '');
+  const protocolo = tds.find((t) => /^\d{15}$/.test(t)) || '';
+  linhas[i].setAttribute('data-prumo-linha', String(i));
+  return { indice: i, chave, protocolo };
+}
+return null;
+"""
+
+CLICAR_ICONE_LINHA_JS = r"""
+const [indice, titulo] = arguments;
+const linha = document.querySelector('tr[data-prumo-linha="' + indice + '"]');
+if (!linha) return false;
+const i = [...linha.querySelectorAll('[title]')].find((e) => (e.getAttribute('title') || '').trim().toLowerCase() === titulo.toLowerCase());
+if (!i) return false;
+const b = i.closest('button,a') || i;
+if (b.disabled) return false;
+b.scrollIntoView({ block: 'center', inline: 'center' });
+b.click();
+return true;
+"""
+
 CPF_XPATH = "/html/body/div[1]/div[2]/div[2]/div[5]/div/div[1]/div/div[2]/div[1]/div[1]/div[2]/div[2]/div[1]/input"
 
 
@@ -507,7 +541,8 @@ class RoboNfae:
                 op.add_argument(arg)
             if os.environ.get("PRUMO_CHROME_BIN"):
                 op.binary_location = os.environ["PRUMO_CHROME_BIN"]
-            op.add_experimental_option("prefs", {"download.default_directory": self.pasta, "download.prompt_for_download": False, "plugins.always_open_pdf_externally": True})
+            op.add_experimental_option("prefs", {"download.default_directory": self.pasta, "download.prompt_for_download": False, "plugins.always_open_pdf_externally": True,
+                                                 "profile.default_content_setting_values.automatic_downloads": 1, "safebrowsing.enabled": True})
             servico = CService(os.environ["PRUMO_CHROMEDRIVER"]) if os.environ.get("PRUMO_CHROMEDRIVER") else None
             self.driver = webdriver.Chrome(options=op, service=servico) if servico else webdriver.Chrome(options=op)
             self._tamanho_janela()
@@ -1139,27 +1174,121 @@ class RoboNfae:
         except Exception:  # noqa: BLE001
             texto_final = ""
         self._print("tela-final.png")
-        # baixa o PDF se a tela oferecer
-        for t in ("Imprimir", "Imprimir DANFE", "Imprimir NFA-e", "Download", "Baixar PDF", "Visualizar", "DANFE", "PDF"):
+        # DANFE: 1) botão na própria tela de resultado; 2) senão, pela Consulta de NFA-e (ícone "DANFE")
+        info = {}
+        try:
+            info = self._baixar_danfe() or {}
+        except Exception as e:  # noqa: BLE001  (a nota já foi emitida: falha aqui não pode virar "erro")
+            log(f"Não consegui baixar a DANFE automaticamente ({str(e).splitlines()[0][:120]}).")
+        return self._colher_resultado(texto_final=texto_final, extra=info)
+
+    # ---------------- DANFE / XML ----------------
+    def _arquivos_pdf(self):
+        try:
+            return {f for f in os.listdir(self.pasta) if f.lower().endswith(".pdf")}
+        except OSError:
+            return set()
+
+    def _esperar_download(self, antes, ext=".pdf", tempo=30):
+        fim = time.time() + tempo
+        while time.time() < fim:
             try:
-                xp = f"//*[self::button or self::a][normalize-space(.)={self._literal(t)}]"
-                els = [e for e in self.driver.find_elements("xpath", xp) if e.is_displayed()]
-                if els:
-                    abas = set(self.driver.window_handles)
-                    els[0].click()
-                    time.sleep(5)
-                    for h in [h for h in self.driver.window_handles if h not in abas]:
-                        try:
-                            self.driver.switch_to.window(h)
-                            self.driver.save_screenshot(os.path.join(self.pasta, "nota.png"))
-                            self.driver.close()
-                        except Exception:  # noqa: BLE001
-                            pass
-                    self.driver.switch_to.window(list(abas)[0] if abas else self.driver.window_handles[0])
-                    break
+                novos = [f for f in os.listdir(self.pasta) if f.lower().endswith(ext) and f not in antes]
+                pendentes = [f for f in os.listdir(self.pasta) if f.endswith((".crdownload", ".part", ".tmp"))]
+            except OSError:
+                novos, pendentes = [], []
+            if novos and not pendentes:
+                return novos
+            time.sleep(0.7)
+        return []
+
+    def _baixar_danfe(self):
+        antes = self._arquivos_pdf()
+        # 1) a própria tela depois do "Emitir" tem algo com "DANFE"?
+        for el in self.driver.find_elements("xpath", BOTAO_DANFE_XPATH):
+            try:
+                if not el.is_displayed():
+                    continue
+                alvo = el if el.tag_name.lower() in ("button", "a") else self.driver.execute_script("return arguments[0].closest('button,a') || arguments[0];", el)
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", alvo)
+                alvo.click()
+                if self._esperar_download(antes, tempo=20):
+                    log("DANFE baixada pela tela de resultado.")
+                    return {}
             except Exception:  # noqa: BLE001
                 continue
-        return self._colher_resultado(texto_final=texto_final)
+        # 2) Consulta de NFA-e, filtrando pelo destinatário desta nota
+        return self._danfe_pela_consulta(antes)
+
+    def _danfe_pela_consulta(self, antes):
+        from selenium.webdriver.common.keys import Keys
+        from selenium.webdriver.support.ui import Select
+        c = self.d["cliente"]
+        doc = re.sub(r"\D", "", c.get("cnpj") or c.get("cpf") or "")
+        log("Abrindo a Consulta de NFA-e para baixar a DANFE…")
+        self.driver.get(self.sel["url_login"])
+        time.sleep(2)
+        menu = self._achar(self.sel["menu_nfae"], tempo=20)
+        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", menu)
+        consulta = None
+        for _ in range(3):
+            try:
+                menu.click()
+            except Exception:  # noqa: BLE001
+                self.driver.execute_script("arguments[0].click();", menu)
+            time.sleep(1.2)
+            try:
+                consulta = self._achar(self.sel.get("menu_consulta") or MENU_CONSULTA_XPATH, tempo=4, clicavel=True)
+                break
+            except PassoFalhou:
+                consulta = None
+        if consulta is None:
+            raise PassoFalhou("Não achei “Consulta” no menu da NFA-e.")
+        consulta.click()
+        fim = time.time() + 25
+        while "/consulta" not in (self.driver.current_url or "") and time.time() < fim:
+            time.sleep(0.5)
+        time.sleep(2)
+        hoje = time.strftime("%d/%m/%Y")
+        for tentativa in range(4):  # a nota pode levar alguns segundos para aparecer na consulta
+            selects = [e for e in self.driver.find_elements("css selector", "select") if e.is_displayed()]
+            if len(selects) < 2:
+                raise PassoFalhou("A tela de Consulta de NFA-e não carregou.")
+            emit = Select(selects[0])
+            if emit.first_selected_option.text.strip().lower().startswith("selecione") and len(emit.options) > 1:
+                emit.select_by_index(1)
+                time.sleep(0.6)
+            selects = [e for e in self.driver.find_elements("css selector", "select") if e.is_displayed()]
+            filtro = Select(selects[1])
+            op = next((o for o in filtro.options if o.text.strip().lower().startswith("destinat")), None)
+            if op:
+                filtro.select_by_visible_text(op.text)
+                time.sleep(0.8)
+            campo = next((e for e in self.driver.find_elements("css selector", "input[type=text]")
+                          if e.is_displayed() and e.get_attribute("id") != "PesquisaBusca" and not re.search(r"per[ií]odo", e.get_attribute("placeholder") or "", re.I)), None)
+            if campo is None:
+                raise PassoFalhou("Não achei o campo do CPF/CNPJ do destinatário na Consulta.")
+            campo.click(); campo.send_keys(Keys.CONTROL, "a"); campo.send_keys(Keys.BACKSPACE); campo.send_keys(doc)
+            self._botao_texto("Consultar")
+            time.sleep(3)
+            linha = self.driver.execute_script(LINHA_NOTA_HOJE_JS, hoje)
+            if linha:
+                break
+            log("A nota ainda não apareceu na Consulta; esperando um pouco…")
+            time.sleep(8)
+        else:
+            raise PassoFalhou("A nota emitida hoje não apareceu na Consulta de NFA-e.")
+        chave, protocolo = linha.get("chave") or "", linha.get("protocolo") or ""
+        numero = str(int(chave[25:34])) if len(chave) == 44 and chave.isdigit() else None
+        # DANFE (ícone com title exatamente "DANFE" — nunca o "Cancelar" da mesma linha)
+        if self.driver.execute_script(CLICAR_ICONE_LINHA_JS, linha["indice"], "DANFE"):
+            if self._esperar_download(antes, tempo=40):
+                log(f"DANFE baixada pela Consulta (nota nº {numero or '?'}).")
+        antes_xml = {f for f in os.listdir(self.pasta) if f.lower().endswith(".xml")}
+        if self.driver.execute_script(CLICAR_ICONE_LINHA_JS, linha["indice"], "Obter XML da nota"):
+            self._esperar_download(antes_xml, ext=".xml", tempo=15)
+        return {"numero": numero, "chave": chave, "protocolo": protocolo}
+
 
     def _aprender(self):
         """Primeira emissão: alguém termina a nota na tela; o robô grava os passos."""
@@ -1203,7 +1332,7 @@ class RoboNfae:
         time.sleep(3)
         return self._colher_resultado(aprendizado=True)
 
-    def _colher_resultado(self, aprendizado=False, texto_final=None):
+    def _colher_resultado(self, aprendizado=False, texto_final=None, extra=None):
         texto = texto_final or ""
         if not texto:
             try:
@@ -1221,8 +1350,14 @@ class RoboNfae:
             arquivos.append(tela)
         erro_tela = re.search(r"(rejei|erro|inv[aá]lid|n[aã]o foi poss)", texto[:3000], re.I)
         tem_pdf = any(a.lower().endswith(".pdf") for a in arquivos)
+        extra = extra or {}
+        if extra.get("numero"):
+            numero = extra["numero"]
+        detalhes = "".join([f" Chave {extra['chave']}." if extra.get("chave") else "", f" Protocolo {extra['protocolo']}." if extra.get("protocolo") else ""])
+        if extra.get("chave"):  # achada como "Autorizada" na Consulta do portal
+            return {"status": "concluida", "mensagem": "NFA-e emitida e autorizada." + detalhes + ("" if tem_pdf else " (Não consegui baixar a DANFE: baixe pela Consulta no portal.)"), "numero": numero, "arquivos": arquivos}
         if (numero or tem_pdf) and not erro_tela:
-            return {"status": "concluida", "mensagem": "NFA-e emitida pelo robô." + (" (primeira emissão: passos aprendidos)" if aprendizado else ""), "numero": numero, "arquivos": arquivos}
+            return {"status": "concluida", "mensagem": "NFA-e emitida pelo robô." + detalhes + (" (primeira emissão: passos aprendidos)" if aprendizado else ""), "numero": numero, "arquivos": arquivos}
         return {"status": "conferir", "mensagem": "O robô terminou, mas não confirmou a emissão na tela" + (f" (a tela fala em “{erro_tela.group(0)}”)" if erro_tela else "") + ". Veja a imagem da tela final e confira no portal.", "numero": numero, "arquivos": arquivos}
 
     def _simular(self):
