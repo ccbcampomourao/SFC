@@ -1290,9 +1290,12 @@ export default {
           arquivos.push({ nome, tipo: String(a.tipo || "") });
         }
         const ok = corpo.status === "concluida";
+        // cancelada no Prumo enquanto o robô trabalhava: continua cancelada, a não ser que a nota tenha SAÍDO
+        const jaCancelada = t.status === "cancelada";
         Object.assign(t, {
-          status: ok ? "concluida" : corpo.status === "conferir" ? "conferir" : "erro",
-          mensagem: String(corpo.mensagem || (ok ? "Concluída." : "Falhou.")).slice(0, 1500),
+          status: ok ? "concluida" : jaCancelada || corpo.status === "cancelada" ? "cancelada" : corpo.status === "conferir" ? "conferir" : "erro",
+          mensagem: (ok && jaCancelada ? "Atenção: foi cancelada no Prumo, mas o robô já tinha emitido a nota. " : "") +
+            String(corpo.mensagem || (ok ? "Concluída." : "Falhou.")).slice(0, 1500),
           numeroNota: corpo.numeroNota ? String(corpo.numeroNota).slice(0, 30) : t.numeroNota || null,
           arquivos: [...(t.arquivos || []), ...arquivos],
           finalizadoEm: new Date().toISOString(),
@@ -1300,6 +1303,16 @@ export default {
         robo.vistoEm = new Date().toISOString();
         await gravarEstadoRobos(env, estado);
         return json({ ok: true });
+      }
+
+      if (pathname === "/api/robo/situacao" && request.method === "POST") {
+        const estado = await lerEstadoRobos(env);
+        const robo = await roboDaRequisicao(request, env, estado);
+        if (!robo) return json({ erro: "Não vinculado.", desvinculado: true }, 401);
+        const corpo = await request.json().catch(() => ({}));
+        const t = estado.tarefas.find((x) => x.id === corpo.tarefaId);
+        if (!t || t.roboId !== robo.id) return json({ erro: "Tarefa não encontrada para este computador." }, 404);
+        return json({ status: t.status });
       }
 
       // A partir daqui, tudo exige login
@@ -1913,8 +1926,10 @@ export default {
         const t = estado.tarefas.find((x) => x.id === id);
         if (!t) return json({ erro: "Tarefa não encontrada." }, 404);
         if (acao === "cancelar") {
-          if (t.status !== "pendente") return json({ erro: "Só dá para cancelar o que ainda não começou." }, 400);
-          Object.assign(t, { status: "cancelada", finalizadoEm: new Date().toISOString(), mensagem: `Cancelada por ${username}.` });
+          if (!["pendente", "em_andamento", "erro", "interrompida", "conferir"].includes(t.status)) return json({ erro: "Essa nota não pode mais ser cancelada aqui." }, 400);
+          const emAndamento = t.status === "em_andamento";
+          Object.assign(t, { status: "cancelada", finalizadoEm: new Date().toISOString(),
+            mensagem: `Cancelada por ${username}.` + (emAndamento ? " O robô para antes de clicar em Emitir." : "") });
         } else {
           if (!["erro", "interrompida", "conferir", "cancelada"].includes(t.status)) return json({ erro: "Essa tarefa não pode ser refeita." }, 400);
           Object.assign(t, { status: "pendente", mensagem: `Mandada de novo por ${username}.`, roboId: null, iniciadoEm: null, finalizadoEm: null });

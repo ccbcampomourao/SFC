@@ -27,7 +27,7 @@ import traceback
 import urllib.error
 import urllib.request
 
-VERSAO = "1.0.0"
+VERSAO = "1.1.1"
 NO_WINDOWS = platform.system() == "Windows"
 PASTA = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "PrumoRobo") if NO_WINDOWS else os.path.join(os.path.expanduser("~"), ".prumo-robo")
 os.makedirs(PASTA, exist_ok=True)
@@ -163,6 +163,10 @@ class Prumo:
     def ciclo(self, senhas_ids, livre=True, quer_emitentes=False):
         return self._pedir("/api/robo/ciclo", {"emitentesComSenha": senhas_ids, "versao": VERSAO, "livre": livre, "querEmitentes": quer_emitentes})
 
+    def situacao(self, tarefa_id):
+        """Status atual da tarefa no Prumo (para não emitir uma nota que foi cancelada no meio)."""
+        return (self._pedir("/api/robo/situacao", {"tarefaId": tarefa_id}, timeout=20) or {}).get("status")
+
     def resultado(self, tarefa_id, status, mensagem, numero=None, arquivos=()):
         anexos = []
         for caminho in arquivos:
@@ -172,7 +176,7 @@ class Prumo:
                 if len(conteudo) > 10_000_000:
                     continue
                 nome = os.path.basename(caminho)
-                tipo = {".pdf": "application/pdf", ".png": "image/png", ".xml": "application/xml", ".html": "text/html"}.get(os.path.splitext(nome)[1].lower(), "application/octet-stream")
+                tipo = {".pdf": "application/pdf", ".png": "image/png", ".xml": "application/xml", ".html": "text/html", ".txt": "text/plain"}.get(os.path.splitext(nome)[1].lower(), "application/octet-stream")
                 anexos.append({"nome": nome, "tipo": tipo, "base64": base64.b64encode(conteudo).decode()})
             except OSError:
                 pass
@@ -212,6 +216,9 @@ SELETORES_PADRAO = {
     "login_senha": "input[type='password']",
     "login_botao": "//button[contains(text(), 'Entrar') or contains(text(), 'Login')]",
     "botao_avancar": "//button[contains(., 'Avançar') or contains(., 'Continuar')]",
+    # A emissão TEM que ser aberta pelo menu lateral do portal (pelo link direto a sessão não se monta)
+    "menu_nfae": "//a[normalize-space()='NFA-e MEI e NFA-e (Modelo 55)']",
+    "menu_emissao": "//a[normalize-space()='NFA-e MEI e NFA-e (Modelo 55)']/following-sibling::div[1]//a[normalize-space()='Emissão']",
     "destinatario": {
         "cnpj": "/html/body/div[1]/div[2]/div[2]/div[5]/div/div[1]/div/div[2]/div[1]/div[1]/div[2]/div[3]/div[1]/input",
         "ie": "/html/body/div[1]/div[2]/div[2]/div[5]/div/div[1]/div/div[2]/div[1]/div[1]/div[2]/div[7]/div[1]/input",
@@ -240,6 +247,24 @@ SELETORES_PADRAO = {
         "valor": "/html/body/div/div[2]/div[2]/div[5]/div/div[1]/div/div[2]/div/div/div/div/div[2]/div[8]/div[1]/input",
         "botao_adicionar": "//button[contains(., 'Adicionar Produto') or contains(., 'adicionar produto')]",
     },
+    # Nomes que aparecem na tela ao lado de cada campo. Se o caminho fixo acima não
+    # bater (o portal mudou um pouco), o robô procura o campo pelo nome dele.
+    "rotulos": {
+        "cnpj": ["CNPJ", "CPF/CNPJ", "CNPJ/CPF", "CNPJ do Destinatário", "Documento"],
+        "ie": ["Inscrição Estadual", "Inscrição estadual", "IE", "Insc. Estadual"],
+        "nome": ["Razão Social", "Nome/Razão Social", "Nome / Razão Social", "Nome", "Razão social"],
+        "cep": ["CEP"],
+        "logradouro": ["Logradouro", "Endereço", "Rua"],
+        "numero": ["Número", "Numero", "Nº"],
+        "bairro": ["Bairro", "Bairro/Distrito"],
+        "codigo": ["Código do Produto", "Código", "Cód. Produto", "Codigo"],
+        "descricao": ["Descrição do Produto", "Descrição", "Descricao"],
+        "ncm": ["NCM", "Código NCM"],
+        "cfop": ["CFOP"],
+        "unidade": ["Unidade Comercial", "Unidade", "Un. Comercial", "UN"],
+        "qtd": ["Quantidade Comercial", "Quantidade", "Qtd", "Qtde"],
+        "valor": ["Valor Unitário Comercial", "Valor Unitário", "Valor unitário", "Vl. Unitário", "Valor"],
+    },
     # Preenchido sozinho na primeira emissão (modo aprendizado): o que você
     # fizer depois que o robô lançar os produtos (completar campos, transmitir,
     # baixar o PDF) vira passo automático para as próximas.
@@ -249,6 +274,9 @@ SELETORES_PADRAO = {
 
 def seletores():
     s = ler_json(ARQ_SELETORES, None)
+    if s and s.get("finalizacao"):
+        s["finalizacao"] = []  # o robô não usa mais passos aprendidos (roteiro fixo)
+        gravar_json(ARQ_SELETORES, s)
     if not s:
         gravar_json(ARQ_SELETORES, SELETORES_PADRAO)
         return json.loads(json.dumps(SELETORES_PADRAO))
@@ -278,12 +306,137 @@ return r;
 """
 
 
+EMITENTE_CARREGADO_JS = r"""
+const v = [...document.querySelectorAll("input")].filter((e) => e.offsetParent && e.type === "text" && !e.closest("form"));
+return v.length > 3 && v.filter((e) => (e.value || "").trim()).length >= 3;
+"""
+
+MARCAR_OPCAO_JS = r"""
+const alvo = arguments[0].trim().toLowerCase();
+for (const r of document.querySelectorAll("input[type=radio]")) {
+  const lab = (r.id && document.querySelector('label[for="' + r.id + '"]')) || r.closest("label") || r.parentElement;
+  const t = (lab ? lab.textContent : "").replace(/\s+/g, " ").trim().toLowerCase();
+  if (t === alvo || (r.id || "").toLowerCase().startsWith(alvo + "_")) {
+    if (!r.checked) { (lab && lab.tagName === "LABEL" ? lab : r).click(); }
+    if (!r.checked) r.click();
+    return r.checked;
+  }
+}
+return false;
+"""
+
+NATUREZA_XPATH_ROTULO = "//label[contains(normalize-space(.), 'Natureza da Opera')]/following::input[contains(@class, 'slds-combobox__input')][1]"
+NATUREZA_XPATH_FIXO = "/html/body/div[1]/div[2]/div[2]/div[5]/div/div[1]/div/div[2]/div[1]/div/div[2]/div[1]/div[1]/div/div/div/div[1]/input"
+TOPO_JS = r"""
+window.scrollTo(0, 0);
+for (const el of document.querySelectorAll("div, main, section")) { if (el.scrollTop > 0) el.scrollTop = 0; }
+"""
+AVISOS_JS = r"""
+const t = new Set();
+for (const el of document.querySelectorAll(".slds-form-element__help, .slds-has-error .slds-form-element__help, [role=alert], .slds-notify, .toast, .alert")) {
+  if (!el.offsetParent) continue;
+  const x = (el.innerText || "").replace(/\s+/g, " ").trim();
+  if (x && x.length < 200) t.add(x);
+}
+return [...t];
+"""
+CPF_XPATH = "/html/body/div[1]/div[2]/div[2]/div[5]/div/div[1]/div/div[2]/div[1]/div[1]/div[2]/div[2]/div[1]/input"
+
+
+def chrome_instalado():
+    if not NO_WINDOWS:
+        return False
+    bases = [os.environ.get("PROGRAMFILES", r"C:\Program Files"), os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"), os.environ.get("LOCALAPPDATA", "")]
+    return any(b and os.path.exists(os.path.join(b, "Google", "Chrome", "Application", "chrome.exe")) for b in bases)
+
+
+def numero_br(v):
+    """'1.234,56' / '1234.56' / 12.5 -> float (ou None)."""
+    if isinstance(v, (int, float)):
+        return float(v)
+    t = re.sub(r"[^\d,.\-]", "", str(v or ""))
+    if not t:
+        return None
+    if "," in t:
+        t = t.replace(".", "").replace(",", ".")
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+
+def valor_virgula(v, casas=2):
+    """Número no formato do portal (vírgula decimal, sem milhar). Mantém até 10 casas se houver."""
+    n = numero_br(v)
+    if n is None:
+        return str(v)
+    t = f"{n:.10f}".rstrip("0")
+    inteiro, _, dec = t.partition(".")
+    return inteiro + "," + dec.ljust(casas, "0")
+
+
 class PassoFalhou(Exception):
     pass
 
 
+ACHAR_POR_ROTULO_JS = r"""
+const [rotulos, tipo] = arguments;
+const norm = (t) => (t || "").replace(/[*:]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+const alvos = rotulos.map(norm);
+const visivel = (el) => !!(el && el.offsetParent !== null && el.getBoundingClientRect().width > 0);
+const controleOk = (el) => el && visivel(el) && (tipo === "select" ? el.tagName === "SELECT" || el.getAttribute("role") === "combobox" :
+  (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !/^(radio|checkbox|hidden|button|submit)$/i.test(el.type))));
+const dentro = (raiz) => { if (!raiz) return null; for (const el of raiz.querySelectorAll("input, select, textarea, [role=combobox]")) if (controleOk(el)) return el; return null; };
+for (const alvo of alvos) {
+  // 1) <label> / rótulo do Salesforce com o texto exato
+  for (const lab of document.querySelectorAll("label, legend, .slds-form-element__label, span, div")) {
+    if (lab.children.length > 2 || norm(lab.textContent) !== alvo || !visivel(lab)) continue;
+    const pelaFor = lab.htmlFor && document.getElementById(lab.htmlFor);
+    if (controleOk(pelaFor)) return pelaFor;
+    const bloco = lab.closest(".slds-form-element, lightning-input, lightning-combobox, lightning-select, lightning-textarea, .form-group, td, li") || lab.parentElement;
+    const achado = dentro(bloco) || dentro(bloco && bloco.parentElement);
+    if (achado) return achado;
+  }
+  // 2) placeholder / aria-label / name
+  for (const el of document.querySelectorAll("input, select, textarea")) {
+    if (!controleOk(el)) continue;
+    const t = [el.placeholder, el.getAttribute("aria-label"), el.name, el.id].map(norm);
+    if (t.some((x) => x && x === alvo)) return el;
+  }
+}
+return null;
+"""
+
+CAMINHO_JS = r"""
+let el = arguments[0], c = "";
+for (; el && el.nodeType === 1 && el.tagName !== "HTML"; el = el.parentNode) {
+  let i = 1; for (let s = el.previousElementSibling; s; s = s.previousElementSibling) if (s.tagName === el.tagName) i++;
+  c = "/" + el.tagName.toLowerCase() + "[" + i + "]" + c; }
+return "/html" + c;
+"""
+
+DIAGNOSTICO_JS = r"""
+const vis = (el) => el.offsetParent !== null;
+const linhas = ["Endereço: " + location.href, "Título: " + document.title, "Quadros (iframes): " + document.querySelectorAll("iframe").length, ""];
+linhas.push("== Rótulos visíveis ==");
+const vistos = new Set();
+for (const l of document.querySelectorAll("label, legend, .slds-form-element__label, th")) {
+  const t = (l.textContent || "").replace(/\s+/g, " ").trim(); if (!t || t.length > 60 || vistos.has(t) || !vis(l)) continue; vistos.add(t); linhas.push("- " + t);
+}
+linhas.push("", "== Campos visíveis ==");
+const cam = (el) => { let c = ""; for (; el && el.nodeType === 1 && el.tagName !== "HTML"; el = el.parentNode) { let i = 1; for (let s = el.previousElementSibling; s; s = s.previousElementSibling) if (s.tagName === el.tagName) i++; c = "/" + el.tagName.toLowerCase() + "[" + i + "]" + c; } return "/html" + c; };
+for (const el of document.querySelectorAll("input, select, textarea, button")) {
+  if (!vis(el) || el.type === "hidden") continue;
+  const rot = el.labels && el.labels[0] ? el.labels[0].textContent.replace(/\s+/g, " ").trim() : "";
+  const txt = el.tagName === "BUTTON" ? (el.innerText || "").trim().slice(0, 40) : "";
+  linhas.push([el.tagName.toLowerCase(), el.type || "", "rótulo=" + rot, "nome=" + (el.name || ""), "id=" + (el.id || ""), "placeholder=" + (el.placeholder || ""), txt && "texto=" + txt, cam(el)].filter(Boolean).join(" | "));
+}
+return linhas.join("\n");
+"""
+
+
 class RoboNfae:
-    def __init__(self, tarefa, emitente, senha, aprender_pergunta=None):
+    def __init__(self, tarefa, emitente, senha, aprender_pergunta=None, foi_cancelada=None):
         self.t = tarefa
         self.d = tarefa["dados"]
         self.emitente = emitente
@@ -292,13 +445,27 @@ class RoboNfae:
         self.pasta = os.path.join(PASTA, "tarefas", tarefa["id"])
         os.makedirs(self.pasta, exist_ok=True)
         self.driver = None
-        self.aprender_pergunta = aprender_pergunta  # função da janela para o modo aprendizado
+        self.aprender_pergunta = aprender_pergunta  # (não usado desde a 1.1.0: roteiro fixo)
+        self.foi_cancelada = foi_cancelada  # pergunta ao Prumo se a nota foi cancelada
 
     # ---------- utilidades Selenium ----------
     def _abrir_navegador(self):
         from selenium import webdriver
-        navegador = (os.environ.get("PRUMO_NAVEGADOR") or self.sel.get("navegador") or "firefox").lower()
+        navegador = (os.environ.get("PRUMO_NAVEGADOR") or self.sel.get("navegador") or ("chrome" if chrome_instalado() else "firefox")).lower()
+        if navegador == "chrome" and not os.environ.get("PRUMO_NAVEGADOR"):
+            try:
+                self._abrir_chrome(webdriver)
+                return
+            except Exception as e:  # noqa: BLE001  (sem Chrome/driver: usa o Firefox)
+                log(f"Não consegui abrir o Chrome ({str(e).splitlines()[0][:100]}); usando o Firefox.")
+                navegador = "firefox"
         if navegador == "chrome":
+            self._abrir_chrome(webdriver)
+            return
+        self._abrir_firefox(webdriver)
+
+    def _abrir_chrome(self, webdriver):
+        if True:
             from selenium.webdriver.chrome.options import Options as COptions
             from selenium.webdriver.chrome.service import Service as CService
             op = COptions()
@@ -308,13 +475,19 @@ class RoboNfae:
             if not NO_WINDOWS and hasattr(os, "geteuid") and os.geteuid() == 0:
                 op.add_argument("--no-sandbox")  # Linux como administrador (testes)
                 op.add_argument("--disable-dev-shm-usage")
+            # continua funcionando com a janela escondida/coberta (senão o Windows "congela" a página)
+            for arg in ("--disable-features=CalculateNativeWinOcclusion", "--disable-backgrounding-occluded-windows",
+                        "--disable-renderer-backgrounding", "--disable-background-timer-throttling"):
+                op.add_argument(arg)
             if os.environ.get("PRUMO_CHROME_BIN"):
                 op.binary_location = os.environ["PRUMO_CHROME_BIN"]
             op.add_experimental_option("prefs", {"download.default_directory": self.pasta, "download.prompt_for_download": False, "plugins.always_open_pdf_externally": True})
             servico = CService(os.environ["PRUMO_CHROMEDRIVER"]) if os.environ.get("PRUMO_CHROMEDRIVER") else None
             self.driver = webdriver.Chrome(options=op, service=servico) if servico else webdriver.Chrome(options=op)
-            self.driver.set_window_size(1366, 900)
-            return
+            self._tamanho_janela()
+            log("Navegador: Google Chrome (perfil próprio do robô).")
+
+    def _abrir_firefox(self, webdriver):
         from selenium.webdriver.firefox.options import Options
         op = Options()
         perfil = os.path.join(PASTA, "firefox-perfil")
@@ -326,8 +499,23 @@ class RoboNfae:
         op.set_preference("browser.download.useDownloadDir", True)
         op.set_preference("browser.helperApps.neverAsk.saveToDisk", "application/pdf,application/xml,text/xml,application/octet-stream,application/zip")
         op.set_preference("pdfjs.disabled", True)
+        op.set_preference("layout.css.devPixelsPerPx", "1.0")  # ignora a escala de 125%/150% do Windows (a tela não corta)
         self.driver = webdriver.Firefox(options=op)
-        self.driver.set_window_size(1366, 900)
+        self._tamanho_janela()
+        log("Navegador: Firefox.")
+
+    def _tamanho_janela(self):
+        # do tamanho da tela (antes era fixo em 1366x900 e passava da tela com a escala do Windows)
+        try:
+            if os.environ.get("PRUMO_HEADLESS") == "1":
+                self.driver.set_window_size(1366, 768)
+            else:
+                self.driver.maximize_window()
+        except Exception:  # noqa: BLE001
+            try:
+                self.driver.set_window_size(1280, 720)
+            except Exception:  # noqa: BLE001
+                pass
 
     def _achar(self, alvo, tempo=15, clicavel=False):
         from selenium.webdriver.common.by import By
@@ -339,6 +527,84 @@ class RoboNfae:
             return WebDriverWait(self.driver, tempo).until(cond((por, alvo)))
         except Exception:
             raise PassoFalhou(f"Não achei na tela: {alvo[:90]}")
+
+    def _campo(self, grupo, chave, tempo=15, tipo="texto"):
+        """Acha um campo: 1º pelo caminho guardado; se não bater, pelo nome que aparece na tela.
+        Quando acha pelo nome, guarda o caminho novo em seletores.json (o robô se corrige)."""
+        alvo = (self.sel.get(grupo) or {}).get(chave)
+        if alvo:
+            try:
+                return self._achar(alvo, tempo=min(tempo, 3), clicavel=True)
+            except PassoFalhou:
+                pass
+        rotulos = (self.sel.get("rotulos") or {}).get(chave) or SELETORES_PADRAO["rotulos"].get(chave, [])
+        fim = time.time() + tempo
+        while time.time() < fim:
+            try:
+                el = self.driver.execute_script(ACHAR_POR_ROTULO_JS, rotulos, "select" if tipo == "select" else "texto")
+            except Exception:  # noqa: BLE001
+                el = None
+            if el is not None:
+                try:
+                    novo = self.driver.execute_script(CAMINHO_JS, el)
+                    if novo and novo != alvo:
+                        s = seletores()
+                        s.setdefault(grupo, {})[chave] = novo
+                        gravar_json(ARQ_SELETORES, s)
+                        self.sel = s
+                        log(f"Campo “{chave}” achado pelo nome na tela; caminho atualizado.")
+                except Exception:  # noqa: BLE001
+                    pass
+                return el
+            time.sleep(0.6)
+        raise PassoFalhou(f"Não achei na tela o campo “{chave}” (procurei pelo caminho guardado e pelos nomes {', '.join(rotulos[:4])}).")
+
+    def _diagnostico(self):
+        """Lista o que existe na tela (rótulos, campos e botões) para ajustar o robô — sem senhas."""
+        try:
+            texto = self.driver.execute_script(DIAGNOSTICO_JS)
+            caminho = os.path.join(self.pasta, "diagnostico.txt")
+            with open(caminho, "w", encoding="utf-8") as f:
+                f.write(texto)
+            return caminho
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _preencher(self, grupo, chave, valor, nome, tempo=15):
+        from selenium.webdriver.common.keys import Keys
+        valor = str(valor)
+        ultimo = None
+        for tentativa in range(3):
+            try:
+                el = self._campo(grupo, chave, tempo=tempo if tentativa == 0 else 6)
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", el)
+                el.click()
+                el.send_keys(Keys.CONTROL, "a")
+                el.send_keys(Keys.BACKSPACE)
+                el.send_keys(valor)
+                el.send_keys(Keys.TAB)
+                time.sleep(0.4)
+                if (el.get_attribute("value") or "").strip() or not valor:
+                    return
+                ultimo = "o campo ficou vazio"
+            except PassoFalhou as e:
+                ultimo = str(e)
+                break
+            except Exception as e:  # noqa: BLE001
+                ultimo = str(e).splitlines()[0][:120]
+            time.sleep(0.8)
+        raise PassoFalhou(f"Não consegui preencher “{nome}”. {ultimo}")
+
+    def _escolher(self, grupo, chave, texto, nome):
+        from selenium.webdriver.support.ui import Select
+        el = self._campo(grupo, chave, tipo="select")
+        sel = Select(el)
+        for op in sel.options:
+            if op.text.strip().lower() == texto.lower() or op.text.strip().lower().startswith(texto.lower()):
+                sel.select_by_visible_text(op.text)
+                time.sleep(0.4)
+                return
+        raise PassoFalhou(f"A lista “{nome}” não tem a opção “{texto}”.")
 
     def _digitar(self, alvo, valor, nome):
         from selenium.webdriver.common.keys import Keys
@@ -431,7 +697,21 @@ class RoboNfae:
     def executar(self):
         if SIMULAR:
             return self._simular()
-        self._abrir_navegador()
+        # abre o navegador (se ele fechar sozinho logo na abertura, tenta mais uma vez)
+        for tentativa in range(2):
+            try:
+                self._abrir_navegador()
+                self.driver.get("about:blank")
+                break
+            except Exception as e:  # noqa: BLE001
+                try:
+                    self.driver and self.driver.quit()
+                except Exception:  # noqa: BLE001
+                    pass
+                self.driver = None
+                if tentativa:
+                    return {"status": "erro", "mensagem": f"Não consegui abrir o navegador do robô ({str(e).splitlines()[0][:150]}). Nada foi enviado à Receita."}
+                time.sleep(3)
         try:
             self._login()
             self._destinatario()
@@ -440,11 +720,17 @@ class RoboNfae:
             return self._finalizar()
         except PassoFalhou as e:
             p = self._print("erro.png")
-            return {"status": "erro", "mensagem": f"{e} A nota NÃO foi transmitida pelo robô — confira o portal.", "arquivos": [p] if p else []}
+            diag = self._diagnostico()
+            return {"status": "erro", "mensagem": f"{e} [robô {VERSAO}] A nota NÃO foi transmitida pelo robô — confira o portal. (Anexei a imagem da tela e um diagnóstico dos campos.)", "arquivos": [a for a in (p, diag) if a]}
+        except Exception as e:  # noqa: BLE001  (navegador fechou, travou, etc.)
+            p = self._print("erro.png")
+            primeira = str(e).strip().splitlines()[0][:160] if str(e).strip() else type(e).__name__
+            return {"status": "erro", "mensagem": f"O navegador do robô falhou no meio da emissão ({primeira}). Confira no portal se a nota saiu antes de mandar de novo.", "arquivos": [p] if p else []}
         finally:
             try:
                 if self.driver:
                     self.driver.quit()
+                    time.sleep(2)  # deixa o navegador terminar de fechar antes de outra emissão usar o mesmo perfil
             except Exception:  # noqa: BLE001
                 pass
 
@@ -466,70 +752,388 @@ class RoboNfae:
             ainda = self.driver.find_elements("css selector", s["login_senha"])
             if ainda and ainda[0].is_displayed():
                 raise PassoFalhou("O login não passou (senha errada, senha vencida ou o portal pediu verificação/captcha).")
-        log("Abrindo a emissão de NFA-e…")
-        self.driver.get(s["url_emissao"])
-        time.sleep(3)
-        self._clicar(s["botao_avancar"], "Avançar", tempo=8, obrigatorio=False)
+        log("Abrindo a emissão de NFA-e pelo menu lateral…")
+        self._abrir_pelo_menu()
+        # espera o portal carregar os dados do emitente (vêm sozinhos) antes de avançar
+        fim = time.time() + 25
+        while time.time() < fim:
+            try:
+                if self.driver.execute_script(EMITENTE_CARREGADO_JS):
+                    break
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(0.7)
+        time.sleep(1)
+        self._avancar_para("destinatario")
+
+    def _abrir_pelo_menu(self):
+        s = self.sel
+        if "receita.pr.gov.br" not in (self.driver.current_url or "") and s["url_login"] not in (self.driver.current_url or ""):
+            self.driver.get(s["url_login"])
+            time.sleep(2)
+        abas_antes = set(self.driver.window_handles)
+        try:
+            menu = self._achar(s["menu_nfae"], tempo=20)
+        except PassoFalhou:
+            raise PassoFalhou("Não achei no menu lateral do portal o item “NFA-e MEI e NFA-e (Modelo 55)”.")
+        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", menu)
+        for tentativa in range(3):
+            try:
+                menu.click()
+            except Exception:  # noqa: BLE001
+                self.driver.execute_script("arguments[0].click();", menu)
+            time.sleep(1.2)
+            try:
+                emissao = self._achar(s["menu_emissao"], tempo=4, clicavel=True)
+                break
+            except PassoFalhou:
+                emissao = None
+        if emissao is None:
+            raise PassoFalhou("Abri o menu da NFA-e, mas não apareceu a opção “Emissão”.")
+        try:
+            emissao.click()
+        except Exception:  # noqa: BLE001
+            self.driver.execute_script("arguments[0].click();", emissao)
+        # se o portal abrir em outra aba, passa para ela
+        fim = time.time() + 25
+        while time.time() < fim:
+            novas = [h for h in self.driver.window_handles if h not in abas_antes]
+            if novas:
+                self.driver.switch_to.window(novas[-1])
+            if "/nfae/avulsa/emitir" in (self.driver.current_url or ""):
+                return
+            time.sleep(0.5)
+        raise PassoFalhou("Cliquei em “Emissão” no menu, mas a tela de emissão da NFA-e não abriu.")
+
+    def _avancar_para(self, trecho_url, tempo=20):
+        """Clica em Avançar e espera o endereço da página mudar para a próxima aba."""
+        if trecho_url in (self.driver.current_url or ""):
+            self._topo()
+            return
+        for tentativa in range(4):
+            self._clicar_avancar_visivel()
+            fim = time.time() + tempo / 3
+            while time.time() < fim:
+                if trecho_url in (self.driver.current_url or ""):
+                    time.sleep(1.5)  # deixa a aba nova desenhar
+                    self._topo()
+                    return
+                time.sleep(0.5)
+        avisos = []
+        try:
+            avisos = self.driver.execute_script(AVISOS_JS) or []
+        except Exception:  # noqa: BLE001
+            pass
+        detalhe = ("O portal avisou: " + "; ".join(avisos[:6]) + ".") if avisos else "Algum campo obrigatório ficou vazio ou inválido — veja a imagem da tela."
+        raise PassoFalhou(f"O portal não deixou avançar para a aba “{trecho_url}”. {detalhe}")
+
+    def _topo(self):
+        """O portal deixa um quadro interno rolado para baixo ao trocar de aba (a tela fica 'em branco'): volta ao topo."""
+        try:
+            self.driver.execute_script(TOPO_JS)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _botao_texto(self, texto, tempo=15, obrigatorio=True):
+        """Clica no botão VISÍVEL com esse texto exato (ex.: 'Salvar')."""
+        xp = f"//button[normalize-space(.)={self._literal(texto)}]"
+        if self._clicar_avancar_visivel(tempo=tempo, xpath=xp):
+            return True
+        if obrigatorio:
+            raise PassoFalhou(f"Não achei o botão “{texto}”.")
+        return False
+
+    def _pagamento(self):
+        """Forma de Pagamento: sempre o mesmo meio (padrão 01 - Dinheiro) com o valor total da nota."""
+        from selenium.webdriver.common.keys import Keys
+        from selenium.webdriver.support.ui import Select
+        meio = self.sel.get("pagamento_meio") or "01 - Dinheiro"
+        indicador = self.sel.get("pagamento_indicador") or "0 - Pagamento"
+        total = valor_virgula(self._total())
+        log(f"Forma de pagamento: {meio} — R$ {total}")
+        self._topo()
+        self._botao_texto("Adicionar Forma de Pagamento")
+        time.sleep(1.5)
+        # as listas e o campo de valor ficam na janelinha "Nova Forma de Pagamento"
+        fim = time.time() + 15
+        selects = []
+        while time.time() < fim and len(selects) < 2:
+            selects = [e for e in self.driver.find_elements("css selector", "section[role=dialog] select, .slds-modal select") if e.is_displayed()]
+            time.sleep(0.5)
+        if not selects:
+            raise PassoFalhou("A janela “Nova Forma de Pagamento” não abriu.")
+        def escolhe(el, comeco, nome):
+            sel = Select(el)
+            for op in sel.options:
+                if op.text.strip().lower().startswith(comeco.lower()):
+                    sel.select_by_visible_text(op.text)
+                    time.sleep(0.5)
+                    return
+            raise PassoFalhou(f"A lista “{nome}” não tem a opção “{comeco}”.")
+        escolhe(selects[0], meio, "Meio de Pagamento")
+        if len(selects) > 1:
+            escolhe(selects[1], indicador, "Indicador da Forma de Pagamento")
+        campos = [e for e in self.driver.find_elements("css selector", "section[role=dialog] input[type=text], .slds-modal input[type=text], section[role=dialog] input:not([type]), .slds-modal input:not([type])") if e.is_displayed()]
+        if not campos:
+            raise PassoFalhou("Não achei o campo “Valor do Pagamento”.")
+        v = campos[0]
+        v.click(); v.send_keys(Keys.CONTROL, "a"); v.send_keys(Keys.BACKSPACE); v.send_keys(total); v.send_keys(Keys.TAB)
+        time.sleep(0.6)
+        self._botao_texto("Salvar")
+        time.sleep(1.5)
+
+    def _abrir_novo_produto(self, n):
+        """Na lista de produtos: clica em 'Adicionar Produto' e confere se o formulário abriu (repete se o clique se perdeu)."""
+        time.sleep(1.5)  # a lista acabou de aparecer; dá tempo do botão ficar ativo
+        for tentativa in range(4):
+            self._topo()
+            self._clicar_avancar_visivel(xpath=self.sel["produto"]["botao_adicionar"])
+            fim = time.time() + 8
+            while time.time() < fim:
+                if "produto/informacao" in (self.driver.current_url or "") or "produtos/lista" not in (self.driver.current_url or ""):
+                    time.sleep(1.5)
+                    self._topo()
+                    return
+                time.sleep(0.5)
+        raise PassoFalhou(f"Cliquei em “Adicionar Produto” para o produto {n}, mas o formulário não abriu.")
+
+    def _clicar_avancar_visivel(self, tempo=10, xpath=None):
+        """Clica no botão (Avançar, por padrão) que está VISÍVEL (pode haver outros escondidos na página)."""
+        fim = time.time() + tempo
+        while time.time() < fim:
+            try:
+                botoes = [b for b in self.driver.find_elements("xpath", xpath or self.sel["botao_avancar"]) if b.is_displayed() and b.is_enabled()]
+            except Exception:  # noqa: BLE001
+                botoes = []
+            if botoes:
+                b = botoes[-1]
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", b)
+                time.sleep(0.4)
+                try:
+                    b.click()
+                except Exception:  # noqa: BLE001
+                    self.driver.execute_script("arguments[0].click();", b)
+                time.sleep(0.8)
+                return True
+            time.sleep(0.5)
+        return False
+
+    def _marcar_opcao(self, texto, tempo=15):
+        """Marca um botão de opção (radio) pelo texto ao lado dele, ex.: CPF / CNPJ."""
+        fim = time.time() + tempo
+        while time.time() < fim:
+            try:
+                if self.driver.execute_script(MARCAR_OPCAO_JS, texto):
+                    time.sleep(0.8)
+                    return True
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(0.5)
+        return False
 
     def _destinatario(self):
         c = self.d["cliente"]
         log(f"Destinatário: {c.get('nome') or c.get('razao_social')}")
-        self._clicar_texto("CNPJ")
-        valores = {"cnpj": re.sub(r"\D", "", c["cnpj"]), "ie": re.sub(r"\D", "", c["ie"]), "nome": c.get("razao_social") or c.get("nome"),
+        doc = re.sub(r"\D", "", c.get("cnpj") or c.get("cpf") or "")
+        tipo_doc = "CPF" if len(doc) == 11 else "CNPJ"
+        # a tela abre com "CPF" marcado; o campo do CNPJ só aparece depois de marcar "CNPJ"
+        if not self._marcar_opcao(tipo_doc):
+            raise PassoFalhou(f"Não consegui marcar a opção “{tipo_doc}” do destinatário.")
+        if tipo_doc == "CPF":
+            self.sel.setdefault("rotulos", {})["cnpj"] = ["CPF"] + list(self.sel.get("rotulos", {}).get("cnpj", []))
+            self.sel["destinatario"] = dict(self.sel["destinatario"], cnpj=self.sel["destinatario"].get("cpf", CPF_XPATH))
+        valores = {"cnpj": doc, "ie": re.sub(r"\D", "", c["ie"]), "nome": c.get("razao_social") or c.get("nome"),
                    "cep": re.sub(r"\D", "", c["cep"]), "logradouro": c["logradouro"], "numero": c["numero"], "bairro": c["bairro"]}
-        for campo, alvo in self.sel["destinatario"].items():
-            if campo in valores and alvo:
-                self._digitar(alvo, valores[campo], campo)
-        self._clicar(self.sel["botao_avancar"], "Avançar", tempo=8, obrigatorio=False)
+        for n, campo in enumerate(["cnpj", "ie", "nome", "cep", "logradouro", "numero", "bairro"]):
+            self._preencher("destinatario", campo, valores[campo], {"cnpj": "CNPJ do destinatário", "ie": "Inscrição estadual", "cep": "CEP"}.get(campo, campo), tempo=25 if n == 0 else 15)
+            if campo == "cep":
+                time.sleep(2.5)  # o portal completa UF/Município (e às vezes a rua) pelo CEP
+        # a busca do CEP às vezes apaga rua/número/bairro depois: confere e completa
+        nomes = {"cnpj": "CNPJ do destinatário", "ie": "Inscrição estadual", "cep": "CEP"}
+        for rodada in range(3):
+            time.sleep(1.5)
+            vazios = [k for k in ("ie", "nome", "logradouro", "numero", "bairro") if valores[k] and not (self._valor_campo("destinatario", k) or "").strip()]
+            if not vazios:
+                break
+            log(f"O portal apagou {', '.join(vazios)}; preenchendo de novo.")
+            for k in vazios:
+                self._preencher("destinatario", k, valores[k], nomes.get(k, k))
+        self._avancar_para("identificacao")
 
     def _operacao(self):
         from selenium.webdriver.common.keys import Keys
         op = self.sel["operacao"]
-        try:
-            combo = self._achar(op["natureza_combo"], tempo=10, clicavel=True)
-            combo.click()
-            combo.send_keys(op["natureza_valor"])
-            time.sleep(0.8)
-            self._clicar_texto(op["natureza_valor"], tempo=4) or combo.send_keys(Keys.ENTER)
-        except PassoFalhou:
-            raise PassoFalhou("Não achei o campo da natureza da operação (Venda).")
+        # o número do "combobox-id-N" muda a cada carregamento: procura pelo rótulo da tela primeiro
+        alternativas = [NATUREZA_XPATH_ROTULO, NATUREZA_XPATH_FIXO, op.get("natureza_combo"), "input.slds-combobox__input"]
+        combo = None
+        fim = time.time() + 25
+        while combo is None and time.time() < fim:
+            for alvo in [a for a in alternativas if a]:
+                try:
+                    combo = self._achar(alvo, tempo=1)
+                    break
+                except Exception:  # noqa: BLE001
+                    continue
+        if combo is None:
+            raise PassoFalhou(f"Não achei o campo da natureza da operação (Venda). [robô {VERSAO}, página {self.driver.current_url.split('/')[-1]}]")
+        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", combo)
+        valor = op["natureza_valor"]
+        for tentativa in range(3):
+            try:
+                combo.click()
+            except Exception:  # noqa: BLE001  (algo por cima: aviso, "carregando"…)
+                time.sleep(1.5)
+                self.driver.execute_script("arguments[0].focus(); arguments[0].click();", combo)
+            try:
+                combo.send_keys(Keys.CONTROL, "a")
+                combo.send_keys(Keys.BACKSPACE)
+                combo.send_keys(valor)
+            except Exception:  # noqa: BLE001  (campo não aceita teclado: digita pelo próprio navegador)
+                self.driver.execute_script("const e=arguments[0]; e.focus(); e.value=arguments[1]; e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true}));", combo, valor)
+            time.sleep(1.2)
+            self._clicar_texto(valor, tempo=5) or combo.send_keys(Keys.ENTER)
+            time.sleep(0.6)
+            if (combo.get_attribute("value") or "").strip().lower() == valor.lower():
+                break
+        else:
+            raise PassoFalhou(f"Não consegui escolher “{valor}” na natureza da operação.")
         for alvo, texto in op["selects"]:
             self._selecionar(alvo, texto, texto)
-        self._clicar(self.sel["botao_avancar"], "Avançar", tempo=8, obrigatorio=False)
+        # depois da identificação vem "Local de Retirada/Entrega" (já vem tudo em "Não") e então Produtos
+        self._avancar_para("retirada-entrega")
+        self._avancar_para("produtos")
 
     def _produtos(self):
         p = self.sel["produto"]
         for n, item in enumerate(self.d["itens"], 1):
             log(f"Produto {n}/{len(self.d['itens'])}: {item['descricao'][:40]}")
-            self._digitar(p["codigo"], item["codigo"], "código")
-            self._digitar(p["descricao"], item["descricao"], "descrição")
-            self._digitar(p["ncm"], item["ncm"], "NCM")
-            self._selecionar(p["cfop"], item.get("cfop") or "5405", "CFOP")
-            self._digitar(p["unidade"], item.get("unidade") or "UN", "unidade")
-            self._digitar(p["qtd"], str(int(item["qtd"]) if float(item["qtd"]).is_integer() else item["qtd"]).replace(".", ","), "quantidade")
-            self._digitar(p["valor"], item["valor"], "valor")
-            self._clicar(p["botao_adicionar"], "Adicionar Produto")
-            time.sleep(1)
+            # o formulário do produto abre sozinho no primeiro; nos seguintes, a lista mostra "Adicionar Produto"
+            fim = time.time() + 15
+            while "produtos/lista" not in self.driver.current_url and "produto/" not in self.driver.current_url and time.time() < fim:
+                time.sleep(0.5)
+            if "produtos/lista" in self.driver.current_url:
+                self._abrir_novo_produto(n)
+            self._esperar_formulario_produto()
+            qtd = numero_br(item["qtd"]) or 0
+            textos = {"codigo": str(item["codigo"]), "descricao": item["descricao"], "ncm": re.sub(r"\D", "", str(item["ncm"])),
+                      "unidade": item.get("unidade") or "UN",
+                      "qtd": str(int(qtd)) if float(qtd).is_integer() else valor_virgula(qtd, 1),
+                      "valor": valor_virgula(item["valor"])}
+            nomes = {"codigo": "código", "descricao": "descrição", "ncm": "NCM", "unidade": "unidade", "qtd": "quantidade", "valor": "valor"}
+            self._preencher("produto", "codigo", textos["codigo"], "código", tempo=25 if n == 1 else 15)
+            self._preencher("produto", "descricao", textos["descricao"], "descrição")
+            self._preencher("produto", "ncm", textos["ncm"], "NCM")
+            self._escolher("produto", "cfop", item.get("cfop") or "5405", "CFOP")
+            for chave in ("unidade", "qtd", "valor"):
+                self._preencher("produto", chave, textos[chave], nomes[chave])
+            # o portal às vezes apaga o que foi digitado enquanto termina de carregar: confere e completa
+            for rodada in range(3):
+                time.sleep(1)
+                vazios = [k for k in textos if not (self._valor_campo("produto", k) or "").strip()]
+                if not vazios:
+                    break
+                log(f"Campos apagados pelo portal ({', '.join(nomes[k] for k in vazios)}); preenchendo de novo.")
+                for k in vazios:
+                    self._preencher("produto", k, textos[k], nomes[k])
+            # "Avançar" grava o produto e volta para a lista de produtos
+            self._avancar_para("produtos/lista")
+
+    def _esperar_formulario_produto(self, tempo=20):
+        """Espera o formulário do produto terminar de carregar (lista de CFOP cheia) antes de digitar."""
+        fim = time.time() + tempo
+        while time.time() < fim:
+            try:
+                ok = self.driver.execute_script(
+                    "const s=[...document.querySelectorAll('select')].filter(e=>e.offsetParent);"
+                    "return s.some(e=>e.options.length>10) && !document.querySelector('.slds-spinner_container:not([hidden]) .slds-spinner, lightning-spinner');")
+                if ok:
+                    break
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(0.5)
+        time.sleep(1.5)
+        self._topo()
+
+    def _valor_campo(self, grupo, chave):
+        try:
+            el = self._campo(grupo, chave, tempo=3)
+            return el.get_attribute("value")
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _total(self):
+        return round(sum((numero_br(i.get("qtd")) or 0) * (numero_br(i.get("valor")) or 0) for i in self.d["itens"]), 2)
 
     def _finalizar(self):
-        passos = self.sel.get("finalizacao") or []
-        if not passos:
-            return self._aprender()
-        log("Transmitindo (passos aprendidos)…")
-        c = self.d["cliente"]
-        mapa = {f"cliente.{k}": v for k, v in c.items()}
-        mapa["observacao"] = self.d.get("observacao", "")
-        for i, passo in enumerate(passos, 1):
-            nome = passo.get("texto") or passo.get("campo") or f"passo {i}"
-            if passo["acao"] == "clique":
-                self._clicar_passo(passo, nome)
-            elif passo["acao"] == "digitar":
-                self._digitar(passo["xpath"], mapa.get(passo.get("campo"), passo.get("valor", "")), nome)
-            elif passo["acao"] == "selecionar":
-                self._selecionar(passo["xpath"], mapa.get(passo.get("campo"), passo.get("valor", "")), nome)
-            time.sleep(1.2)
-        time.sleep(5)
-        return self._colher_resultado()
+        """Roteiro FIXO até o fim (sem aprender passos): pagamento → transporte → resumo → Emitir → PDF."""
+        self._avancar_para("forma-pagamento")
+        self._pagamento()
+        self._avancar_para("transporte")
+        frete = self.sel.get("frete") or "9 - Sem Ocorr"
+        log(f"Transporte: {frete}")
+        try:
+            from selenium.webdriver.support.ui import Select
+            lista = [e for e in self.driver.find_elements("css selector", "select") if e.is_displayed()]
+            sel = Select(lista[0])
+            op = next(o for o in sel.options if o.text.strip().lower().startswith(frete.lower()))
+            sel.select_by_visible_text(op.text)
+            time.sleep(0.8)
+        except Exception:  # noqa: BLE001
+            raise PassoFalhou(f"Não consegui escolher a modalidade do frete “{frete}”.")
+        self._avancar_para("resumo")
+        if os.environ.get("PRUMO_NAO_EMITIR") == "1" or self.sel.get("parar_no_resumo"):
+            return {"status": "erro", "mensagem": "Parei no Resumo, sem emitir (modo conferência). Termine no portal."}
+        if self.foi_cancelada:
+            try:
+                cancelada = self.foi_cancelada()
+            except Exception:  # noqa: BLE001  (sem conexão: segue, como antes)
+                cancelada = False
+            if cancelada:
+                log("A nota foi cancelada no Prumo: parei no Resumo, sem emitir.")
+                return {"status": "cancelada", "mensagem": "Cancelada no Prumo — o robô parou antes de clicar em Emitir. Nada foi emitido."}
+        log("Emitindo a NFA-e…")
+        self._topo()
+        self._botao_texto("Emitir")
+        # alguma confirmação ("Deseja emitir?") — responde sim
+        fim = time.time() + 8
+        while time.time() < fim:
+            try:
+                self.driver.switch_to.alert.accept()
+                break
+            except Exception:  # noqa: BLE001
+                pass
+            if any(self._botao_texto(t, tempo=0.3, obrigatorio=False) for t in ("Sim", "Confirmar", "OK", "Ok")):
+                break
+            if "resumo" not in (self.driver.current_url or ""):
+                break
+            time.sleep(0.5)
+        time.sleep(6)
+        try:
+            texto_final = self.driver.find_element("tag name", "body").text
+        except Exception:  # noqa: BLE001
+            texto_final = ""
+        self._print("tela-final.png")
+        # baixa o PDF se a tela oferecer
+        for t in ("Imprimir", "Imprimir DANFE", "Imprimir NFA-e", "Download", "Baixar PDF", "Visualizar", "DANFE", "PDF"):
+            try:
+                xp = f"//*[self::button or self::a][normalize-space(.)={self._literal(t)}]"
+                els = [e for e in self.driver.find_elements("xpath", xp) if e.is_displayed()]
+                if els:
+                    abas = set(self.driver.window_handles)
+                    els[0].click()
+                    time.sleep(5)
+                    for h in [h for h in self.driver.window_handles if h not in abas]:
+                        try:
+                            self.driver.switch_to.window(h)
+                            self.driver.save_screenshot(os.path.join(self.pasta, "nota.png"))
+                            self.driver.close()
+                        except Exception:  # noqa: BLE001
+                            pass
+                    self.driver.switch_to.window(list(abas)[0] if abas else self.driver.window_handles[0])
+                    break
+            except Exception:  # noqa: BLE001
+                continue
+        return self._colher_resultado(texto_final=texto_final)
 
     def _aprender(self):
         """Primeira emissão: alguém termina a nota na tela; o robô grava os passos."""
@@ -550,10 +1154,14 @@ class RoboNfae:
         except Exception:  # noqa: BLE001
             pass
         valores = {f"cliente.{k}": str(v) for k, v in self.d["cliente"].items() if v}
+        valores["total"] = valor_virgula(self._total())
         passos = []
         for g in gravados:
             if g["acao"] in ("digitar", "selecionar"):
-                campo = next((k for k, v in valores.items() if v and v.strip().lower() == str(g.get("valor", "")).strip().lower()), None)
+                bruto = str(g.get("valor", "")).strip()
+                campo = next((k for k, v in valores.items() if v and v.strip().lower() == bruto.lower()), None)
+                if not campo and g["acao"] == "digitar" and numero_br(bruto) is not None and abs(numero_br(bruto) - self._total()) < 0.005:
+                    campo = "total"  # o valor da nota (ex.: forma de pagamento) muda a cada emissão
                 passo = {"acao": g["acao"], "xpath": g["xpath"], **({"campo": campo} if campo else {"valor": g.get("valor", "")})}
                 if passos and passos[-1]["acao"] == g["acao"] and passos[-1]["xpath"] == g["xpath"]:
                     passos[-1] = passo  # várias mudanças no mesmo campo: fica a última
@@ -569,19 +1177,20 @@ class RoboNfae:
         time.sleep(3)
         return self._colher_resultado(aprendizado=True)
 
-    def _colher_resultado(self, aprendizado=False):
-        texto = ""
-        try:
-            texto = self.driver.find_element("tag name", "body").text
-        except Exception:  # noqa: BLE001
-            pass
+    def _colher_resultado(self, aprendizado=False, texto_final=None):
+        texto = texto_final or ""
+        if not texto:
+            try:
+                texto = self.driver.find_element("tag name", "body").text
+            except Exception:  # noqa: BLE001
+                pass
         numero = None
         m = re.search(r"(?:NFA-?e|Nota)[^\n]{0,40}?(?:n[ºo°.]?|número)\s*[:\-]?\s*(\d{1,9})", texto, re.I) or re.search(r"\bn[ºo°]\s*(\d{3,9})\b", texto, re.I)
         if m:
             numero = m.group(1)
         time.sleep(3)  # dá tempo de terminar downloads
         arquivos = [os.path.join(self.pasta, f) for f in os.listdir(self.pasta) if os.path.splitext(f)[1].lower() in (".pdf", ".xml") and not f.endswith(".part")]
-        tela = self._print("tela-final.png")
+        tela = os.path.join(self.pasta, "tela-final.png") if texto_final is not None and os.path.exists(os.path.join(self.pasta, "tela-final.png")) else self._print("tela-final.png")
         if tela:
             arquivos.append(tela)
         erro_tela = re.search(r"(rejei|erro|inv[aá]lid|n[aã]o foi poss)", texto[:3000], re.I)
@@ -613,6 +1222,8 @@ class Agente:
         self.ultimo_contato = None
         self.aprender_pergunta = aprender_pergunta
         self.ao_mudar = ao_mudar or (lambda: None)
+        self.emitentes_versao = None
+        self.recarregar_emitentes = threading.Event()  # pedido da janela (aba Senhas)
 
     def intervalo(self):
         agora = dt.datetime.now()
@@ -636,12 +1247,25 @@ class Agente:
                 self.acordar.clear()
                 continue
             try:
+                if self.recarregar_emitentes.is_set():
+                    self.recarregar_emitentes.clear()
+                    quer_emitentes = True
                 r = self.prumo.ciclo(sorted(senhas_guardadas().keys()), quer_emitentes=quer_emitentes)
-                quer_emitentes = False
                 falhas = 0
                 self.ultimo_contato = dt.datetime.now()
                 if r.get("emitentes") is not None:
+                    if r["emitentes"] != self.emitentes and self.emitentes_versao is not None:
+                        log("Lista de emitentes atualizada pelo Prumo.")
                     self.emitentes = r["emitentes"]
+                    self.emitentes_versao = r.get("emitentesVersao")
+                    quer_emitentes = False
+                elif r.get("emitentesVersao") != self.emitentes_versao:
+                    # cadastraram/alteraram emitente no Prumo: busca a lista nova já
+                    quer_emitentes = True
+                    self._mudar("online")
+                    self.acordar.wait(1)
+                    self.acordar.clear()
+                    continue
                 self._mudar("online")
                 if r.get("tarefa"):
                     self.executar(r["tarefa"])
@@ -676,7 +1300,8 @@ class Agente:
                 elif not senha and not SIMULAR:
                     resultado = {"status": "erro", "mensagem": f"A senha de “{emitente['nome']}” não está cadastrada neste robô (janela do Agente → Senhas)."}
                 else:
-                    resultado = RoboNfae(tarefa, emitente, senha, self.aprender_pergunta).executar()
+                    resultado = RoboNfae(tarefa, emitente, senha, self.aprender_pergunta,
+                                         foi_cancelada=lambda: self.prumo.situacao(tarefa["id"]) == "cancelada").executar()
         except Exception as e:  # noqa: BLE001
             log(traceback.format_exc())
             resultado = {"status": "erro", "mensagem": f"Erro inesperado no robô: {e}. Confira no portal se a nota saiu."}
@@ -835,7 +1460,15 @@ def janela(minimizado=False):
     f_senhas = ttk.Frame(abas, padding=16)
     abas.add(f_senhas, text="Senhas")
     ttk.Label(f_senhas, text="Senhas da Receita-PR", style="Titulo.TLabel").pack(anchor="w")
-    ttk.Label(f_senhas, text="Ficam protegidas pelo Windows só neste computador e nunca vão para o Prumo.", style="Suave.TLabel").pack(anchor="w", pady=(2, 10))
+    ttk.Label(f_senhas, text="Ficam protegidas pelo Windows só neste computador e nunca vão para o Prumo.", style="Suave.TLabel").pack(anchor="w", pady=(2, 6))
+
+    def buscar_emitentes():
+        agente.recarregar_emitentes.set()
+        agente.acordar.set()
+        log("Buscando a lista de emitentes no Prumo…")
+
+    ttk.Button(f_senhas, text="Atualizar lista do Prumo", command=buscar_emitentes).pack(anchor="e", pady=(0, 8))
+    abas.bind("<<NotebookTabChanged>>", lambda e: buscar_emitentes() if abas.select() == str(f_senhas) and agente.prumo.vinculado else None)
     lista_senhas = ttk.Frame(f_senhas)
     lista_senhas.pack(fill="both", expand=True)
     _assinatura_senhas = {"v": None}

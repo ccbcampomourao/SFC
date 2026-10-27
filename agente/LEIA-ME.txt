@@ -1,7 +1,7 @@
 AGENTE PRUMO - robô do escritório
 =================================
 
-1. Instale o Python 3.12+ (python.org) marcando "Add python.exe to PATH" e o Firefox.
+1. Instale o Python 3.12+ (python.org) marcando "Add python.exe to PATH" e o Google Chrome.
 2. Extraia esta pasta num lugar fixo (ex.: C:\PrumoRobo) e dê dois cliques em instalar.bat.
 3. Na janela do agente: aba "Vincular" -> endereço do Prumo + código gerado no Prumo
    (NFA-e -> Robô -> Vincular computador).
@@ -9,15 +9,16 @@ AGENTE PRUMO - robô do escritório
    pelo Windows só neste computador e nunca vai para o Prumo.
 5. Deixe o computador ligado. O agente inicia sozinho com o Windows (minimizado).
 
-PRIMEIRA EMISSÃO (aprendizado)
-------------------------------
-Na primeira NFA-e, alguém precisa estar no computador: o robô preenche destinatário
-e produtos e abre uma janela "Robô aprendendo". Complete o que faltar, transmita e
-baixe o PDF; depois clique em TERMINEI. O robô grava esses passos e, a partir da
-próxima nota, faz tudo sozinho.
+COMO O ROBÔ EMITE (sempre o mesmo roteiro)
+-----------------------------------------
+Login na Receita-PR -> menu lateral "NFA-e MEI e NFA-e (Modelo 55)" -> Emissão ->
+destinatário (CNPJ) -> natureza "Venda", 1 - Saída, NF-e normal, Não se aplica ->
+retirada/entrega -> produtos -> pagamento 01 - Dinheiro (à vista, valor total) ->
+frete 9 - Sem Ocorrência de Transporte -> Resumo -> Emitir -> PDF.
+O robô não "aprende" passos: faz sempre isso. O Chrome do robô funciona mesmo com a
+janela coberta, mas evite usar esse Chrome enquanto ele emite.
 
-Se o portal da Receita mudar a tela, os caminhos dos campos ficam em
-%APPDATA%\PrumoRobo\seletores.json (apagar a parte "finalizacao" faz o robô
-aprender a etapa final de novo).
+Ajustes (em %APPDATA%\PrumoRobo\seletores.json): "pagamento_meio", "frete",
+"parar_no_resumo": true (para conferir antes de emitir).
 
 Registro do que o robô fez: %APPDATA%\PrumoRobo\robo.log

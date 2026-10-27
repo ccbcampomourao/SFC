@@ -248,7 +248,7 @@ function desenharHistorico() {
           ${arqs ? `<div class="nf-arqs">${arqs}</div>` : ""}
         </div>
         <span class="nf-acoes">
-          ${t.status === "pendente" ? `<button type="button" class="btn-ghost btn-sm" data-cancelar="${t.id}">${icone("x")}Cancelar</button>` : ""}
+          ${["pendente", "em_andamento", "erro", "interrompida", "conferir"].includes(t.status) ? `<button type="button" class="btn-ghost btn-sm" data-cancelar="${t.id}">${icone("x")}Cancelar pedido</button>` : ""}
           ${["erro", "interrompida", "conferir", "cancelada"].includes(t.status) ? `<button type="button" class="btn-secundario btn-sm" data-refazer="${t.id}">${icone("atualizar")}Mandar de novo</button>` : ""}
         </span>
       </div>`;
@@ -257,6 +257,12 @@ function desenharHistorico() {
     const c = e.target.closest("[data-cancelar]"), r = e.target.closest("[data-refazer]");
     if (!c && !r) return;
     const t = NF.tarefas.find((x) => x.id === (c || r).dataset[c ? "cancelar" : "refazer"]);
+    if (c) {
+      const msg = t.status === "pendente" ? "A nota sai da fila e o robô não vai emiti-la."
+        : t.status === "em_andamento" ? "O robô está trabalhando nesta nota agora. Ele vai parar antes de clicar em “Emitir”. Se já tiver emitido, a nota aparece como Emitida."
+        : "O pedido fica como Cancelado e sai das pendências. Isso NÃO cancela uma nota que já tenha sido emitida na Receita — confira no portal.";
+      if (!(await confirmar(msg, { titulo: "Cancelar o pedido desta nota?", textoOk: "Cancelar pedido" }))) return;
+    }
     if (r && ["interrompida", "conferir", "erro"].includes(t.status) && !(await confirmar("Antes de mandar de novo, confira no portal da Receita-PR se esta nota NÃO foi emitida — senão ela sai em duplicidade.", { titulo: "Mandar de novo?", textoOk: "Já conferi, mandar" }))) return;
     try {
       await api(`/api/nfae/tarefas/${t.id}/${c ? "cancelar" : "refazer"}`, { method: "POST" });
