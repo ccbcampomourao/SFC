@@ -815,10 +815,14 @@ function montarRelatorioParcelamentos(w, opcoes, logo = "") {
     const l = r.listaParcelas || [];
     if (!l.length) return "";
     const metade = Math.ceil(l.length / 2);
-    const col = (itens) => `<table class="tparc"><thead><tr><th>Nº</th><th>Vencimento</th><th class="n">Valor</th><th>Situação</th></tr></thead><tbody>${itens.map((x) => `
-      <tr class="${x.paga ? "pg" : x.vencimento < hojeIso ? "vc" : ""}"><td>${x.n}</td><td>${x.ref ? mesBr(x.ref) : dataBr(x.vencimento)}</td><td class="n">${brl(x.saldo != null && !x.paga ? x.saldo : x.valor)}</td>
-      <td>${x.paga ? `Paga${x.dataPagamento ? " " + dataBr(x.dataPagamento) : ""}` : x.vencimento < hojeIso ? "Vencida" : "Em aberto"}</td></tr>`).join("")}</tbody></table>`;
-    return `<div class="tparc-wrap">${col(l.slice(0, metade))}${col(l.slice(metade))}</div>`;
+    // UMA tabela só, com duas parcelas por linha (esquerda: 1ª metade, direita: 2ª metade).
+    // Sem cabeçalho repetido por página: o Chrome desenhava o cabeçalho repetido por cima das linhas.
+    const cel = (x) => x ? `<td class="nn">${x.n}</td><td>${x.ref ? mesBr(x.ref) : dataBr(x.vencimento)}</td><td class="n">${brl(x.saldo != null && !x.paga ? x.saldo : x.valor)}</td>
+      <td class="st ${x.paga ? "pg" : x.vencimento < hojeIso ? "vc" : ""}">${x.paga ? `Paga${x.dataPagamento ? " " + dataBr(x.dataPagamento).slice(0, 6) + dataBr(x.dataPagamento).slice(8) : ""}` : x.vencimento < hojeIso ? "Vencida" : "Em aberto"}</td>` : `<td colspan="4"></td>`;
+    const cab = `<th class="nn">Nº</th><th class="cv">Vencim.</th><th class="n cvl">Valor</th><th class="cst">Situação</th>`;
+    let linhas = "";
+    for (let k = 0; k < metade; k++) linhas += `<tr>${cel(l[k])}<td class="sep"></td>${cel(l[k + metade])}</tr>`;
+    return `<table class="tparc"><thead><tr>${cab}<th class="sep"></th>${cab}</tr></thead><tbody>${linhas}</tbody></table>`;
   };
 
   const cartaoAcordo = ({ a, r }) => `
@@ -918,7 +922,7 @@ function montarRelatorioParcelamentos(w, opcoes, logo = "") {
   .emp-cab small { color: var(--suave); font-size: 12px; }
   .emp-tot { text-align: right; } .emp-tot span { display: block; font-size: 11.5px; color: var(--suave); } .emp-tot b { font-size: 18px; color: var(--tinta); font-variant-numeric: tabular-nums; }
   .acordo { border: 1px solid var(--linha); border-left: 5px solid var(--verde); border-radius: 10px; padding: 16px 18px 14px; margin-bottom: 14px; }
-  .acordo-topo, .mapa, .tparc tr, .tres tr, .emp-cab { break-inside: avoid; page-break-inside: avoid; }
+  .acordo-topo, .mapa, .tparc tr, .tres tr, .emp-cab, .nota { break-inside: avoid; page-break-inside: avoid; }
   .acordo.st-atraso { border-left-color: var(--verm); } .acordo.st-quitado { border-left-color: var(--roxo); } .acordo.st-rescindido { border-left-color: var(--fraco); }
   .acordo header { display: flex; align-items: flex-start; gap: 12px; }
   .orgao { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 4px 9px; border-radius: 6px; background: #F6E8DD; color: #96421E; }
@@ -944,10 +948,12 @@ function montarRelatorioParcelamentos(w, opcoes, logo = "") {
   .legenda { display: flex; gap: 14px; font-size: 11px; color: var(--suave); margin: 6px 0 18px; }
   .legenda i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; border: 1px solid var(--linha); }
   .legenda .pg { background: var(--verde); border-color: var(--verde); } .legenda .vc { background: var(--verm); border-color: var(--verm); } .legenda .px { border: 1.5px solid var(--cobre); }
-  .tparc-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px; }
+  .tparc { margin-top: 12px; table-layout: fixed; }
+  .tparc thead, .tres thead { display: table-row-group; } /* não repete o cabeçalho em cada página (evita sobreposição na impressão) */
   .tparc th { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--suave); text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--linha); }
-  .tparc td { font-size: 11.5px; padding: 3px 6px; border-bottom: 1px solid #F3EFE7; }
-  .tparc tr.pg td { color: var(--suave); } .tparc tr.pg td:last-child { color: var(--verde); } .tparc tr.vc td { color: var(--verm); font-weight: 600; }
+  .tparc td { font-size: 11.5px; padding: 3px 6px; border-bottom: 1px solid #F3EFE7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tparc .nn { width: 6%; } .tparc .cv { width: 13%; } .tparc .cvl { width: 15%; } .tparc .cst { width: 16%; } .tparc .sep { width: 2%; border-bottom: 0; }
+  .tparc td.st.pg { color: var(--verde); } .tparc td.st.vc { color: var(--verm); font-weight: 600; }
   .nota { margin-top: 22px; padding: 12px 14px; background: var(--marfim); border-radius: 8px; font-size: 11.5px; color: var(--suave); }
   .rodape { display: flex; justify-content: space-between; padding: 12px 40px; border-top: 1px solid var(--linha); font-size: 11px; color: var(--fraco); }
   .vazio { padding: 50px 0; text-align: center; color: var(--suave); }
@@ -963,7 +969,7 @@ function montarRelatorioParcelamentos(w, opcoes, logo = "") {
     .kpi b { font-size: 15px; } .kpi.saldo b { font-size: 17px; }
     .grade b { font-size: 12.5px; } .grade .forte b { font-size: 13px; }
   }
-  @media (max-width: 760px) { .kpis { grid-template-columns: 1fr 1fr; } .grade { grid-template-columns: 1fr 1fr; } .capa, .conteudo { padding: 22px; } .tparc-wrap { grid-template-columns: 1fr; } }
+  @media (max-width: 760px) { .kpis { grid-template-columns: 1fr 1fr; } .grade { grid-template-columns: 1fr 1fr; } .capa, .conteudo { padding: 22px; } .tparc td { font-size: 10.5px; padding: 3px 3px; } }
 </style></head><body>
 <div class="barra-acoes"><button onclick="window.close()">Fechar</button><button class="pri" onclick="window.print()">Imprimir / salvar PDF</button></div>
 <div class="folha">
