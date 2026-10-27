@@ -1957,6 +1957,8 @@ export default {
         const idsAnexos = new Set();
         estado.grupos.forEach((g) => g.empresas.forEach((e) => (e.anexos || []).forEach((a) => a?.id && idsAnexos.add(a.id))));
         estado.parcelamentos.forEach((p) => (p.anexos || []).forEach((a) => a?.id && idsAnexos.add(a.id)));
+        // documentos de cada acordo (abas de parcelamento dentro da empresa)
+        estado.parcelamentos.forEach((p) => (p.acordos || []).forEach((ac) => (ac.anexos || []).forEach((a) => a?.id && idsAnexos.add(a.id))));
 
         const anexosEmpacotados = {};
         for (const id of idsAnexos) {
@@ -2008,12 +2010,14 @@ export default {
             mapaIds[idAntigo] = novoId;
           }
         }
+        const remapearAnexos = (anexos) => (anexos || [])
+          .map((a) => (a && a.id && mapaIds[a.id] ? { ...a, id: mapaIds[a.id] } : a))
+          .filter(Boolean);
         const remapear = (lista) =>
           (lista || []).map((item) => ({
             ...item,
-            anexos: (item.anexos || [])
-              .map((a) => (a && a.id && mapaIds[a.id] ? { ...a, id: mapaIds[a.id] } : a))
-              .filter(Boolean),
+            anexos: remapearAnexos(item.anexos),
+            ...(Array.isArray(item.acordos) ? { acordos: item.acordos.map((ac) => ({ ...ac, anexos: remapearAnexos(ac.anexos) })) } : {}),
           }));
 
         const novosGrupos = backup.grupos.map((g) => ({ nome: g.nome, empresas: remapear(g.empresas || []) }));
