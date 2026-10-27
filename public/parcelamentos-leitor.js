@@ -27,14 +27,15 @@
 
   function cnpjDoContribuinte(t) {
     // No e-CAC o PRIMEIRO CNPJ da página é o do escritório (titular do acesso) — nunca usar esse.
-    const rotulos = [/CNPJ:\s*(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/, /CPF\/CNPJ Contribuinte:\s*([\d./-]{11,18})/, /Procurador de:\s*([\d./-]{11,18})/, /Usuário:\s*([\d./-]{11,18})/, /CPF:\s*(\d{3}\.\d{3}\.\d{3}-\d{2})\b(?![\s\S]*Certifica)/];
+    const rotulos = [/CNPJ:\s*(\d{2}\.\d{3}\.\d{3}\/\d{4}[\s-]?\d{2})/, /CPF\/CNPJ Contribuinte:\s*([\d./-]{11,18})/, /Procurador de:\s*([\d./-]{11,18})/, /Usuário:\s*([\d./-]{11,18})/, /CPF:\s*(\d{3}\.\d{3}\.\d{3}-\d{2})\b(?![\s\S]*Certifica)/];
     for (const re of rotulos) { const v = so(re, t); if (v && [11, 14].includes(dig(v).length)) return fmtCnpj(dig(v)); }
     return null;
   }
 
   // ---------------------------------------------------------------- e-CAC: pedido
   function lerPedidoEcac(t) {
-    const tipo = so(/Consulta Pedidos de Parcelamento\s*-\s*(.+?)\s+(?:Nome Empresarial|Voltar|CNPJ:)/i, t) || "Parcelamento";
+    // o título pode ter sido cortado na impressão: "Vencimento do DAS" = Simples Nacional
+    const tipo = so(/Consulta Pedidos de Parcelamento\s*-\s*(.+?)\s+(?:Nome Empresarial|Voltar|CNPJ:)/i, t) || (/Vencimento do DAS/i.test(t) ? "Parcelamento do Simples Nacional" : "Parcelamento");
     const ped = /Observa[çc][ãa]o\s+(\d+)\s+(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s+(\d{2}\/\d{2}\/\d{4})/i.exec(t);
     const con = /Data da consolida[çc][ãa]o\s+R\$\s*([\d.]+,\d{2})\s+(\d+)\s+R\$\s*([\d.]+,\d{2})\s+(\d{2}\/\d{2}\/\d{4})/i.exec(t);
     const pagamentos = [];
@@ -47,15 +48,23 @@
       vistos.add(chave);
       pagamentos.push({ ref: isoMes(m[1]), vencimento: iso(m[2]), data: iso(m[3]), valor: num(m[4]) });
     }
+    // "Alterações de dívida": reconsolidação (débitos alterados no sistema de cobrança, antecipação...)
+    const reconsolidacoes = [];
+    const reAlt = /altera[çc][ãa]o da d[íi]vida\s+R\$\s*([\d.]+,\d{2})\s+(\d+)\s+R\$\s*([\d.]+,\d{2})\s+(\d{2}\/\d{2}\/\d{4})/gi;
+    let ma;
+    while ((ma = reAlt.exec(t))) reconsolidacoes.push({ valor: num(ma[1]), remanescentes: Number(ma[2]), parcelaBasica: num(ma[3]), data: iso(ma[4]) });
+    const ultimaAlt = reconsolidacoes[reconsolidacoes.length - 1];
     return {
       orgao: "RFB", tipo,
+      reconsolidacoes,
+      ...(ultimaAlt ? { parcelaBasicaOriginal: con ? num(con[3]) : null } : {}),
       numero: ped ? ped[1] : null,
       situacao: ped ? limpar(ped[3]) : null,
       dataSituacao: ped ? iso(ped[4]) : null,
       dataAdesao: ped ? iso(ped[2]) : null,
       valorConsolidado: con ? num(con[1]) : null,
       qtdParcelas: con ? Number(con[2]) : null,
-      parcelaBasica: con ? num(con[3]) : null,
+      parcelaBasica: ultimaAlt ? ultimaAlt.parcelaBasica : con ? num(con[3]) : null,
       dataConsolidacao: con ? iso(con[4]) : null,
       pagamentos,
     };
@@ -135,7 +144,8 @@
     const t = limpar(texto);
     let formato = null, acordo = null;
     if (/CONSULTA DE NEGOCIA[ÇC][ÕO]ES/i.test(t) && /N[úu]mero da Negocia[çc][ãa]o/i.test(t)) { formato = "pgfn"; acordo = lerPgfn(t); }
-    else if (/Consulta Pedidos de Parcelamento/i.test(t)) { formato = "ecac-pedido"; acordo = lerPedidoEcac(t); }
+    else if (/Consulta Pedidos de Parcelamento/i.test(t) ||
+      (/Selecione o pedido/i.test(t) && /(Demonstrativo de pagamentos|Pedido do Contribuinte|Data do pedido)/i.test(t))) { formato = "ecac-pedido"; acordo = lerPedidoEcac(t); }
     else if (/RECIBO DE ADES[ÃA]O AO PARCELAMENTO/i.test(t)) { formato = "ecac-recibo"; acordo = lerReciboEcac(t); }
     if (!acordo) return null;
     if (!acordo.valorConsolidado && !acordo.qtdParcelas && !(acordo.pagamentos || []).length && !(acordo.parcelas || []).length) return null;

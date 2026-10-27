@@ -481,6 +481,13 @@ function painelGeral(p, irPara) {
   return box;
 }
 
+
+function htmlReconsolidacoes(a) {
+  const l = a.reconsolidacoes || [];
+  if (!l.length) return "";
+  return l.map((x) => `Reconsolidado em ${dataBr(x.data)}: ${brl(x.valor)} em ${x.remanescentes} parcela(s) restante(s) de ${brl(x.parcelaBasica)}`).join(" · ") +
+    (a.parcelaBasicaOriginal ? ` (consolidação original: ${brl(a.valorConsolidado)} em ${a.qtdParcelas}x de ${brl(a.parcelaBasicaOriginal)})` : "");
+}
 // ---------------- Aba de um parcelamento ----------------
 function painelAcordo(p, a, irPara) {
   const box = document.createElement("div");
@@ -522,6 +529,7 @@ function painelAcordo(p, a, irPara) {
       ${dado("Termina em", r.termino ? (r.estimado ? mesBr(r.termino.slice(0, 7)) : dataBr(r.termino)) : "—")}
     </div>
     ${(a.debitos || []).length ? `<p class="ac-debitos">${icone("documento")}Débitos parcelados: ${a.debitos.map((d) => mesBr(d.periodo)).join(", ")}</p>` : ""}
+    ${(a.reconsolidacoes || []).length ? `<p class="ac-debitos">${icone("atualizar")}${htmlReconsolidacoes(a)}</p>` : ""}
     ${linhas ? `<div class="acordo-parcelas"><table><thead><tr><th>Nº</th><th>Referência</th><th>Vencimento</th><th class="num">Valor</th><th>Situação</th>${a.manual ? "<th></th>" : ""}</tr></thead><tbody>${linhas}</tbody></table></div>` : ""}
     <p class="ac-rodape-txt">${a.atualizadoEm ? "Atualizado em " + dataBr(a.atualizadoEm) : ""}${(a.fontes || []).length ? " · extratos: " + a.fontes.map(escaparHtml).join(", ") : ""}${r.estimado ? " · saldo estimado = parcelas restantes × última parcela paga" : ""}</p>`;
   const duas = document.createElement("div");
@@ -747,74 +755,241 @@ function dadosRelatorio({ ids = null, filtro = "abertos", acordoId = null } = {}
   };
 }
 
+// Nome do escritório no relatório (o relatório vai para o cliente: sem a marca do sistema)
+const ESCRITORIO_RELATORIO = { nome: "FZ CONT", sub: "Contabilidade e Consultoria" };
+
+// logo do escritório embutida no relatório (aparece também no PDF salvo)
+let _logoEscritorio = null;
+async function logoEscritorioDataUri() {
+  if (_logoEscritorio !== null) return _logoEscritorio;
+  try {
+    const blob = await (await fetch("/img/logo-full.png")).blob();
+    _logoEscritorio = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = () => ok(""); fr.readAsDataURL(blob); });
+  } catch (_) { _logoEscritorio = ""; }
+  return _logoEscritorio;
+}
+logoEscritorioDataUri();
+
 function abrirRelatorioParcelamentos(opcoes) {
-  const { empresas, tot } = dadosRelatorio(opcoes);
-  const titulos = { abertos: "Parcelamentos em aberto", quitados: "Parcelamentos quitados", todos: "Todos os parcelamentos" };
-  const hoje = new Date().toLocaleDateString("pt-BR");
-  const esc = escaparHtml;
-  const blocos = empresas.map(({ p, acordos }) => `
-    <section class="emp">
-      <h2>${esc(p.nome)} <small>${esc(p.cnpj || "")}</small></h2>
-      <table class="acordos">
-        <thead><tr><th>Órgão / modalidade</th><th>Situação</th><th class="n">Consolidado</th><th class="n">Pagas</th><th class="n">Em aberto</th><th class="n">Parcela</th><th class="n">Já pago</th><th class="n">Saldo</th><th>Próxima</th><th>Término</th></tr></thead>
-        <tbody>${acordos.map(({ a, r }) => `
-          <tr class="st-${r.status}">
-            <td><b>${nomeOrgao(a)}</b>${a.numero ? ` · nº ${esc(a.numero)}` : ""}<br><span class="mod">${esc(a.tipo || "")}</span></td>
-            <td><span class="st">${(ROTULO_STATUS_ACORDO[r.status] || [r.status])[0]}</span>${r.atrasadas ? `<br><span class="vencidas">${r.atrasadas} vencida(s)</span>` : ""}</td>
-            <td class="n">${brl(a.valorConsolidado)}</td>
-            <td class="n">${r.pagas ?? "—"}/${r.total ?? "?"}</td>
-            <td class="n">${r.abertas ?? "—"}</td>
-            <td class="n">${brl(r.valorParcela)}</td>
-            <td class="n">${brl(r.totalPago)}</td>
-            <td class="n"><b>${r.estimado && r.status !== "quitado" ? "≈ " : ""}${r.status === "quitado" ? brl(0) : brl(r.saldo)}</b></td>
-            <td>${r.proxima ? `${r.proxima.ref ? mesBr(r.proxima.ref) : dataBr(r.proxima.vencimento)}` : "—"}</td>
-            <td>${r.termino ? (r.estimado ? mesBr(r.termino.slice(0, 7)) : dataBr(r.termino)) : "—"}</td>
-          </tr>
-          ${opcoes.detalhado && (r.listaParcelas || []).length ? `<tr class="det"><td colspan="10">
-            <div class="parcelas">${r.listaParcelas.map((x) => `<span class="${x.paga ? "ok" : x.vencimento < new Date().toISOString().slice(0, 10) ? "venc" : "ab"}" title="${x.paga ? "Paga" : "Em aberto"}"><b>${x.n}</b> ${x.ref ? mesBr(x.ref) : dataBr(x.vencimento)} · ${brl(x.saldo != null && !x.paga ? x.saldo : x.valor)}</span>`).join("")}</div>
-          </td></tr>` : ""}`).join("")}
-        </tbody>
-      </table>
-    </section>`).join("");
-  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório de parcelamentos — ${hoje}</title>
-<style>
-  @page { size: A4 landscape; margin: 12mm; }
-  * { box-sizing: border-box; }
-  body { font: 12px/1.45 "IBM Plex Sans", "Segoe UI", Arial, sans-serif; color: #241F1A; margin: 0; padding: 24px; background: #F3EFE7; }
-  .folha { max-width: 1180px; margin: 0 auto; background: #fff; padding: 28px 32px; border-radius: 10px; box-shadow: 0 6px 18px rgba(29,26,22,.08); }
-  header.top { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #16202E; padding-bottom: 12px; margin-bottom: 16px; }
-  h1 { font: 600 22px Georgia, serif; margin: 0; color: #16202E; } header.top p { margin: 2px 0 0; color: #6E665B; }
-  .acoes button { font: inherit; padding: 8px 14px; border-radius: 7px; border: 1px solid #D6CCBC; background: #fff; cursor: pointer; margin-left: 6px; }
-  .acoes button.pri { background: #B4532A; border-color: #B4532A; color: #fff; }
-  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 18px; }
-  .kpi { border: 1px solid #E6DFD3; border-radius: 8px; padding: 10px 12px; } .kpi span { display: block; color: #6E665B; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; } .kpi b { font-size: 17px; color: #16202E; }
-  .kpi.saldo { background: #16202E; border-color: #16202E; } .kpi.saldo span { color: #C9BFAE; } .kpi.saldo b { color: #fff; }
-  section.emp { margin-bottom: 18px; break-inside: avoid; }
-  h2 { font-size: 14px; margin: 0 0 6px; color: #16202E; } h2 small { color: #9C9285; font-weight: 400; margin-left: 6px; }
-  table { width: 100%; border-collapse: collapse; } th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: #6E665B; border-bottom: 1px solid #D6CCBC; padding: 5px 6px; }
-  td { padding: 6px; border-bottom: 1px solid #EFE9DF; vertical-align: top; } .n { text-align: right; white-space: nowrap; }
-  .mod { color: #6E665B; font-size: 11px; } .st { font-weight: 600; } .st-em_dia .st { color: #3E6B37; } .st-atraso .st, .vencidas { color: #B23B29; } .st-quitado .st { color: #6A5A93; } .st-rescindido .st { color: #6E665B; }
-  tr.det td { background: #FBF9F5; } .parcelas { display: flex; flex-wrap: wrap; gap: 4px; }
-  .parcelas span { font-size: 10.5px; padding: 2px 6px; border-radius: 4px; border: 1px solid #E6DFD3; white-space: nowrap; }
-  .parcelas .ok { background: #E6EEDF; border-color: #C3D5B8; color: #3E6B37; } .parcelas .venc { background: #F6E2DA; border-color: #EAC0B2; color: #8F2C1C; }
-  .nota { color: #6E665B; font-size: 11px; margin-top: 14px; } .vazio { padding: 40px; text-align: center; color: #6E665B; }
-  @media print { body { background: #fff; padding: 0; } .folha { box-shadow: none; padding: 0; max-width: none; } .acoes { display: none; } }
-</style></head><body><div class="folha">
-  <header class="top"><div><h1>${titulos[opcoes.filtro] || "Parcelamentos"}</h1><p>Gerado em ${hoje} pelo Prumo · ${tot.empresas} empresa(s) · ${tot.acordos} acordo(s)</p></div>
-    <div class="acoes"><button onclick="window.close()">Fechar</button><button class="pri" onclick="window.print()">Imprimir / salvar PDF</button></div></header>
-  ${empresas.length ? `<div class="kpis">
-    <div class="kpi"><span>Acordos ativos</span><b>${tot.ativos}</b></div>
-    <div class="kpi"><span>Em atraso</span><b>${tot.atraso}</b></div>
-    <div class="kpi"><span>Quitados</span><b>${tot.quitados}</b></div>
-    <div class="kpi"><span>Parcelas em aberto</span><b>${tot.abertas}</b></div>
-    <div class="kpi saldo"><span>Saldo em aberto</span><b>${tot.estimado ? "≈ " : ""}${brl(tot.saldo)}</b></div>
-  </div>${blocos}
-  <p class="nota">Total consolidado: ${brl(tot.consolidado)} · total já pago: ${brl(tot.pago)}.
-  Valores conforme os extratos importados do e-CAC/PGFN (veja a data de atualização de cada acordo no Prumo). No Simples Nacional a parcela é corrigida pela Selic: o saldo (≈) é estimado com o valor da última parcela paga.</p>`
-    : `<div class="vazio">Nenhum acordo neste filtro.</div>`}
-</div></body></html>`;
+  // a janela abre na hora do clique (senão o navegador bloqueia) e o conteúdo entra em seguida
   const w = window.open("", "_blank");
-  if (!w) return avisar("O navegador bloqueou a janela do relatório. Permita pop-ups para o Prumo e tente de novo.", { titulo: "Relatório bloqueado", tipo: "aviso" });
+  if (!w) return avisar("O navegador bloqueou a janela do relatório. Permita pop-ups e tente de novo.", { titulo: "Relatório bloqueado", tipo: "aviso" });
+  w.document.write('<p style="font:14px sans-serif;color:#6E665B;padding:40px">Montando o relatório…</p>'); w.document.close();
+  logoEscritorioDataUri().then((logo) => montarRelatorioParcelamentos(w, opcoes, logo));
+}
+
+function montarRelatorioParcelamentos(w, opcoes, logo = "") {
+  const { empresas, tot } = dadosRelatorio(opcoes);
+  const esc = escaparHtml;
+  const hojeIso = new Date().toISOString().slice(0, 10);
+  const hoje = new Date().toLocaleDateString("pt-BR");
+  const hora = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const titulos = { abertos: "Parcelamentos em aberto", quitados: "Parcelamentos quitados", todos: "Parcelamentos" };
+  const ordemSt = { atraso: 0, em_dia: 1, quitado: 2, rescindido: 3 };
+  const pct = (r) => Math.round((r.progresso || 0) * 100);
+  const termino = (r) => (r.termino ? (r.estimado ? mesBr(r.termino.slice(0, 7)) : dataBr(r.termino)) : "—");
+  const proxTxt = (r) => (r.status === "quitado" || !r.proxima ? "—" : r.proxima.ref ? mesBr(r.proxima.ref) : dataBr(r.proxima.vencimento));
+  const saldoTxt = (r) => (r.status === "quitado" ? brl(0) : (r.estimado ? "≈ " : "") + brl(r.saldo));
+  const pill = (r) => { const [rot] = ROTULO_STATUS_ACORDO[r.status] || [r.status]; return `<span class="pill st-${r.status}">${rot}</span>`; };
+
+  // ordena: empresas com atraso primeiro, depois por saldo
+  for (const e of empresas) {
+    e.acordos.sort((x, y) => (ordemSt[x.r.status] - ordemSt[y.r.status]) || ((y.r.saldo || 0) - (x.r.saldo || 0)));
+    e.saldo = e.acordos.filter(({ r }) => r.status === "em_dia" || r.status === "atraso").reduce((s, { r }) => s + (r.saldo || 0), 0);
+    e.abertas = e.acordos.filter(({ r }) => r.status === "em_dia" || r.status === "atraso").reduce((s, { r }) => s + (r.abertas || 0), 0);
+    e.atraso = e.acordos.some(({ r }) => r.status === "atraso");
+    e.estimado = e.acordos.some(({ r }) => r.estimado && r.status !== "quitado");
+  }
+  empresas.sort((x, y) => (y.atraso - x.atraso) || (y.saldo - x.saldo) || x.p.nome.localeCompare(y.p.nome, "pt-BR"));
+
+  const mapaParcelas = (r) => (r.listaParcelas || []).length ? `
+    <div class="mapa" aria-label="Mapa das parcelas">
+      ${r.listaParcelas.map((x) => {
+        const cls = x.paga ? "pg" : x.vencimento && x.vencimento < hojeIso ? "vc" : r.proxima && x.vencimento === r.proxima.vencimento ? "px" : "ab";
+        const quando = x.ref ? mesBr(x.ref) : dataBr(x.vencimento);
+        return `<i class="${cls}" title="${x.n} · ${quando} · ${brl(x.saldo != null && !x.paga ? x.saldo : x.valor)}${x.paga ? " · paga" : ""}">${x.n}</i>`;
+      }).join("")}
+    </div>` : "";
+
+  const tabelaParcelas = (r) => {
+    const l = r.listaParcelas || [];
+    if (!l.length) return "";
+    const metade = Math.ceil(l.length / 2);
+    const col = (itens) => `<table class="tparc"><thead><tr><th>Nº</th><th>Vencimento</th><th class="n">Valor</th><th>Situação</th></tr></thead><tbody>${itens.map((x) => `
+      <tr class="${x.paga ? "pg" : x.vencimento < hojeIso ? "vc" : ""}"><td>${x.n}</td><td>${x.ref ? mesBr(x.ref) : dataBr(x.vencimento)}</td><td class="n">${brl(x.saldo != null && !x.paga ? x.saldo : x.valor)}</td>
+      <td>${x.paga ? `Paga${x.dataPagamento ? " " + dataBr(x.dataPagamento) : ""}` : x.vencimento < hojeIso ? "Vencida" : "Em aberto"}</td></tr>`).join("")}</tbody></table>`;
+    return `<div class="tparc-wrap">${col(l.slice(0, metade))}${col(l.slice(metade))}</div>`;
+  };
+
+  const cartaoAcordo = ({ a, r }) => `
+    <article class="acordo st-${r.status}">
+      <div class="acordo-topo">
+      <header>
+        <span class="orgao o-${esc(a.orgao || "")}">${esc(nomeOrgao(a))}</span>
+        <div class="tit"><b>${esc(a.tipo || "Parcelamento")}</b>
+          <small>${[a.numero ? "Nº " + esc(a.numero) : "", a.situacao ? esc(a.situacao) : "", a.dataAdesao ? "adesão " + dataBr(a.dataAdesao) : ""].filter(Boolean).join(" · ")}</small></div>
+        ${pill(r)}
+      </header>
+      <div class="prog"><div class="barra"><i style="width:${pct(r)}%"></i></div><span><b>${r.pagas ?? "—"}</b> de ${r.total ?? "?"} pagas · ${pct(r)}%</span></div>
+      <div class="grade">
+        <div><span>Valor consolidado</span><b>${brl(a.valorConsolidado)}</b></div>
+        <div><span>Valor da parcela</span><b>${brl(r.valorParcela)}</b></div>
+        <div><span>Total já pago</span><b>${brl(r.totalPago)}</b></div>
+        <div class="forte"><span>${r.estimado && r.status !== "quitado" ? "Saldo estimado" : "Saldo devedor"}</span><b>${saldoTxt(r)}</b></div>
+        <div><span>Em aberto</span><b>${r.status === "quitado" ? 0 : r.abertas ?? "—"}${r.atrasadas ? ` <em>${r.atrasadas} vencida(s)</em>` : ""}</b></div>
+        <div><span>Próxima parcela</span><b>${proxTxt(r)}${r.proxima && r.status !== "quitado" ? ` <small>${brl(r.proxima.valor)}</small>` : ""}</b></div>
+        <div><span>Término previsto</span><b>${termino(r)}</b></div>
+        <div><span>Atualizado em</span><b>${dataBr(a.atualizadoEm)}</b></div>
+      </div>
+      </div>
+      ${(a.debitos || []).length ? `<p class="debitos"><span>Débitos parcelados</span> ${a.debitos.map((d) => mesBr(d.periodo)).join(" · ")}</p>` : ""}
+      ${(a.reconsolidacoes || []).length ? `<p class="debitos"><span>Alteração de dívida</span> ${htmlReconsolidacoes(a)}</p>` : ""}
+      ${mapaParcelas(r)}
+      ${opcoes.detalhado ? tabelaParcelas(r) : ""}
+    </article>`;
+
+  const resumoEmpresas = empresas.length > 1 ? `
+    <section class="bloco resumo">
+      <h2>Resumo por empresa</h2>
+      <table class="tres">
+        <thead><tr><th>Empresa</th><th class="c">Parcelamentos</th><th class="c">Parcelas em aberto</th><th class="n">Saldo em aberto</th><th>Situação</th></tr></thead>
+        <tbody>${empresas.map((e) => `
+          <tr><td><b>${esc(e.p.nome)}</b><small>${esc(e.p.cnpj || "")}</small></td>
+            <td class="c">${e.acordos.length}</td><td class="c">${e.abertas}</td>
+            <td class="n"><b>${e.estimado ? "≈ " : ""}${brl(e.saldo)}</b></td>
+            <td>${e.atraso ? '<span class="pill st-atraso">Em atraso</span>' : e.acordos.every(({ r }) => r.status === "quitado") ? '<span class="pill st-quitado">Quitado</span>' : '<span class="pill st-em_dia">Em dia</span>'}</td></tr>`).join("")}
+        </tbody>
+        <tfoot><tr><td>Total</td><td class="c">${tot.acordos}</td><td class="c">${tot.abertas}</td><td class="n">${tot.estimado ? "≈ " : ""}${brl(tot.saldo)}</td><td></td></tr></tfoot>
+      </table>
+    </section>` : "";
+
+  const blocosEmpresa = empresas.map((e) => `
+    <section class="empresa">
+      <div class="emp-cab">
+        <div><h2>${esc(e.p.nome)}</h2><small>CNPJ ${esc(e.p.cnpj || "—")}</small></div>
+        <div class="emp-tot"><span>${e.abertas} parcela(s) em aberto</span><b>${e.estimado ? "≈ " : ""}${brl(e.saldo)}</b></div>
+      </div>
+      ${e.acordos.map(cartaoAcordo).join("")}
+    </section>`).join("");
+
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>${titulos[opcoes.filtro] || "Parcelamentos"} — ${hoje}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --tinta:#16202E; --tinta2:#22304A; --cobre:#B4532A; --cobre2:#E3955C; --marfim:#F3EFE7; --linha:#E6DFD3; --suave:#6E665B; --fraco:#9C9285;
+          --verde:#3E6B37; --verdebg:#E6EEDF; --verm:#B23B29; --vermbg:#F6E2DA; --roxo:#6A5A93; --roxobg:#ECE8F4; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { margin: 0; background: #E9E4DA; font: 13px/1.45 "IBM Plex Sans", "Segoe UI", Arial, sans-serif; color: #241F1A; }
+  .barra-acoes { position: sticky; top: 0; z-index: 5; display: flex; justify-content: flex-end; gap: 8px; padding: 10px 24px; background: rgba(233,228,218,.92); backdrop-filter: blur(6px); }
+  .barra-acoes button { font: 600 13px inherit; font-family: inherit; padding: 9px 16px; border-radius: 9px; border: 1px solid #D6CCBC; background: #fff; color: var(--tinta); cursor: pointer; }
+  .barra-acoes button.pri { background: var(--cobre); border-color: var(--cobre); color: #fff; }
+  .folha { max-width: 920px; margin: 0 auto 40px; background: #fff; box-shadow: 0 10px 40px rgba(29,26,22,.12); border-radius: 14px; overflow: hidden; }
+  .capa { background: radial-gradient(120% 140% at 100% 0%, #2B3B58 0%, var(--tinta) 55%); color: #fff; padding: 30px 40px 28px; position: relative; }
+  .capa::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: linear-gradient(90deg, var(--cobre), var(--cobre2)); }
+  .capa-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+  .escritorio { display: flex; align-items: center; gap: 14px; }
+  .logo-esc { flex: none; display: grid; place-items: center; width: 64px; height: 64px; background: #fff; border-radius: 12px; padding: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+  .logo-esc img { max-width: 100%; max-height: 100%; display: block; } .escritorio b { display: block; font: 600 24px/1.1 "Fraunces", Georgia, serif; letter-spacing: .02em; } .escritorio span { display: block; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #E3955C; margin-top: 3px; }
+  .capa-data { text-align: right; font-size: 12px; color: #C9BFAE; } .capa-data b { display: block; color: #fff; font-size: 13px; }
+  .capa h1 { font: 600 30px/1.15 "Fraunces", Georgia, serif; margin: 22px 0 4px; letter-spacing: -.01em; }
+  .capa p { margin: 0; color: #C9BFAE; }
+  .kpis { display: grid; grid-template-columns: 1.5fr repeat(4, 1fr); gap: 10px; margin-top: 22px; }
+  .kpi { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); border-radius: 10px; padding: 12px 14px; }
+  .kpi span { display: block; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: #C9BFAE; }
+  .kpi b { display: block; font-size: 20px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .kpi.saldo { background: #fff; border-color: #fff; } .kpi.saldo span { color: var(--suave); } .kpi.saldo b { color: var(--cobre); font-size: 24px; }
+  .kpi.alerta b { color: #FFB4A3; }
+  .conteudo { padding: 26px 40px 34px; }
+  h2 { font: 600 17px "Fraunces", Georgia, serif; color: var(--tinta); margin: 0; }
+  .bloco { margin-bottom: 26px; } .bloco h2 { margin-bottom: 10px; }
+  table { width: 100%; border-collapse: collapse; }
+  .tres th { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--suave); text-align: left; padding: 8px 10px; border-bottom: 1.5px solid var(--tinta); }
+  .tres td { padding: 9px 10px; border-bottom: 1px solid var(--linha); vertical-align: middle; }
+  .tres td small { display: block; color: var(--fraco); font-size: 11.5px; }
+  .tres tfoot td { font-weight: 700; border-bottom: 0; border-top: 1.5px solid var(--tinta); color: var(--tinta); }
+  .n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; } .c { text-align: center; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+  .pill.st-em_dia { background: var(--verdebg); color: var(--verde); } .pill.st-atraso { background: var(--vermbg); color: var(--verm); }
+  .pill.st-quitado { background: var(--roxobg); color: var(--roxo); } .pill.st-rescindido { background: var(--marfim); color: var(--suave); }
+  .empresa { margin-top: 8px; padding-top: 18px; border-top: 1px solid var(--linha); }
+  .empresa:first-of-type { border-top: 0; padding-top: 0; }
+  .emp-cab { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 12px; }
+  .emp-cab small { color: var(--suave); font-size: 12px; }
+  .emp-tot { text-align: right; } .emp-tot span { display: block; font-size: 11.5px; color: var(--suave); } .emp-tot b { font-size: 18px; color: var(--tinta); font-variant-numeric: tabular-nums; }
+  .acordo { border: 1px solid var(--linha); border-left: 5px solid var(--verde); border-radius: 10px; padding: 16px 18px 14px; margin-bottom: 14px; }
+  .acordo-topo, .mapa, .tparc tr, .tres tr, .emp-cab { break-inside: avoid; page-break-inside: avoid; }
+  .acordo.st-atraso { border-left-color: var(--verm); } .acordo.st-quitado { border-left-color: var(--roxo); } .acordo.st-rescindido { border-left-color: var(--fraco); }
+  .acordo header { display: flex; align-items: flex-start; gap: 12px; }
+  .orgao { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 4px 9px; border-radius: 6px; background: #F6E8DD; color: #96421E; }
+  .orgao.o-PGFN { background: #E4E8F0; color: var(--tinta); }
+  .tit { flex: 1; min-width: 0; } .tit b { display: block; font-size: 14px; color: var(--tinta); } .tit small { color: var(--suave); font-size: 12px; }
+  .prog { display: flex; align-items: center; gap: 12px; margin: 14px 0 12px; }
+  .prog .barra { flex: 1; height: 8px; background: var(--marfim); border-radius: 999px; overflow: hidden; }
+  .prog .barra i { display: block; height: 100%; background: linear-gradient(90deg, var(--verde), #6E9E62); border-radius: inherit; }
+  .acordo.st-atraso .prog .barra i { background: var(--verm); } .acordo.st-quitado .prog .barra i { background: var(--roxo); }
+  .prog span { font-size: 12px; color: var(--suave); white-space: nowrap; } .prog span b { color: var(--tinta); }
+  .grade { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--linha); border: 1px solid var(--linha); border-radius: 8px; overflow: hidden; }
+  .grade > div { background: #FBF9F5; padding: 9px 12px; }
+  .grade span { display: block; font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: var(--fraco); }
+  .grade b { font-size: 14px; color: #241F1A; font-variant-numeric: tabular-nums; } .grade b small { font-weight: 500; color: var(--suave); font-size: 11.5px; }
+  .grade b em { font-style: normal; font-size: 11px; color: var(--verm); font-weight: 600; }
+  .grade .forte { background: var(--tinta); } .grade .forte span { color: #C9BFAE; } .grade .forte b { color: #fff; font-size: 15px; }
+  .debitos { margin: 10px 0 0; font-size: 12px; color: var(--suave); } .debitos span { font-weight: 600; color: var(--tinta); margin-right: 4px; }
+  .mapa { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 12px; }
+  .mapa i { width: 22px; height: 18px; display: grid; place-items: center; font: 600 9px inherit; font-style: normal; border-radius: 4px; border: 1px solid var(--linha); color: var(--fraco); background: #fff; }
+  .mapa i.pg { background: var(--verde); border-color: var(--verde); color: #fff; }
+  .mapa i.vc { background: var(--verm); border-color: var(--verm); color: #fff; }
+  .mapa i.px { border: 1.5px solid var(--cobre); color: var(--cobre); }
+  .legenda { display: flex; gap: 14px; font-size: 11px; color: var(--suave); margin: 6px 0 18px; }
+  .legenda i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; border: 1px solid var(--linha); }
+  .legenda .pg { background: var(--verde); border-color: var(--verde); } .legenda .vc { background: var(--verm); border-color: var(--verm); } .legenda .px { border: 1.5px solid var(--cobre); }
+  .tparc-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px; }
+  .tparc th { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--suave); text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--linha); }
+  .tparc td { font-size: 11.5px; padding: 3px 6px; border-bottom: 1px solid #F3EFE7; }
+  .tparc tr.pg td { color: var(--suave); } .tparc tr.pg td:last-child { color: var(--verde); } .tparc tr.vc td { color: var(--verm); font-weight: 600; }
+  .nota { margin-top: 22px; padding: 12px 14px; background: var(--marfim); border-radius: 8px; font-size: 11.5px; color: var(--suave); }
+  .rodape { display: flex; justify-content: space-between; padding: 12px 40px; border-top: 1px solid var(--linha); font-size: 11px; color: var(--fraco); }
+  .vazio { padding: 50px 0; text-align: center; color: var(--suave); }
+  @page { size: A4; margin: 10mm; }
+  @media print {
+    body { background: #fff; } .barra-acoes { display: none; }
+    .folha { max-width: none; margin: 0; box-shadow: none; border-radius: 0; }
+    .capa, .conteudo, .rodape { padding-left: 6mm; padding-right: 6mm; }
+    .empresa { break-before: auto; } .emp-cab { break-after: avoid; }
+    .capa { padding-top: 18px; padding-bottom: 18px; } .capa h1 { font-size: 24px; margin-top: 14px; }
+    .kpis { grid-template-columns: 1.5fr 1fr 1fr 0.8fr 1.3fr; gap: 6px; }
+    .kpi { padding: 8px 10px; } .kpi span { font-size: 8.5px; letter-spacing: .04em; white-space: nowrap; }
+    .kpi b { font-size: 15px; } .kpi.saldo b { font-size: 17px; }
+    .grade b { font-size: 12.5px; } .grade .forte b { font-size: 13px; }
+  }
+  @media (max-width: 760px) { .kpis { grid-template-columns: 1fr 1fr; } .grade { grid-template-columns: 1fr 1fr; } .capa, .conteudo { padding: 22px; } .tparc-wrap { grid-template-columns: 1fr; } }
+</style></head><body>
+<div class="barra-acoes"><button onclick="window.close()">Fechar</button><button class="pri" onclick="window.print()">Imprimir / salvar PDF</button></div>
+<div class="folha">
+  <div class="capa">
+    <div class="capa-topo"><div class="escritorio">${logo ? `<div class="logo-esc"><img src="${logo}" alt="${esc(ESCRITORIO_RELATORIO.nome)}"></div>` : ""}<div><b>${esc(ESCRITORIO_RELATORIO.nome)}</b><span>${esc(ESCRITORIO_RELATORIO.sub)}</span></div></div><div class="capa-data">Gerado em<b>${hoje} às ${hora}</b></div></div>
+    <h1>${titulos[opcoes.filtro] || "Parcelamentos"}</h1>
+    <p>${empresas.length === 1 ? esc(empresas[0].p.nome) + " · CNPJ " + esc(empresas[0].p.cnpj || "—") : `${tot.empresas} empresa(s) · ${tot.acordos} parcelamento(s)`}${opcoes.detalhado ? " · com a lista de parcelas" : ""}</p>
+    ${empresas.length ? `<div class="kpis">
+      <div class="kpi saldo"><span>Saldo em aberto</span><b>${tot.estimado ? "≈ " : ""}${brl(tot.saldo)}</b></div>
+      <div class="kpi"><span>Parcelas em aberto</span><b>${tot.abertas}</b></div>
+      <div class="kpi"><span>Parcelamentos ativos</span><b>${tot.ativos}</b></div>
+      <div class="kpi${tot.atraso ? " alerta" : ""}"><span>Em atraso</span><b>${tot.atraso}</b></div>
+      <div class="kpi"><span>Total já pago</span><b>${brl(tot.pago)}</b></div>
+    </div>` : ""}
+  </div>
+  <div class="conteudo">
+    ${empresas.length ? `${resumoEmpresas}
+      <div class="legenda"><span><i class="pg"></i>Paga</span><span><i class="px"></i>Próxima</span><span><i></i>Em aberto</span><span><i class="vc"></i>Vencida</span></div>
+      ${blocosEmpresa}
+      <div class="nota">Valores conforme os extratos importados do e-CAC / PGFN (data de atualização em cada parcelamento) ou informados pelo escritório.
+        No Simples Nacional a parcela é corrigida pela Selic todo mês — o saldo marcado com ≈ é estimado com o valor da última parcela paga.
+        ${tot.quitados ? ` ${tot.quitados} parcelamento(s) quitado(s) neste relatório.` : ""}</div>`
+      : `<div class="vazio">Nenhum parcelamento neste filtro.</div>`}
+  </div>
+  <div class="rodape"><span>${esc(ESCRITORIO_RELATORIO.nome)} · ${esc(ESCRITORIO_RELATORIO.sub)}</span><span>Relatório de parcelamentos · ${hoje}</span></div>
+</div></body></html>`;
   w.document.open(); w.document.write(html); w.document.close();
 }
 
