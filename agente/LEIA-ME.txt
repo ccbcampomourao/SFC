@@ -14,8 +14,8 @@ COMO O ROBÔ EMITE (sempre o mesmo roteiro)
 Login na Receita-PR -> menu lateral "NFA-e MEI e NFA-e (Modelo 55)" -> Emissão ->
 destinatário (CNPJ) -> natureza "Venda", 1 - Saída, NF-e normal, Não se aplica ->
 retirada/entrega -> produtos -> pagamento 01 - Dinheiro (à vista, valor total) ->
-frete 9 - Sem Ocorrência de Transporte -> Resumo -> Emitir -> Consulta de NFA-e
-(filtra pelo destinatário, pega a nota Autorizada de hoje) -> ícones DANFE e "Obter XML da nota".
+frete 9 - Sem Ocorrência de Transporte -> Resumo -> Emitir -> botão "Visualizar DANFE" da tela final (se não aparecer: Consulta de NFA-e
+(filtra pelo destinatário, pega a nota Autorizada de hoje) -> ícones DANFE e "Obter XML da nota").
 O robô não "aprende" passos: faz sempre isso. O Chrome do robô funciona mesmo com a
 janela coberta, mas evite usar esse Chrome enquanto ele emite.
 

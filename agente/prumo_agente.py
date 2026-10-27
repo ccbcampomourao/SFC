@@ -28,7 +28,7 @@ import traceback
 import urllib.error
 import urllib.request
 
-VERSAO = "1.1.3"
+VERSAO = "1.1.5"
 NO_WINDOWS = platform.system() == "Windows"
 PASTA = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "PrumoRobo") if NO_WINDOWS else os.path.join(os.path.expanduser("~"), ".prumo-robo")
 os.makedirs(PASTA, exist_ok=True)
@@ -245,6 +245,11 @@ SELETORES_PADRAO = {
     # A emissão TEM que ser aberta pelo menu lateral do portal (pelo link direto a sessão não se monta)
     "menu_nfae": "//a[normalize-space()='NFA-e MEI e NFA-e (Modelo 55)']",
     "menu_emissao": "//a[normalize-space()='NFA-e MEI e NFA-e (Modelo 55)']/following-sibling::div[1]//a[normalize-space()='Emissão']",
+    # Botão "Visualizar DANFE" da tela final (caminhos passados pelo escritório; o último é pelo texto, de reserva)
+    "botao_danfe": [
+        "//*[@id=\"app\"]/div[1]/div/div[2]/article/footer/button[3]",
+        "/html/body/div/div[2]/div[2]/div[5]/div/div[1]/div/div[2]/article/footer/button[3]",
+    ],
     "destinatario": {
         "cnpj": "/html/body/div[1]/div[2]/div[2]/div[5]/div/div[1]/div/div[2]/div[1]/div[1]/div[2]/div[3]/div[1]/input",
         "ie": "/html/body/div[1]/div[2]/div[2]/div[5]/div/div[1]/div/div[2]/div[1]/div[1]/div[2]/div[7]/div[1]/input",
@@ -1204,21 +1209,64 @@ class RoboNfae:
 
     def _baixar_danfe(self):
         antes = self._arquivos_pdf()
-        # 1) a própria tela depois do "Emitir" tem algo com "DANFE"?
-        for el in self.driver.find_elements("xpath", BOTAO_DANFE_XPATH):
-            try:
-                if not el.is_displayed():
+        # 1) tela final depois do "Emitir": botão "Visualizar DANFE" (pode demorar a aparecer — espera até 60 s)
+        fim = time.time() + 60
+        clicou = False
+        caminhos = list(self.sel.get("botao_danfe") or SELETORES_PADRAO["botao_danfe"]) + [BOTAO_DANFE_XPATH]
+        while time.time() < fim and not clicou:
+            achados = []
+            for xp in caminhos:
+                try:
+                    achados += [e for e in self.driver.find_elements("xpath", xp) if e.is_displayed()]
+                except Exception:  # noqa: BLE001
                     continue
-                alvo = el if el.tag_name.lower() in ("button", "a") else self.driver.execute_script("return arguments[0].closest('button,a') || arguments[0];", el)
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", alvo)
-                alvo.click()
-                if self._esperar_download(antes, tempo=20):
-                    log("DANFE baixada pela tela de resultado.")
-                    return {}
-            except Exception:  # noqa: BLE001
-                continue
+                if achados:
+                    break  # usa o primeiro caminho que achar o botão
+            for el in achados:
+                try:
+                    if not el.is_displayed():
+                        continue
+                    alvo = el if el.tag_name.lower() in ("button", "a") else self.driver.execute_script("return arguments[0].closest('button,a') || arguments[0];", el)
+                    if alvo.get_attribute("disabled"):
+                        continue
+                    # trava: só clica se for mesmo o botão da DANFE (nunca um "Emitir" que esteja na mesma posição)
+                    rotulo = " ".join(filter(None, [alvo.text, alvo.get_attribute("title"), alvo.get_attribute("aria-label"),
+                                                    self.driver.execute_script("return [...arguments[0].querySelectorAll('[title]')].map(e => e.title).join(' ');", alvo)]))
+                    if "DANFE" not in rotulo.upper():
+                        continue
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", alvo)
+                    log("Clicando em “Visualizar DANFE”…")
+                    abas = set(self.driver.window_handles)
+                    try:
+                        alvo.click()
+                    except Exception:  # noqa: BLE001
+                        self.driver.execute_script("arguments[0].click();", alvo)
+                    clicou = True
+                    if self._esperar_download(antes, tempo=40):
+                        log("DANFE baixada pela tela final.")
+                        self._fechar_abas_novas(abas)
+                        return {}
+                    self._fechar_abas_novas(abas)
+                    break
+                except Exception:  # noqa: BLE001
+                    continue
+            if not clicou:
+                time.sleep(1)
+        if clicou:
+            log("Cliquei em “Visualizar DANFE”, mas o arquivo não baixou; vou pela Consulta.")
         # 2) Consulta de NFA-e, filtrando pelo destinatário desta nota
         return self._danfe_pela_consulta(antes)
+
+    def _fechar_abas_novas(self, abas):
+        """Se a DANFE abriu numa aba nova, guarda uma imagem dela, fecha e volta para a aba do portal."""
+        try:
+            for h in [h for h in self.driver.window_handles if h not in abas]:
+                self.driver.switch_to.window(h)
+                self.driver.save_screenshot(os.path.join(self.pasta, "danfe-tela.png"))
+                self.driver.close()
+            self.driver.switch_to.window(list(abas)[0] if abas else self.driver.window_handles[0])
+        except Exception:  # noqa: BLE001
+            pass
 
     def _danfe_pela_consulta(self, antes):
         from selenium.webdriver.common.keys import Keys
