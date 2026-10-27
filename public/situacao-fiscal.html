@@ -256,6 +256,7 @@
     .sf-resumo-geral{ grid-template-columns:1fr; }
     .sf-tabela th:nth-child(3), .sf-tabela td:nth-child(3){ display:none; }
   }
+  @media print{ .sf-so-tela{ display:none !important; } }
   @media print{
     .sf-secao.fechada .sf-secao-corpo{ display:block !important; }
     .sf-card, .sf-secao, .sf-cabecalho{ box-shadow:none; }
@@ -286,10 +287,11 @@
     background-image:linear-gradient(rgba(255,255,255,.9) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.9) 1px, transparent 1px);
     background-size:28px 28px; mask-image:linear-gradient(110deg, transparent 35%, #000 100%); -webkit-mask-image:linear-gradient(110deg, transparent 35%, #000 100%); }
   .sf-hero > *{ position:relative; z-index:1; }
-  .sf-hero-topo{ display:flex; align-items:flex-start; gap:16px; }
+  .sf-hero-topo{ display:flex; align-items:flex-start; gap:16px; flex-wrap:wrap; }
   .sf-hero-avatar{ width:52px; height:52px; border-radius:16px; flex-shrink:0; display:grid; place-items:center; font-family:'Fraunces',serif; font-size:24px; font-weight:600;
     background:linear-gradient(145deg, var(--blue-bright), var(--blue)); color:#fff; box-shadow:0 6px 16px -6px rgba(180,83,42,.7), inset 0 1px 0 rgba(255,255,255,.25); }
-  .sf-hero-id{ flex:1; min-width:0; }
+  .sf-hero-id{ flex:1 1 420px; min-width:0; }
+  .sf-hero-topo > .sf-hero-acoes{ margin-left:auto; }
   .sf-hero-sobre{ display:block; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:#AAB4C4; font-weight:600; }
   .sf-hero h2{ font-family:'Fraunces',serif; font-size:27px; font-weight:600; line-height:1.15; margin:4px 0 10px; color:#fff; letter-spacing:-.01em; text-wrap:balance; }
   .sf-hero-meta{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
@@ -523,7 +525,11 @@
 /* ================= ESTADO ================= */
 const empresasMap = {};   // chave -> {texto, cnpj, nome, arquivos:[...]}
 let empresaAtiva = null;  // chave selecionada, ou null = visão geral
-let cacheAnalise = {};    // chave -> resultado processado (cache p/ performance)
+let cacheAnalise = {};    // chave|maed -> resultado processado (cache p/ performance)
+// Mostrar ou não as multas MAED (atraso na entrega de declaração). Fica guardado neste navegador.
+let MOSTRAR_MAED = true;
+try { MOSTRAR_MAED = localStorage.getItem('sf-mostrar-maed') !== '0'; } catch (_) {}
+function limparCacheAnalise(chave) { delete cacheAnalise[chave + '|1']; delete cacheAnalise[chave + '|0']; }
 
 
 /* ================= UPLOAD ================= */
@@ -549,7 +555,7 @@ async function processarConteudoPdf(nomeArquivo, arrayBuffer, origem) {
     empresasMap[chave] = { texto: fullText, cnpj, nome, arquivos:[nomeArquivo] };
   }
   if (origem) empresasMap[chave].origem = origem;
-  delete cacheAnalise[chave];
+  limparCacheAnalise(chave);
   return chave;
 }
 
@@ -704,11 +710,12 @@ function escapeHtml(s){
 }
 
 function analisarEmpresa(chave) {
-  if (cacheAnalise[chave]) return cacheAnalise[chave];
+  const ck = chave + (MOSTRAR_MAED ? '|1' : '|0');
+  if (cacheAnalise[ck]) return cacheAnalise[ck];
   const emp = empresasMap[chave];
-  const r = SITFIS.analisarSitfis(emp.texto);
+  const r = SITFIS.analisarSitfis(emp.texto, { semMaed: !MOSTRAR_MAED });
   r.fullText = emp.texto;
-  cacheAnalise[chave] = r;
+  cacheAnalise[ck] = r;
   return r;
 }
 
@@ -1243,6 +1250,7 @@ function renderDetalheEmpresa(chave) {
           </div>
         </div>
         <div class="sf-hero-acoes">
+          ${r.temMaed ? `<button type="button" class="sf-hero-btn${MOSTRAR_MAED ? '' : ' ativo'}" id="btn-maed" title="Mostrar ou ocultar as multas por atraso na entrega de declaração (MAED) neste relatório e na exportação">${icone(MOSTRAR_MAED ? 'olhoFechado' : 'olho')}<span>${MOSTRAR_MAED ? 'Ocultar MAED' : `Mostrar MAED (${r.maedOcultas.length})`}</span></button>` : ''}
           <button type="button" class="sf-hero-btn" id="btn-raw" title="Ver o texto extraído do PDF">${icone('olho')}<span>Texto do PDF</span></button>
           <button type="button" class="sf-hero-btn" id="btn-print" title="Exportar em PDF ou imprimir">${icone('imprimir')}<span>Exportar</span></button>
         </div>
@@ -1263,6 +1271,7 @@ function renderDetalheEmpresa(chave) {
 
     <div class="sf-requisitos" aria-label="Requisitos para a certidão">${htmlRequisitos}</div>
 
+    ${!MOSTRAR_MAED && r.maedOcultas.length ? `<div class="sf-nota sf-so-tela">${icone('olhoFechado')}${r.maedOcultas.length} multa(s) MAED (${fmtMoeda(r.maedOcultas.reduce((s, d) => s + (d.valor || 0), 0))}) ocultada(s) — fora dos totais, das pendências e da exportação. Use “Mostrar MAED” no topo para ver.</div>` : ''}
     ${nadaReconhecido ? `<div class="sf-nota sf-nota-aviso">${icone('alerta')}Não reconheci as seções deste relatório. Use “Texto do PDF” no topo para conferir.</div>` : ''}
 
     <div class="sf-numeros ${composicao ? 'com-composicao' : ''}">
@@ -1295,6 +1304,13 @@ function renderDetalheEmpresa(chave) {
     alvo.classList.remove('fechada');
     alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }));
+  document.getElementById('btn-maed')?.addEventListener('click', () => {
+    MOSTRAR_MAED = !MOSTRAR_MAED;
+    try { localStorage.setItem('sf-mostrar-maed', MOSTRAR_MAED ? '1' : '0'); } catch (_) {}
+    renderSidebar();
+    renderDetalheEmpresa(chave);
+    notificar(MOSTRAR_MAED ? 'Multas MAED aparecendo no relatório' : 'Multas MAED ocultas no relatório (e na exportação)', 'ok');
+  });
   document.getElementById('btn-raw').addEventListener('click', () => {
     const panel = document.getElementById('raw-panel');
     panel.classList.toggle('show');

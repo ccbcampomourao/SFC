@@ -348,7 +348,7 @@
   }
 
   // ------------------------------------------------------------------ análise completa
-  function analisarSitfis(textoOriginal, { referencia } = {}) {
+  function analisarSitfis(textoOriginal, { referencia, semMaed = false } = {}) {
     const cab = extrairCabecalho(textoOriginal);
     const limpo = removerRuido(textoOriginal);
     const secoes = separarSecoes(limpo);
@@ -398,6 +398,15 @@
       }
       else if (pendencia) r.outrasPendencias.push({ titulo: t, texto: limpar(conteudo.replace(/CNPJ:\s*[\d./-]+/, "")).slice(0, 400) });
     }
+
+    // Multas por atraso na entrega de declaração (MAED): o escritório pode escolher não mostrar.
+    // Ocultas, elas saem de tudo (lista, totais, pendências e situação) — só fica a contagem em r.maedOcultas.
+    r.maedOcultas = [];
+    if (semMaed) {
+      r.maedOcultas = r.debitosAbertos.filter((d) => d.multaDeclaracao);
+      r.debitosAbertos = r.debitosAbertos.filter((d) => !d.multaDeclaracao);
+    }
+    r.temMaed = r.maedOcultas.length > 0 || r.debitosAbertos.some((d) => d.multaDeclaracao);
 
     // Suspensos: separa "a vencer" (nem venceu ainda) do que é parcelado/judicial
     r.debitosSuspensos.forEach((d) => { d.suspensao = classificarSuspensao(d.situacao); });
