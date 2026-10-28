@@ -4,7 +4,8 @@
 // manter os cadastros (emitentes, clientes, produtos) e vincular o computador.
 // ============================================================================
 const NF = {
-  cad: { emitentes: [], clientes: {}, produtos: {} },
+  cad: { emitentes: [], clientes: {}, produtos: {}, produtosPorEmitente: {} },
+  alvoPro: null,         // em Cadastros: de quem é a lista de produtos mostrada ("" = comum a todos)
   tarefas: [],
   robos: [],
   fila: [],              // itens da nota que está sendo montada
@@ -16,6 +17,12 @@ const NF = {
 const moeda = (n) => (Number(n) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const valorNum = (v) => { const t = String(v ?? "").trim(); return Number(t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t) || 0; };
 const valorTxt = (n) => (Number(n) || 0).toFixed(2).replace(".", ",");
+// produtos: "produtos" = comuns a todos; "produtosPorEmitente[id]" = só daquele emitente (vale sobre o comum)
+const ppe = () => NF.cad.produtosPorEmitente || (NF.cad.produtosPorEmitente = {});
+const produtosDoEmitente = (id) => ({ ...NF.cad.produtos, ...(ppe()[id] || {}) });
+const listaPro = (alvo) => (alvo ? ppe()[alvo] || {} : NF.cad.produtos);
+const nomeAlvo = (alvo) => (alvo ? (NF.cad.emitentes.find((e) => e.id === alvo) || {}).nome || "emitente" : "todos os emitentes");
+const salvarListaPro = (alvo, lista) => salvarCadastros(alvo ? { produtosPorEmitente: { ...ppe(), [alvo]: lista } } : { produtos: lista });
 const precosDe = (p) => (Array.isArray(p.valor) ? p.valor : [p.valor]).map(String).filter((v) => valorNum(v) > 0);
 const quando = (iso) => { if (!iso) return "—"; const d = new Date(iso); return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); };
 const haQuanto = (iso) => { if (!iso) return "nunca"; const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000); return s < 90 ? "agora há pouco" : s < 3600 ? `há ${Math.round(s / 60)} min` : s < 86400 ? `há ${Math.round(s / 3600)} h` : `há ${Math.round(s / 86400)} dia(s)`; };
@@ -108,7 +115,7 @@ function desenharEmitir() {
           <h3>${icone("tarefas")}Produtos</h3>
           <form class="nf-add" id="nf-add">
             <input id="nf-cod" placeholder="Código do produto" autocomplete="off" list="nf-codigos">
-            <datalist id="nf-codigos">${Object.entries(NF.cad.produtos).map(([c, pr]) => `<option value="${escaparHtml(c)}">${escaparHtml(pr.descricao)}</option>`).join("")}</datalist>
+            <datalist id="nf-codigos">${Object.entries(produtosDoEmitente(NF.emitenteId)).map(([c, pr]) => `<option value="${escaparHtml(c)}">${escaparHtml(pr.descricao)}</option>`).join("")}</datalist>
             <input id="nf-qtd" type="number" min="1" step="1" value="1" title="Quantidade">
             <button class="btn-secundario" type="submit">${icone("mais")}Adicionar</button>
           </form>
@@ -122,7 +129,14 @@ function desenharEmitir() {
         </div>
       </div>
     </div>`;
-  $("#nf-emitente").onchange = (e) => { NF.emitenteId = e.target.value; try { localStorage.setItem("prumo_nfae_emitente", NF.emitenteId); } catch {} desenharEmitir(); };
+  $("#nf-emitente").onchange = (e) => {
+    NF.emitenteId = e.target.value; try { localStorage.setItem("prumo_nfae_emitente", NF.emitenteId); } catch {}
+    // produtos já na nota que este emitente não tem saem da lista
+    const disp = produtosDoEmitente(NF.emitenteId);
+    const fora = NF.fila.filter((i) => !disp[i.codigo]);
+    if (fora.length) { NF.fila = NF.fila.filter((i) => disp[i.codigo]); notificar(`${fora.length} produto(s) saíram da nota: não são deste emitente (${fora.map((i) => i.codigo).join(", ")}).`, "aviso"); }
+    desenharEmitir();
+  };
   $("#nf-busca-cliente").oninput = desenharListaClientes;
   $("#nf-novo-cliente").onclick = () => editarCliente(null, (c) => { NF.cliente = c; desenharEmitir(); });
   $("#nf-add").onsubmit = (e) => { e.preventDefault(); adicionarProduto($("#nf-cod").value.trim(), Number($("#nf-qtd").value) || 1); };
@@ -164,8 +178,8 @@ function desenharClienteEscolhido() {
 }
 
 function adicionarProduto(codigo, qtd) {
-  const p = NF.cad.produtos[codigo];
-  if (!p) { notificar(`Produto “${codigo}” não está cadastrado.`, "aviso"); return; }
+  const p = produtosDoEmitente(NF.emitenteId)[codigo];
+  if (!p) { notificar(`Produto “${codigo}” não está cadastrado para este emitente.`, "aviso"); return; }
   const precos = precosDe(p);
   const existente = NF.fila.find((i) => i.codigo === codigo);
   if (existente) existente.qtd += qtd;
@@ -288,12 +302,16 @@ function desenharHistorico() {
 // ---------------------------------------------------------------------------
 async function salvarCadastros(parte) {
   const r = await api("/api/nfae/cadastros", { method: "POST", body: JSON.stringify(parte) });
-  NF.cad = { emitentes: r.emitentes, clientes: r.clientes, produtos: r.produtos };
+  NF.cad = { emitentes: r.emitentes, clientes: r.clientes, produtos: r.produtos, produtosPorEmitente: r.produtosPorEmitente || {} };
   garantirEmitente();
 }
 function desenharCadastros() {
   const p = $('[data-painel="cadastros"]');
-  const nCli = Object.keys(NF.cad.clientes).length, nPro = Object.keys(NF.cad.produtos).length;
+  if (NF.alvoPro === null || (NF.alvoPro && !NF.cad.emitentes.some((e) => e.id === NF.alvoPro)))
+    NF.alvoPro = NF.cad.emitentes.some((e) => e.id === NF.emitenteId) && Object.keys(ppe()[NF.emitenteId] || {}).length ? NF.emitenteId : "";
+  const alvo = NF.alvoPro;
+  const nCli = Object.keys(NF.cad.clientes).length, nPro = Object.keys(listaPro(alvo)).length;
+  const nComum = Object.keys(NF.cad.produtos).length;
   p.innerHTML = `
     <div class="nfae-grade tres">
       <div class="cartao-nf">
@@ -320,10 +338,18 @@ function desenharCadastros() {
       </div>
       <div class="cartao-nf">
         <h3>${icone("tarefas")}Produtos <em>${nPro}</em></h3>
-        <p class="nf-sub">Aceita o <span class="mono">produtos.json</span> (inclusive produto com vários preços).</p>
+        <div class="campo-form nf-pro-alvo"><label>Lista de produtos de</label>
+          <select id="nf-pro-alvo">
+            ${NF.cad.emitentes.map((e) => `<option value="${escaparHtml(e.id)}"${e.id === alvo ? " selected" : ""}>${escaparHtml(e.nome)} (${Object.keys(ppe()[e.id] || {}).length})</option>`).join("")}
+            <option value=""${alvo ? "" : " selected"}>Comum a todos os emitentes (${nComum})</option>
+          </select></div>
+        <p class="nf-sub">${alvo ? `Só aparecem nas notas de <b>${escaparHtml(nomeAlvo(alvo))}</b>${nComum ? " (junto com os comuns)" : ""}.` : "Aparecem nas notas de <b>todos</b> os emitentes."} Aceita o <span class="mono">produtos.json</span> (inclusive produto com vários preços).</p>
         <div class="nf-botoes"><button type="button" class="btn-secundario btn-sm" data-importar="produtos">${icone("enviar")}Importar produtos.json</button><button type="button" class="btn-ghost btn-sm" id="nf-pro-novo">${icone("mais")}Novo</button><button type="button" class="btn-ghost btn-sm" data-exportar="produtos">${icone("baixar")}Exportar</button></div>
         <label class="campo-busca nf-busca">${icone("busca")}<input type="search" id="nf-filtro-pro" placeholder="Filtrar" autocomplete="off"></label>
         <div class="nf-lista alta" id="nf-cad-produtos"></div>
+        ${!alvo && nComum && NF.cad.emitentes.length ? `<div class="nf-mover"><span>Mover os produtos listados para</span>
+          <select id="nf-mover-para">${NF.cad.emitentes.map((e) => `<option value="${escaparHtml(e.id)}">${escaparHtml(e.nome)}</option>`).join("")}</select>
+          <button type="button" class="btn-secundario btn-sm" id="nf-mover">${icone("enviar")}Mover</button></div>` : ""}
       </div>
     </div>
     <input type="file" id="nf-arquivo-json" accept="application/json,.json" class="oculto">`;
@@ -334,30 +360,52 @@ function desenharCadastros() {
       <button type="button" class="btn-icone neutro" data-ed-cli="${escaparHtml(c.cnpj)}" title="Editar">${icone("documento", "ico-sm")}</button>
       <button type="button" class="btn-icone" data-rem-cli="${escaparHtml(c.cnpj)}" title="Remover">${icone("lixeira", "ico-sm")}</button></div>`).join("") || `<div class="nf-vazio">Nenhum cliente.</div>`;
   };
-  const listaPro = () => {
+  const filtradosPro = () => {
     const t = ($("#nf-filtro-pro").value || "").toLowerCase();
-    $("#nf-cad-produtos").innerHTML = Object.entries(NF.cad.produtos).filter(([c, p]) => !t || `${c} ${p.descricao} ${p.ncm}`.toLowerCase().includes(t)).sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true })).slice(0, 300).map(([c, p]) => `
+    return Object.entries(listaPro(alvo)).filter(([c, p]) => !t || `${c} ${p.descricao} ${p.ncm}`.toLowerCase().includes(t));
+  };
+  const desenharPro = () => {
+    $("#nf-cad-produtos").innerHTML = filtradosPro().sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true })).slice(0, 300).map(([c, p]) => `
       <div class="nf-item"><span><b><span class="mono nf-cod">${escaparHtml(c)}</span>${escaparHtml(p.descricao)}</b><small>NCM <span class="mono">${escaparHtml(p.ncm)}</span> · ${precosDe(p).map((v) => "R$ " + escaparHtml(v)).join(" / ") || "sem preço"}</small></span>
       <button type="button" class="btn-icone neutro" data-ed-pro="${escaparHtml(c)}" title="Editar">${icone("documento", "ico-sm")}</button>
       <button type="button" class="btn-icone" data-rem-pro="${escaparHtml(c)}" title="Remover">${icone("lixeira", "ico-sm")}</button></div>`).join("") || `<div class="nf-vazio">Nenhum produto.</div>`;
   };
-  listaCli(); listaPro();
-  $("#nf-filtro-cli").oninput = listaCli; $("#nf-filtro-pro").oninput = listaPro;
+  listaCli(); desenharPro();
+  $("#nf-filtro-cli").oninput = listaCli; $("#nf-filtro-pro").oninput = desenharPro;
+  $("#nf-pro-alvo").onchange = (e) => { NF.alvoPro = e.target.value; desenharCadastros(); };
+  if ($("#nf-mover")) $("#nf-mover").onclick = (e) => comCarregando(e.currentTarget, async () => {
+    const para = $("#nf-mover-para").value, itens = filtradosPro();
+    if (!itens.length) return notificar("Nenhum produto listado para mover.", "aviso");
+    const destino = listaPro(para);
+    const repetidos = itens.filter(([c]) => destino[c]).length;
+    if (!(await confirmar(`${itens.length} produto(s) passam a ser só de ${nomeAlvo(para)} e saem da lista comum.${repetidos ? ` ${repetidos} código(s) já existem lá e serão substituídos.` : ""}`, { titulo: "Mover produtos?", textoOk: "Mover" }))) return;
+    const comum = { ...NF.cad.produtos }; itens.forEach(([c]) => delete comum[c]);
+    try {
+      await salvarCadastros({ produtos: comum, produtosPorEmitente: { ...ppe(), [para]: { ...destino, ...Object.fromEntries(itens) } } });
+      notificar(`${itens.length} produto(s) movidos para ${nomeAlvo(para)}`, "ok"); NF.alvoPro = para; desenharCadastros();
+    } catch (err) { notificar(err.message, "erro"); }
+  });
   $("#nf-form-emit").onsubmit = (e) => { e.preventDefault(); comCarregando(e.submitter, async () => {
     try { await salvarCadastros({ emitentes: [...NF.cad.emitentes, { id: crypto.randomUUID(), nome: $("#ne-nome").value.trim(), usuario: $("#ne-usuario").value.trim() }] }); notificar("Emitente cadastrado. Agora cadastre a senha dele no robô.", "ok"); desenharCadastros(); } catch (err) { notificar(err.message, "erro"); }
   }); };
   $("#nf-cli-novo").onclick = () => editarCliente(null, () => desenharCadastros());
-  $("#nf-pro-novo").onclick = () => editarProduto(null);
+  $("#nf-pro-novo").onclick = () => editarProduto(null, alvo);
   let alvoImport = null;
   p.onclick = async (e) => {
     const b = e.target.closest("button"); if (!b) return;
     if (b.dataset.importar) { alvoImport = b.dataset.importar; $("#nf-arquivo-json").click(); }
-    if (b.dataset.exportar) { const blob = new Blob([JSON.stringify(NF.cad[b.dataset.exportar], null, 4)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `${b.dataset.exportar}.json`; a.click(); URL.revokeObjectURL(a.href); }
-    if (b.dataset.remEmit && await confirmar("Remover este emitente? As notas já emitidas continuam no histórico.", { titulo: "Remover emitente?", textoOk: "Remover", perigo: true })) { await salvarCadastros({ emitentes: NF.cad.emitentes.filter((x) => x.id !== b.dataset.remEmit) }); desenharCadastros(); }
+    if (b.dataset.exportar) {
+      const ehPro = b.dataset.exportar === "produtos";
+      const blob = new Blob([JSON.stringify(ehPro ? listaPro(alvo) : NF.cad[b.dataset.exportar], null, 4)], { type: "application/json" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+      a.download = ehPro && alvo ? `produtos-${nomeAlvo(alvo).normalize("NFD").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").toLowerCase()}.json` : `${b.dataset.exportar}.json`;
+      a.click(); URL.revokeObjectURL(a.href);
+    }
+    if (b.dataset.remEmit && await confirmar(`Remover este emitente? As notas já emitidas continuam no histórico.${Object.keys(ppe()[b.dataset.remEmit] || {}).length ? ` Os ${Object.keys(ppe()[b.dataset.remEmit]).length} produto(s) cadastrados só para ele também serão apagados (exporte antes se quiser guardar).` : ""}`, { titulo: "Remover emitente?", textoOk: "Remover", perigo: true })) { await salvarCadastros({ emitentes: NF.cad.emitentes.filter((x) => x.id !== b.dataset.remEmit) }); desenharCadastros(); }
     if (b.dataset.edCli) editarCliente(NF.cad.clientes[b.dataset.edCli], () => desenharCadastros());
     if (b.dataset.remCli && await confirmar("Remover este cliente do cadastro?", { titulo: "Remover cliente?", textoOk: "Remover", perigo: true })) { const c = { ...NF.cad.clientes }; delete c[b.dataset.remCli]; await salvarCadastros({ clientes: c }); desenharCadastros(); }
-    if (b.dataset.edPro) editarProduto(b.dataset.edPro);
-    if (b.dataset.remPro && await confirmar("Remover este produto do cadastro?", { titulo: "Remover produto?", textoOk: "Remover", perigo: true })) { const c = { ...NF.cad.produtos }; delete c[b.dataset.remPro]; await salvarCadastros({ produtos: c }); desenharCadastros(); }
+    if (b.dataset.edPro) editarProduto(b.dataset.edPro, alvo);
+    if (b.dataset.remPro && await confirmar(`Remover este produto da lista de ${nomeAlvo(alvo)}?`, { titulo: "Remover produto?", textoOk: "Remover", perigo: true })) { const c = { ...listaPro(alvo) }; delete c[b.dataset.remPro]; await salvarListaPro(alvo, c); desenharCadastros(); }
   };
   $("#nf-arquivo-json").onchange = async (e) => {
     const arq = e.target.files[0]; e.target.value = "";
@@ -368,11 +416,14 @@ function desenharCadastros() {
       const novos = alvoImport === "clientes" ? normalizarClientes(dados) : normalizarProdutos(dados);
       const qtd = Object.keys(novos).length;
       if (!qtd) throw new Error("Não achei nenhum registro no arquivo.");
-      const atuais = NF.cad[alvoImport];
+      const ehPro = alvoImport === "produtos";
+      const atuais = ehPro ? listaPro(alvo) : NF.cad[alvoImport];
       const repetidos = Object.keys(novos).filter((k) => atuais[k]).length;
-      if (!(await confirmar(`${qtd} ${alvoImport} no arquivo${repetidos ? ` (${repetidos} já existem e serão atualizados)` : ""}.`, { titulo: "Importar?", textoOk: "Importar" }))) return;
-      await salvarCadastros({ [alvoImport]: { ...atuais, ...novos } });
-      notificar(`${qtd} ${alvoImport} importados`, "ok");
+      const para = ehPro ? ` para ${alvo ? "o emitente " : ""}${nomeAlvo(alvo)}` : "";
+      if (!(await confirmar(`${qtd} ${alvoImport} no arquivo${repetidos ? ` (${repetidos} já existem e serão atualizados)` : ""}. Vão${para}.`, { titulo: "Importar?", textoOk: "Importar" }))) return;
+      if (ehPro) await salvarListaPro(alvo, { ...atuais, ...novos });
+      else await salvarCadastros({ [alvoImport]: { ...atuais, ...novos } });
+      notificar(`${qtd} ${alvoImport} importados${para}`, "ok");
       desenharCadastros();
     } catch (err) { avisar("Não consegui importar: " + err.message, { titulo: "Arquivo inválido", tipo: "erro" }); }
   };
@@ -449,10 +500,11 @@ function editarCliente(c, aoSalvar) {
     try { await salvarCadastros({ clientes: { ...NF.cad.clientes, [novo.cnpj]: novo } }); fecharModal(); notificar("Cliente salvo", "ok"); aoSalvar && aoSalvar(NF.cad.clientes[novo.cnpj]); } catch (err) { notificar(err.message, "erro"); }
   }); };
 }
-function editarProduto(codigo) {
-  const p = codigo ? NF.cad.produtos[codigo] : { descricao: "", ncm: "", valor: "" };
+function editarProduto(codigo, alvo = "") {
+  const p = codigo ? listaPro(alvo)[codigo] : { descricao: "", ncm: "", valor: "" };
   abrirModal(`
     <h2>${codigo ? "Editar produto" : "Novo produto"}</h2>
+    <p class="nf-sub">Lista de ${alvo ? "<b>" + escaparHtml(nomeAlvo(alvo)) + "</b>" : "produtos <b>comuns a todos os emitentes</b>"}.</p>
     <form id="fp" class="nf-form-cli">
       <div class="campo-form"><label>Código</label><input id="fp-cod" class="mono" value="${escaparHtml(codigo || "")}" ${codigo ? "readonly" : ""} required></div>
       <div class="campo-form"><label>NCM (8 números)</label><input id="fp-ncm" class="mono" value="${escaparHtml(p.ncm)}" required pattern="\\d{8}"></div>
@@ -464,7 +516,7 @@ function editarProduto(codigo) {
   $("#fp").onsubmit = (e) => { e.preventDefault(); comCarregando(e.submitter, async () => {
     const valores = $("#fp-val").value.split(";").map((x) => x.trim()).filter(Boolean);
     const cod = $("#fp-cod").value.trim();
-    try { await salvarCadastros({ produtos: { ...NF.cad.produtos, [cod]: { descricao: $("#fp-desc").value.trim(), ncm: $("#fp-ncm").value.replace(/\D/g, ""), valor: valores.length > 1 ? valores : valores[0] || "0,00" } } }); fecharModal(); notificar("Produto salvo", "ok"); if (NF.aba === "cadastros") desenharCadastros(); } catch (err) { notificar(err.message, "erro"); }
+    try { await salvarListaPro(alvo, { ...listaPro(alvo), [cod]: { descricao: $("#fp-desc").value.trim(), ncm: $("#fp-ncm").value.replace(/\D/g, ""), valor: valores.length > 1 ? valores : valores[0] || "0,00" } }); fecharModal(); notificar("Produto salvo", "ok"); if (NF.aba === "cadastros") desenharCadastros(); } catch (err) { notificar(err.message, "erro"); }
   }); };
 }
 

@@ -1950,7 +1950,7 @@ export default {
       // ---------- NFA-e: cadastros (emitentes, clientes, produtos) ----------
       if (pathname === "/api/nfae/cadastros" && request.method === "GET") {
         const cad = (await env.KV_EMPRESAS.get("nfae_cadastros", "json")) || {};
-        return json({ emitentes: cad.emitentes || [], clientes: cad.clientes || {}, produtos: cad.produtos || {} });
+        return json({ emitentes: cad.emitentes || [], clientes: cad.clientes || {}, produtos: cad.produtos || {}, produtosPorEmitente: cad.produtosPorEmitente || {} });
       }
       if (pathname === "/api/nfae/cadastros" && request.method === "POST") {
         const corpo = await request.json().catch(() => ({}));
@@ -1959,7 +1959,12 @@ export default {
           emitentes: Array.isArray(corpo.emitentes) ? corpo.emitentes.slice(0, 50).map((e) => ({ id: String(e.id || crypto.randomUUID()).slice(0, 40), nome: String(e.nome || "").slice(0, 80), usuario: String(e.usuario || "").slice(0, 60) })).filter((e) => e.nome && e.usuario) : atual.emitentes || [],
           clientes: corpo.clientes && typeof corpo.clientes === "object" ? corpo.clientes : atual.clientes || {},
           produtos: corpo.produtos && typeof corpo.produtos === "object" ? corpo.produtos : atual.produtos || {},
+          // produtos de cada emitente ({ idDoEmitente: { codigo: produto } }); "produtos" acima = comuns a todos
+          produtosPorEmitente: corpo.produtosPorEmitente && typeof corpo.produtosPorEmitente === "object" && !Array.isArray(corpo.produtosPorEmitente) ? corpo.produtosPorEmitente : atual.produtosPorEmitente || {},
         };
+        // emitente removido leva junto a lista de produtos dele
+        const idsEmit = new Set(novo.emitentes.map((e) => e.id));
+        novo.produtosPorEmitente = Object.fromEntries(Object.entries(novo.produtosPorEmitente).filter(([id, lista]) => idsEmit.has(id) && lista && typeof lista === "object" && !Array.isArray(lista)));
         const tamanho = JSON.stringify(novo).length;
         if (tamanho > 2 * 1024 * 1024) return json({ erro: "Cadastro grande demais (máx. 2 MB)." }, 400);
         await env.KV_EMPRESAS.put("nfae_cadastros", JSON.stringify(novo));

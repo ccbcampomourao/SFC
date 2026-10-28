@@ -1769,3 +1769,9 @@ body { background: var(--paper); color: var(--ink); }
 .nf-cnpj-busca .btn-sm { white-space: nowrap; }
 .nf-cnpj-aviso { grid-column: 1 / -1; margin: 2px 0 0; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; background: var(--fundo-suave, #f3f4f6); color: var(--texto-2, #374151); }
 .nf-cnpj-aviso.ruim { background: #fdecea; color: #9b1c1c; }
+
+/* NFA-e: produtos por emitente */
+.nf-pro-alvo { margin: 2px 0 6px; }
+.nf-pro-alvo select { width: 100%; }
+.nf-mover { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--borda, #e5e7eb); font-size: 12.5px; }
+.nf-mover select { flex: 1; min-width: 140px; }
