@@ -405,10 +405,43 @@ function editarCliente(c, aoSalvar) {
   abrirModal(`
     <h2>${c ? "Editar cliente" : "Novo cliente"}</h2>
     <form id="fc" class="nf-form-cli">
-      ${campos.map(([k, r, cl]) => `<div class="campo-form${k === "logradouro" || k === "razao_social" ? " largo" : ""}"><label>${r}</label><input data-k="${k}" value="${escaparHtml(v[k] || "")}" ${cl ? `class="${cl}"` : ""} ${k === "cnpj" && c ? "readonly" : ""} ${["cnpj", "ie", "cep", "logradouro", "numero", "bairro", "municipio"].includes(k) ? "required" : ""}></div>`).join("")}
+      ${campos.map(([k, r, cl]) => {
+        const input = `<input data-k="${k}" value="${escaparHtml(v[k] || "")}" ${cl ? `class="${cl}"` : ""} ${k === "cnpj" && c ? "readonly" : ""} ${["cnpj", "ie", "cep", "logradouro", "numero", "bairro", "municipio"].includes(k) ? "required" : ""}>`;
+        if (k === "cnpj") return `<div class="campo-form largo"><label>${r}</label><div class="nf-cnpj-busca">${input}<button type="button" class="btn-secundario btn-sm" id="fc-buscar" title="Busca razão social e endereço na base pública da Receita (grátis)">${icone("busca")}Buscar</button></div></div>`;
+        return `<div class="campo-form${k === "logradouro" || k === "razao_social" ? " largo" : ""}"><label>${r}</label>${input}</div>`;
+      }).join("")}
+      <p class="nf-cnpj-aviso" id="fc-aviso" hidden></p>
       <div class="modal-rodape"><button type="button" class="btn-ghost" id="fc-cancelar">Cancelar</button><button class="btn-primario" type="submit">${icone("salvar")}Salvar</button></div>
     </form>`);
   $("#fc-cancelar").onclick = fecharModal;
+  const campoCnpj = $('#fc [data-k="cnpj"]');
+  let ultimoBuscado = "";
+  const buscar = (botao) => comCarregando(botao, async () => {
+    const cnpj = campoCnpj.value.replace(/\D/g, "");
+    if (cnpj.length !== 14) return notificar("Digite o CNPJ com 14 números para buscar.", "aviso");
+    ultimoBuscado = cnpj;
+    try {
+      const d = await api(`/api/consulta-cnpj/cadastro?cnpj=${cnpj}`);
+      for (const k of ["razao_social", "nome", "cep", "logradouro", "numero", "complemento", "bairro", "municipio", "estado", "ie"]) {
+        const val = String(d[k] || "").trim();
+        if (val) $(`#fc [data-k="${k}"]`).value = val;
+      }
+      if (!$('#fc [data-k="nome"]').value.trim()) $('#fc [data-k="nome"]').value = d.razao_social || "";
+      const aviso = $("#fc-aviso");
+      const inativa = d.situacao && !/ativa/i.test(d.situacao);
+      aviso.hidden = false;
+      aviso.className = "nf-cnpj-aviso" + (inativa ? " ruim" : "");
+      aviso.textContent = (inativa ? `Atenção: situação na Receita “${d.situacao}”. ` : "") +
+        `Dados da ${d.fonte}. ` + (d.ie ? "A inscrição estadual também veio — confira." : "Complete a inscrição estadual (não vem na consulta gratuita).") + " Confira o número e o endereço antes de salvar.";
+      (d.ie ? $('#fc [data-k="numero"]') : $('#fc [data-k="ie"]')).focus();
+    } catch (err) { notificar(err.message, "erro"); }
+  });
+  $("#fc-buscar").onclick = (e) => buscar(e.currentTarget);
+  // cliente novo: ao completar os 14 números, já busca sozinho
+  if (!c) campoCnpj.addEventListener("input", () => {
+    const cnpj = campoCnpj.value.replace(/\D/g, "");
+    if (cnpj.length === 14 && cnpj !== ultimoBuscado) buscar($("#fc-buscar"));
+  });
   $("#fc").onsubmit = (e) => { e.preventDefault(); comCarregando(e.submitter, async () => {
     const novo = {}; $$("#fc [data-k]").forEach((i) => (novo[i.dataset.k] = i.value.trim()));
     novo.cnpj = novo.cnpj.replace(/\D/g, "");

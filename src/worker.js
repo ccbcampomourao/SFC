@@ -664,6 +664,67 @@ const PROVEDORES_CNPJ = [
   { url: (c) => `https://publica.cnpj.ws/cnpj/${c}`, normalizar: normalizarCnpjWs },
 ];
 
+// ---------- Dados cadastrais do CNPJ (cliente da NFA-e): endereço e, se der, a inscrição estadual ----------
+const _txt = (v) => String(v ?? "").trim();
+const _so = (v) => _txt(v).replace(/\D/g, "");
+const ENDERECO_CNPJ = [
+  { fonte: "BrasilAPI", url: (c) => `https://brasilapi.com.br/api/cnpj/v1/${c}`, ler: lerMinhaReceitaEndereco },
+  { fonte: "Minha Receita", url: (c) => `https://minhareceita.org/${c}`, ler: lerMinhaReceitaEndereco },
+  { fonte: "ReceitaWS", url: (c) => `https://www.receitaws.com.br/v1/cnpj/${c}`, ler: (d) => d && d.status !== "ERROR" && d.nome ? {
+      razao_social: _txt(d.nome), nome: _txt(d.fantasia), cep: _so(d.cep), logradouro: _txt(d.logradouro), numero: _txt(d.numero),
+      complemento: _txt(d.complemento), bairro: _txt(d.bairro), municipio: _txt(d.municipio), estado: _txt(d.uf), situacao: _txt(d.situacao) } : null },
+  { fonte: "CNPJ.ws", url: (c) => `https://publica.cnpj.ws/cnpj/${c}`, ler: lerCnpjWs },
+];
+function lerMinhaReceitaEndereco(d) {
+  if (!d || !d.razao_social) return null;
+  return { razao_social: _txt(d.razao_social), nome: _txt(d.nome_fantasia), cep: _so(d.cep),
+    logradouro: [_txt(d.descricao_tipo_de_logradouro), _txt(d.logradouro)].filter(Boolean).join(" "), numero: _txt(d.numero),
+    complemento: _txt(d.complemento), bairro: _txt(d.bairro), municipio: _txt(d.municipio), estado: _txt(d.uf), situacao: _txt(d.descricao_situacao_cadastral) };
+}
+function lerCnpjWs(d) {
+  const e = d && d.estabelecimento;
+  if (!e || !d.razao_social) return null;
+  const uf = _txt(e.estado && e.estado.sigla);
+  const ies = Array.isArray(e.inscricoes_estaduais) ? e.inscricoes_estaduais : [];
+  const ie = ies.find((i) => i && i.ativo !== false && _txt(i.estado && i.estado.sigla) === uf) || ies.find((i) => i && i.ativo !== false);
+  return { razao_social: _txt(d.razao_social), nome: _txt(e.nome_fantasia), cep: _so(e.cep),
+    logradouro: [_txt(e.tipo_logradouro), _txt(e.logradouro)].filter(Boolean).join(" "), numero: _txt(e.numero),
+    complemento: _txt(e.complemento), bairro: _txt(e.bairro), municipio: _txt(e.cidade && e.cidade.nome), estado: uf,
+    situacao: _txt(e.situacao_cadastral), ie: ie ? _so(ie.inscricao_estadual) : "" };
+}
+async function buscarJsonCnpj(url) {
+  const resp = await fetch(url, { headers: { Accept: "application/json", "User-Agent": "FZCONT/1.0 (cadastro de cliente)" }, signal: AbortSignal.timeout(7000) });
+  if (!resp.ok) return { status: resp.status, dados: null };
+  return { status: resp.status, dados: await resp.json().catch(() => null) };
+}
+async function consultarCnpjCadastro(cnpj) {
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const chave = new Request(`https://cache.fzcont.interno/cnpj-cadastro/v1/${cnpj}`);
+  try { const c = cache && (await cache.match(chave)); if (c) return { ok: true, ...(await c.json()) }; } catch {}
+  let achado = null, todos404 = true, viu429 = false;
+  for (const p of ENDERECO_CNPJ) {
+    try {
+      const { status, dados } = await buscarJsonCnpj(p.url(cnpj));
+      if (status !== 404) todos404 = false;
+      if (status === 429) viu429 = true;
+      const lido = dados ? p.ler(dados) : null;
+      if (lido) { achado = { ...lido, fonte: p.fonte }; break; }
+    } catch { todos404 = false; }
+  }
+  if (!achado) {
+    if (viu429) return { ok: false, status: 429, erro: "As consultas gratuitas de CNPJ estão limitando agora. Espere 1 minuto e tente de novo." };
+    if (todos404) return { ok: false, status: 404, erro: "CNPJ não encontrado na base pública da Receita." };
+    return { ok: false, status: 502, erro: "Não consegui consultar o CNPJ agora (sites gratuitos fora do ar). Tente de novo em instantes ou preencha à mão." };
+  }
+  // a inscrição estadual só vem no CNPJ.ws: tenta pegar lá (se falhar, a IE fica para preencher)
+  if (!achado.ie && achado.fonte !== "CNPJ.ws") {
+    try { const { dados } = await buscarJsonCnpj(`https://publica.cnpj.ws/cnpj/${cnpj}`); const w = dados ? lerCnpjWs(dados) : null; if (w && w.ie) achado.ie = w.ie; } catch {}
+  }
+  achado.cnpj = cnpj;
+  try { if (cache) await cache.put(chave, new Response(JSON.stringify(achado), { headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${CNPJ_CACHE_TTL_SEGUNDOS}` } })); } catch {}
+  return { ok: true, ...achado };
+}
+
 async function consultarCnpjPublico(env, cnpj) {
   // Cache de 24h no cache da própria Cloudflare (gratuito e sem limite diário), em vez do KV —
   // assim "Verificar exclusões" de muitas empresas não gasta as 1.000 gravações/dia do KV.
@@ -1561,6 +1622,16 @@ export default {
         const resultado = await consultarCnpjPublico(env, cnpj);
         if (!resultado.ok) return json({ erro: resultado.erro }, resultado.status);
         const { ok, status, ...dados } = resultado;
+        return json(dados);
+      }
+
+      // dados cadastrais (endereço, IE quando disponível) para o cadastro de cliente da NFA-e
+      if (pathname === "/api/consulta-cnpj/cadastro" && request.method === "GET") {
+        const cnpj = limparNumeroDoc(url.searchParams.get("cnpj") || "");
+        if (cnpj.length !== 14 || !cnpjValido(cnpj)) return json({ erro: "CNPJ inválido: confira os 14 números." }, 400);
+        const r = await consultarCnpjCadastro(cnpj);
+        if (!r.ok) return json({ erro: r.erro }, r.status);
+        const { ok, status, ...dados } = r;
         return json(dados);
       }
 
