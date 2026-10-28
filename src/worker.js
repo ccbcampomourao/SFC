@@ -803,6 +803,13 @@ function tarefaPublica(t) {
   const { dados, ...resto } = t;
   return { ...resto, resumo: t.tipo === "nfae" && dados ? { cliente: dados.cliente?.nome || dados.cliente?.razao_social, cnpj: dados.cliente?.cnpj, itens: (dados.itens || []).length, total: (dados.itens || []).reduce((s, i) => s + (Number(i.qtd) || 0) * valorBr(i.valor), 0), emitenteId: dados.emitenteId } : null };
 }
+// "1.1.9" >= "1.1.10"? compara versão do robô número a número
+function versaoAoMenos(v, minima) {
+  const a = String(v || "0").split(".").map((x) => parseInt(x, 10) || 0), b = minima.split(".").map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) { if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0); }
+  return true;
+}
+const ROBO_VERSAO_CONSULTA = "1.1.9"; // robôs mais antigos não sabem só consultar (poderiam emitir): não recebem essa tarefa
 function valorBr(v) {
   const t = String(v ?? "").trim();
   if (!t) return 0;
@@ -1262,7 +1269,8 @@ export default {
         let tarefa = null;
         const ocupado = estado.tarefas.some((t) => t.status === "em_andamento" && t.roboId === robo.id);
         if (!ocupado && corpo.livre !== false) {
-          tarefa = estado.tarefas.find((t) => t.status === "pendente");
+          const sabeConsultar = versaoAoMenos(corpo.versao, ROBO_VERSAO_CONSULTA);
+          tarefa = estado.tarefas.find((t) => t.status === "pendente" && (t.modo !== "consultar" || sabeConsultar));
           if (tarefa) { Object.assign(tarefa, { status: "em_andamento", roboId: robo.id, roboNome: robo.nome, iniciadoEm: new Date().toISOString() }); mudou = true; }
         }
         if (mudou) await gravarEstadoRobos(env, estado);
@@ -1271,7 +1279,7 @@ export default {
           const cad = (await env.KV_EMPRESAS.get("nfae_cadastros", "json")) || {};
           emitentes = (cad.emitentes || []).map(({ id, nome, usuario }) => ({ id, nome, usuario }));
         }
-        return json({ tarefa: tarefa ? { id: tarefa.id, tipo: tarefa.tipo, dados: tarefa.dados, criadoEm: tarefa.criadoEm } : null, emitentes, emitentesVersao: estado.emitentesVersao || 0, pendentes: estado.tarefas.filter((t) => t.status === "pendente").length });
+        return json({ tarefa: tarefa ? { id: tarefa.id, tipo: tarefa.modo === "consultar" ? "nfae_consulta" : tarefa.tipo, dados: tarefa.dados, criadoEm: tarefa.criadoEm, tentativaEm: tarefa.tentativaEm || null } : null, emitentes, emitentesVersao: estado.emitentesVersao || 0, pendentes: estado.tarefas.filter((t) => t.status === "pendente").length });
       }
 
       // Resultado da tarefa (com PDF/XML/print da tela) — arquivos vão para o R2
@@ -1293,7 +1301,8 @@ export default {
         // cancelada no Prumo enquanto o robô trabalhava: continua cancelada, a não ser que a nota tenha SAÍDO
         const jaCancelada = t.status === "cancelada";
         Object.assign(t, {
-          status: ok ? "concluida" : jaCancelada || corpo.status === "cancelada" ? "cancelada" : corpo.status === "conferir" ? "conferir" : "erro",
+          // numa consulta, "não achei" volta para "conferir" (nunca vira "erro", que sugere emitir de novo)
+          status: ok ? "concluida" : jaCancelada || corpo.status === "cancelada" ? "cancelada" : corpo.status === "conferir" || t.modo === "consultar" ? "conferir" : "erro",
           mensagem: (ok && jaCancelada ? "Atenção: foi cancelada no Prumo, mas o robô já tinha emitido a nota. " : "") +
             String(corpo.mensagem || (ok ? "Concluída." : "Falhou.")).slice(0, 1500),
           numeroNota: corpo.numeroNota ? String(corpo.numeroNota).slice(0, 30) : t.numeroNota || null,
@@ -1920,7 +1929,7 @@ export default {
         await gravarEstadoRobos(env, estado);
         return json({ ok: true, tarefa: tarefaPublica(tarefa) });
       }
-      if (/^\/api\/nfae\/tarefas\/[\w-]+\/(cancelar|refazer)$/.test(pathname) && request.method === "POST") {
+      if (/^\/api\/nfae\/tarefas\/[\w-]+\/(cancelar|refazer|consultar)$/.test(pathname) && request.method === "POST") {
         const [, , , , id, acao] = pathname.split("/");
         const estado = await lerEstadoRobos(env);
         const t = estado.tarefas.find((x) => x.id === id);
@@ -1930,9 +1939,14 @@ export default {
           const emAndamento = t.status === "em_andamento";
           Object.assign(t, { status: "cancelada", finalizadoEm: new Date().toISOString(),
             mensagem: `Cancelada por ${username}.` + (emAndamento ? " O robô para antes de clicar em Emitir." : "") });
+        } else if (acao === "consultar") {
+          // procura no portal a nota de uma tentativa anterior — o robô NÃO emite nada
+          if (!["conferir", "interrompida"].includes(t.status)) return json({ erro: "Só dá para consultar notas que ficaram para conferir." }, 400);
+          const tentativaEm = t.modo === "consultar" ? t.tentativaEm : t.iniciadoEm || t.criadoEm;
+          Object.assign(t, { status: "pendente", modo: "consultar", tentativaEm, mensagem: `Consulta no portal pedida por ${username}.`, roboId: null, iniciadoEm: null, finalizadoEm: null });
         } else {
           if (!["erro", "interrompida", "conferir", "cancelada"].includes(t.status)) return json({ erro: "Essa tarefa não pode ser refeita." }, 400);
-          Object.assign(t, { status: "pendente", mensagem: `Mandada de novo por ${username}.`, roboId: null, iniciadoEm: null, finalizadoEm: null });
+          Object.assign(t, { status: "pendente", modo: null, tentativaEm: null, mensagem: `Mandada de novo por ${username}.`, roboId: null, iniciadoEm: null, finalizadoEm: null });
         }
         await gravarEstadoRobos(env, estado);
         return json({ ok: true, tarefa: tarefaPublica(t) });

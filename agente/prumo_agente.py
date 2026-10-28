@@ -28,7 +28,7 @@ import traceback
 import urllib.error
 import urllib.request
 
-VERSAO = "1.1.5"
+VERSAO = "1.1.9"
 NO_WINDOWS = platform.system() == "Windows"
 PASTA = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "PrumoRobo") if NO_WINDOWS else os.path.join(os.path.expanduser("~"), ".prumo-robo")
 os.makedirs(PASTA, exist_ok=True)
@@ -250,6 +250,10 @@ SELETORES_PADRAO = {
         "//*[@id=\"app\"]/div[1]/div/div[2]/article/footer/button[3]",
         "/html/body/div/div[2]/div[2]/div[5]/div/div[1]/div/div[2]/article/footer/button[3]",
     ],
+    # Consulta de NFA-e: lista do CNPJ do emitente e botão de consultar (caminhos passados pelo escritório)
+    "consulta_emitente": "//*[@id=\"app\"]/div[1]/article/div[2]/div[1]/div[1]/div/select",
+    "consulta_cnpj_emitente": "16821475000189",
+    "consulta_botao": "//*[@id=\"app\"]/div[1]/article/footer/button[1]",
     "destinatario": {
         "cnpj": "/html/body/div[1]/div[2]/div[2]/div[5]/div/div[1]/div/div[2]/div[1]/div[1]/div[2]/div[3]/div[1]/input",
         "ie": "/html/body/div[1]/div[2]/div[2]/div[5]/div/div[1]/div/div[2]/div[1]/div[1]/div[2]/div[7]/div[1]/input",
@@ -377,17 +381,24 @@ MENU_CONSULTA_XPATH = "//a[normalize-space()='NFA-e MEI e NFA-e (Modelo 55)']/fo
 
 # Na tabela da Consulta: primeira linha "Autorizada" com data de hoje (a lista vem da mais nova para a mais antiga)
 LINHA_NOTA_HOJE_JS = r"""
-const hoje = arguments[0];
+const datas = [].concat(arguments[0]), doc = (arguments[1] || '').replace(/\D/g, '');
 const linhas = [...document.querySelectorAll('table tbody tr')].filter((r) => r.querySelector('button'));
+// se a lista mostra o CNPJ do destinatário, só aceita a linha deste cliente
+const temDoc = doc && linhas.some((r) => (r.innerText || '').replace(/\D/g, '').includes(doc));
+// a lista mostra CPF/CNPJ de destinatários (de outros clientes) e nenhum é deste: NÃO pega nota de outro
+const docRe = /^(\d{14}|\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{11}|\d{3}\.\d{3}\.\d{3}-\d{2})$/;
+const mostraDoc = linhas.some((r) => [...r.children].some((td) => docRe.test((td.innerText || '').trim())));
+if (doc && mostraDoc && !temDoc) return null;
 for (let i = 0; i < linhas.length; i++) {
+  if (temDoc && !(linhas[i].innerText || '').replace(/\D/g, '').includes(doc)) continue;
   const tds = [...linhas[i].children].map((td) => (td.innerText || '').trim());
   const sit = tds.find((t) => /autorizada/i.test(t)) || '';
   if (!/^autorizada$/i.test(sit)) continue;
-  if (!tds.some((t) => t.startsWith(hoje))) continue;
+  if (!tds.some((t) => datas.some((d) => t.startsWith(d)))) continue;
   const chave = (tds.find((t) => /^\d{44}$/.test(t.replace(/\s/g, ''))) || '').replace(/\s/g, '');
   const protocolo = tds.find((t) => /^\d{15}$/.test(t)) || '';
   linhas[i].setAttribute('data-prumo-linha', String(i));
-  return { indice: i, chave, protocolo };
+  return { indice: i, chave, protocolo, doDestinatario: temDoc };
 }
 return null;
 """
@@ -507,11 +518,45 @@ class RoboNfae:
         self.emitente = emitente
         self.senha = senha
         self.sel = seletores()
-        self.pasta = os.path.join(PASTA, "tarefas", tarefa["id"])
+        # "nfae_consulta": NÃO emite nada — só procura na Consulta a nota de uma tentativa anterior
+        self.so_consulta = tarefa.get("tipo") == "nfae_consulta"
+        self.pasta = os.path.join(PASTA, "tarefas", tarefa["id"], *(["consulta-" + time.strftime("%Y%m%d-%H%M%S")] if self.so_consulta else []))
         os.makedirs(self.pasta, exist_ok=True)
+        self.datas_nota = self._datas_da_tentativa(tarefa.get("tentativaEm")) if self.so_consulta else [time.strftime("%d/%m/%Y")]
         self.driver = None
         self.aprender_pergunta = aprender_pergunta  # (não usado desde a 1.1.0: roteiro fixo)
         self.foi_cancelada = foi_cancelada  # pergunta ao Prumo se a nota foi cancelada
+
+    @staticmethod
+    def _datas_da_tentativa(iso):
+        """Dia (no horário local) em que o robô tentou emitir, e o dia seguinte (tentativa perto da meia-noite)."""
+        import datetime as _dt
+        try:
+            base = _dt.datetime.fromisoformat(str(iso).replace("Z", "+00:00")).astimezone()
+        except Exception:  # noqa: BLE001
+            base = _dt.datetime.now()
+        return [(base + _dt.timedelta(days=k)).strftime("%d/%m/%Y") for k in (0, 1)]
+
+    def _so_consultar(self):
+        """Consulta de uma nota que ficou “conferir”: entra, vai na Consulta e baixa, SEM emitir."""
+        log(f"Consultando no portal a nota de {self.datas_nota[0]} (sem emitir nada)…")
+        self.driver.get(self.sel["url_login"])
+        time.sleep(3)
+        self._entrar_se_pedir()
+        try:
+            info = self._danfe_pela_consulta(self._arquivos_pdf()) or {}
+        except PassoFalhou as e:
+            p = self._print("consulta.png")
+            return {"status": "conferir", "mensagem": f"Consultei o portal e não achei a nota Autorizada de {self.datas_nota[0]} para este cliente ({e}). "
+                    "Se ela realmente não saiu, use “Mandar de novo”.", "arquivos": [p] if p else []}
+        r = self._colher_resultado(texto_final="", extra=info)
+        if r["status"] == "concluida" and not info.get("doDestinatario"):
+            r["status"] = "conferir"
+            r["mensagem"] = ("Achei uma nota Autorizada do dia na Consulta, mas a lista do portal não mostra o CNPJ do cliente — "
+                             "confira se a DANFE anexada é desta nota antes de dar como emitida. " + r["mensagem"])
+        elif r["status"] == "concluida":
+            r["mensagem"] = "Achei a nota na Consulta do portal (não emiti de novo). " + r["mensagem"]
+        return r
 
     # ---------- utilidades Selenium ----------
     def _abrir_navegador(self):
@@ -636,7 +681,9 @@ class RoboNfae:
         except Exception:  # noqa: BLE001
             return None
 
-    def _preencher(self, grupo, chave, valor, nome, tempo=15):
+    def _preencher(self, grupo, chave, valor, nome, tempo=15, tab=False):
+        """Igual ao aplicativo do escritório: clica, Ctrl+A, apaga, digita e confere.
+        Só aperta TAB quando pedido (no CEP), porque o TAB faz o portal recarregar/apagar campos."""
         from selenium.webdriver.common.keys import Keys
         valor = str(valor)
         ultimo = None
@@ -645,11 +692,14 @@ class RoboNfae:
                 el = self._campo(grupo, chave, tempo=tempo if tentativa == 0 else 6)
                 self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", el)
                 el.click()
+                time.sleep(0.2)
                 el.send_keys(Keys.CONTROL, "a")
                 el.send_keys(Keys.BACKSPACE)
-                el.send_keys(valor)
-                el.send_keys(Keys.TAB)
                 time.sleep(0.4)
+                el.send_keys(valor)
+                time.sleep(0.4)
+                if tab:
+                    el.send_keys(Keys.TAB)
                 if (el.get_attribute("value") or "").strip() or not valor:
                     return
                 ultimo = "o campo ficou vazio"
@@ -778,6 +828,20 @@ class RoboNfae:
                 if tentativa:
                     return {"status": "erro", "mensagem": f"Não consegui abrir o navegador do robô ({str(e).splitlines()[0][:150]}). Nada foi enviado à Receita."}
                 time.sleep(3)
+        if self.so_consulta:
+            try:
+                return self._so_consultar()
+            except Exception as e:  # noqa: BLE001
+                p = self._print("erro.png")
+                primeira = str(e).strip().splitlines()[0][:160] if str(e).strip() else type(e).__name__
+                return {"status": "conferir", "mensagem": f"Não consegui terminar a consulta no portal ({primeira}). Nada foi emitido.", "arquivos": [p] if p else []}
+            finally:
+                try:
+                    if self.driver:
+                        self.driver.quit()
+                        time.sleep(2)  # deixa o navegador fechar antes da próxima tarefa usar o mesmo perfil
+                except Exception:  # noqa: BLE001
+                    pass
         try:
             self._login()
             self._destinatario()
@@ -1011,7 +1075,7 @@ class RoboNfae:
         valores = {"cnpj": doc, "ie": re.sub(r"\D", "", c["ie"]), "nome": c.get("razao_social") or c.get("nome"),
                    "cep": re.sub(r"\D", "", c["cep"]), "logradouro": c["logradouro"], "numero": c["numero"], "bairro": c["bairro"]}
         for n, campo in enumerate(["cnpj", "ie", "nome", "cep", "logradouro", "numero", "bairro"]):
-            self._preencher("destinatario", campo, valores[campo], {"cnpj": "CNPJ do destinatário", "ie": "Inscrição estadual", "cep": "CEP"}.get(campo, campo), tempo=25 if n == 0 else 15)
+            self._preencher("destinatario", campo, valores[campo], {"cnpj": "CNPJ do destinatário", "ie": "Inscrição estadual", "cep": "CEP"}.get(campo, campo), tempo=25 if n == 0 else 15, tab=(campo == "cep"))
             if campo == "cep":
                 time.sleep(2.5)  # o portal completa UF/Município (e às vezes a rua) pelo CEP
         # a busca do CEP às vezes apaga rua/número/bairro depois: confere e completa
@@ -1179,13 +1243,30 @@ class RoboNfae:
         except Exception:  # noqa: BLE001
             texto_final = ""
         self._print("tela-final.png")
-        # DANFE: 1) botão na própria tela de resultado; 2) senão, pela Consulta de NFA-e (ícone "DANFE")
+        # A tela final do portal costuma ficar em branco: o robô NÃO espera por ela.
+        # Volta para receita.pr.gov.br → menu NFA-e → Consulta, acha a nota e baixa DANFE e XML.
         info = {}
         try:
-            info = self._baixar_danfe() or {}
+            info = self._danfe_pela_consulta(self._arquivos_pdf()) or {}
         except Exception as e:  # noqa: BLE001  (a nota já foi emitida: falha aqui não pode virar "erro")
-            log(f"Não consegui baixar a DANFE automaticamente ({str(e).splitlines()[0][:120]}).")
+            log(f"Não consegui baixar a nota pela Consulta ({str(e).splitlines()[0][:120]}).")
         return self._colher_resultado(texto_final=texto_final, extra=info)
+
+    def _entrar_se_pedir(self):
+        """Se ao voltar para receita.pr.gov.br o portal pedir login de novo, entra outra vez."""
+        s = self.sel
+        campos = self.driver.find_elements("css selector", s["login_senha"])
+        if not (campos and campos[0].is_displayed()):
+            return
+        log("O portal pediu login de novo; entrando…")
+        self._digitar(s["login_usuario"], self.emitente["usuario"], "usuário")
+        el = self._achar(s["login_senha"], clicavel=True)
+        el.clear()
+        el.send_keys(self.senha)
+        if not self._clicar(s["login_botao"], "Entrar", tempo=5, obrigatorio=False):
+            from selenium.webdriver.common.keys import Keys
+            el.send_keys(Keys.ENTER)
+        time.sleep(4)
 
     # ---------------- DANFE / XML ----------------
     def _arquivos_pdf(self):
@@ -1273,9 +1354,24 @@ class RoboNfae:
         from selenium.webdriver.support.ui import Select
         c = self.d["cliente"]
         doc = re.sub(r"\D", "", c.get("cnpj") or c.get("cpf") or "")
-        log("Abrindo a Consulta de NFA-e para baixar a DANFE…")
+        log("Voltando para receita.pr.gov.br para consultar a nota…")
+        time.sleep(4)  # dá tempo do portal registrar a nota emitida
+        # fica na aba atual e fecha as outras que a emissão possa ter aberto
+        try:
+            atual = self.driver.current_window_handle
+            for h in [h for h in self.driver.window_handles if h != atual]:
+                self.driver.switch_to.window(h)
+                self.driver.close()
+            self.driver.switch_to.window(atual)
+        except Exception:  # noqa: BLE001
+            try:
+                self.driver.switch_to.window(self.driver.window_handles[-1])
+            except Exception:  # noqa: BLE001
+                pass
         self.driver.get(self.sel["url_login"])
-        time.sleep(2)
+        time.sleep(3)
+        self._entrar_se_pedir()
+        log("Abrindo a Consulta de NFA-e pelo menu lateral…")
         menu = self._achar(self.sel["menu_nfae"], tempo=20)
         self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", menu)
         consulta = None
@@ -1298,44 +1394,95 @@ class RoboNfae:
             time.sleep(0.5)
         time.sleep(2)
         hoje = time.strftime("%d/%m/%Y")
-        for tentativa in range(4):  # a nota pode levar alguns segundos para aparecer na consulta
-            selects = [e for e in self.driver.find_elements("css selector", "select") if e.is_displayed()]
-            if len(selects) < 2:
-                raise PassoFalhou("A tela de Consulta de NFA-e não carregou.")
-            emit = Select(selects[0])
-            if emit.first_selected_option.text.strip().lower().startswith("selecione") and len(emit.options) > 1:
-                emit.select_by_index(1)
-                time.sleep(0.6)
-            selects = [e for e in self.driver.find_elements("css selector", "select") if e.is_displayed()]
-            filtro = Select(selects[1])
-            op = next((o for o in filtro.options if o.text.strip().lower().startswith("destinat")), None)
-            if op:
-                filtro.select_by_visible_text(op.text)
-                time.sleep(0.8)
-            campo = next((e for e in self.driver.find_elements("css selector", "input[type=text]")
-                          if e.is_displayed() and e.get_attribute("id") != "PesquisaBusca" and not re.search(r"per[ií]odo", e.get_attribute("placeholder") or "", re.I)), None)
-            if campo is None:
-                raise PassoFalhou("Não achei o campo do CPF/CNPJ do destinatário na Consulta.")
-            campo.click(); campo.send_keys(Keys.CONTROL, "a"); campo.send_keys(Keys.BACKSPACE); campo.send_keys(doc)
-            self._botao_texto("Consultar")
-            time.sleep(3)
-            linha = self.driver.execute_script(LINHA_NOTA_HOJE_JS, hoje)
+        cnpj_emit = re.sub(r"\D", "", self.emitente.get("cnpj") or self.sel.get("consulta_cnpj_emitente") or "")
+        for tentativa in range(6):  # a nota pode levar alguns segundos para aparecer na consulta
+            # 1) CNPJ do emitente na lista
+            try:
+                lista = self._achar(self.sel.get("consulta_emitente") or SELETORES_PADRAO["consulta_emitente"], tempo=20)
+            except PassoFalhou:
+                lista = next((e for e in self.driver.find_elements("css selector", "select") if e.is_displayed()), None)
+            if lista is None:
+                raise PassoFalhou("A tela de Consulta de NFA-e não carregou (não achei a lista do CNPJ do emitente).")
+            emit = Select(lista)
+            op = next((o for o in emit.options if cnpj_emit and re.sub(r"\D", "", o.text + (o.get_attribute("value") or "")).find(cnpj_emit) >= 0), None)
+            if op is None:
+                validas = [o for o in emit.options if not o.text.strip().lower().startswith("selecione")]
+                if len(validas) == 1:
+                    op = validas[0]
+                else:
+                    raise PassoFalhou(f"A lista de emitentes da Consulta não tem o CNPJ {cnpj_emit}.")
+            emit.select_by_visible_text(op.text)
+            log(f"Consulta: emitente {op.text.strip()}.")
+            time.sleep(1)
+            # 2) Consultar
+            if not self._clicar(self.sel.get("consulta_botao") or SELETORES_PADRAO["consulta_botao"], "Consultar", tempo=10, obrigatorio=False):
+                self._botao_texto("Consultar")
+            time.sleep(4)
+            linha = self.driver.execute_script(LINHA_NOTA_HOJE_JS, self.datas_nota, doc)
             if linha:
                 break
             log("A nota ainda não apareceu na Consulta; esperando um pouco…")
             time.sleep(8)
         else:
-            raise PassoFalhou("A nota emitida hoje não apareceu na Consulta de NFA-e.")
+            raise PassoFalhou(f"A nota de {self.datas_nota[0]} não apareceu na Consulta de NFA-e.")
+        if not linha.get("doDestinatario"):
+            log("Aviso: a lista da Consulta não mostra o CNPJ do cliente; peguei a nota Autorizada mais recente do dia.")
         chave, protocolo = linha.get("chave") or "", linha.get("protocolo") or ""
         numero = str(int(chave[25:34])) if len(chave) == 44 and chave.isdigit() else None
         # DANFE (ícone com title exatamente "DANFE" — nunca o "Cancelar" da mesma linha)
         if self.driver.execute_script(CLICAR_ICONE_LINHA_JS, linha["indice"], "DANFE"):
             if self._esperar_download(antes, tempo=40):
                 log(f"DANFE baixada pela Consulta (nota nº {numero or '?'}).")
-        antes_xml = {f for f in os.listdir(self.pasta) if f.lower().endswith(".xml")}
-        if self.driver.execute_script(CLICAR_ICONE_LINHA_JS, linha["indice"], "Obter XML da nota"):
-            self._esperar_download(antes_xml, ext=".xml", tempo=15)
-        return {"numero": numero, "chave": chave, "protocolo": protocolo}
+            else:
+                log("Cliquei no ícone da DANFE, mas o arquivo não baixou.")
+        else:
+            log("Não achei o ícone da DANFE na linha da nota.")
+        self._baixar_xml(linha, chave or numero or "nota")
+        return {"numero": numero, "chave": chave, "protocolo": protocolo, "doDestinatario": bool(linha.get("doDestinatario"))}
+
+    def _baixar_xml(self, linha, nome):
+        """Ícone “Obter XML da nota”: aceita download direto, janela com botão de baixar ou aba com o XML."""
+        antes = {f for f in os.listdir(self.pasta) if f.lower().endswith(".xml")}
+        abas = set(self.driver.window_handles)
+        if not self.driver.execute_script(CLICAR_ICONE_LINHA_JS, linha["indice"], "Obter XML da nota"):
+            log("Não achei o ícone “Obter XML da nota” na linha da nota.")
+            return
+        if self._esperar_download(antes, ext=".xml", tempo=12):
+            log("XML baixado.")
+            return
+        # abriu uma janelinha com botão (Baixar / Download / Salvar)?
+        for t in ("Baixar XML", "Download XML", "Baixar", "Download", "Salvar"):
+            if self._botao_texto(t, tempo=0.5, obrigatorio=False):
+                if self._esperar_download(antes, ext=".xml", tempo=15):
+                    log("XML baixado.")
+                    self._fechar_janela_xml()
+                    return
+        # abriu o XML numa aba nova ou na própria tela? grava o conteúdo como arquivo
+        for h in [h for h in self.driver.window_handles if h not in abas] + [self.driver.current_window_handle]:
+            try:
+                self.driver.switch_to.window(h)
+                texto = self.driver.execute_script(
+                    "const p=document.querySelector('pre,textarea'); return (p && (p.value||p.textContent)) || document.documentElement.outerHTML;")
+                m = re.search(r"(<\?xml[\s\S]*?</nfeProc>|<nfeProc[\s\S]*?</nfeProc>|<NFe[\s\S]*?</NFe>)", texto or "")
+                if not m:
+                    texto2 = self.driver.find_element("tag name", "body").text
+                    m = re.search(r"(<\?xml[\s\S]*?</nfeProc>|<nfeProc[\s\S]*?</nfeProc>|<NFe[\s\S]*?</NFe>)", texto2 or "")
+                if m:
+                    with open(os.path.join(self.pasta, f"NFA-e-{nome}.xml"), "w", encoding="utf-8") as f:
+                        f.write(m.group(1))
+                    log("XML gravado a partir da tela do portal.")
+                    break
+            except Exception:  # noqa: BLE001
+                continue
+        else:
+            log("Cliquei em “Obter XML da nota”, mas o XML não veio.")
+        self._fechar_abas_novas(abas)
+        self._fechar_janela_xml()
+
+    def _fechar_janela_xml(self):
+        for t in ("Fechar",):  # nunca clica em nada com "Cancelar"
+            if self._botao_texto(t, tempo=0.5, obrigatorio=False):
+                return
 
 
     def _aprender(self):
@@ -1499,7 +1646,7 @@ class Agente:
         log(f"Tarefa recebida: {tarefa['tipo']} ({tarefa['id'][:8]})")
         resultado = None
         try:
-            if tarefa["tipo"] != "nfae":
+            if tarefa["tipo"] not in ("nfae", "nfae_consulta"):
                 resultado = {"status": "erro", "mensagem": f"Este agente não sabe fazer tarefas do tipo “{tarefa['tipo']}”. Atualize o agente."}
             else:
                 emitente = next((e for e in self.emitentes if e["id"] == tarefa["dados"]["emitenteId"]), None)

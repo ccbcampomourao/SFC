@@ -14,8 +14,8 @@ COMO O ROBÔ EMITE (sempre o mesmo roteiro)
 Login na Receita-PR -> menu lateral "NFA-e MEI e NFA-e (Modelo 55)" -> Emissão ->
 destinatário (CNPJ) -> natureza "Venda", 1 - Saída, NF-e normal, Não se aplica ->
 retirada/entrega -> produtos -> pagamento 01 - Dinheiro (à vista, valor total) ->
-frete 9 - Sem Ocorrência de Transporte -> Resumo -> Emitir -> botão "Visualizar DANFE" da tela final (se não aparecer: Consulta de NFA-e
-(filtra pelo destinatário, pega a nota Autorizada de hoje) -> ícones DANFE e "Obter XML da nota").
+frete 9 - Sem Ocorrência de Transporte -> Resumo -> Emitir -> (a tela final fica em branco, então não espera por ela) volta para receita.pr.gov.br ->
+menu NFA-e -> Consulta (escolhe o CNPJ do emitente, clica em Consultar, pega a nota Autorizada de hoje deste cliente) -> ícones DANFE e "Obter XML da nota".
 O robô não "aprende" passos: faz sempre isso. O Chrome do robô funciona mesmo com a
 janela coberta, mas evite usar esse Chrome enquanto ele emite.
 
@@ -23,3 +23,10 @@ Ajustes (em %APPDATA%\PrumoRobo\seletores.json): "pagamento_meio", "frete",
 "parar_no_resumo": true (para conferir antes de emitir).
 
 Registro do que o robô fez: %APPDATA%\PrumoRobo\robo.log
+
+CONSULTAR NO PORTAL (desde a 1.1.9)
+Notas que ficaram "Conferir" (ou "Interrompida") ganham o botão "Consultar no portal" no Histórico do Prumo.
+O robô entra na Receita-PR, abre a Consulta (CNPJ do emitente -> Consultar), procura a nota Autorizada do dia
+da tentativa para aquele cliente e baixa DANFE e XML. NÃO emite nada. Achou -> vira "Emitida". Não achou -> volta
+para "Conferir" (aí, se a nota realmente não saiu, use "Mandar de novo"). Robôs mais antigos que a 1.1.9 não recebem
+essa tarefa.

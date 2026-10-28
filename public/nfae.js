@@ -232,7 +232,9 @@ function desenharHistorico() {
   const p = $('[data-painel="historico"]');
   if (!NF.tarefas.length) { p.innerHTML = `<div class="vazio">${icone("documento", "ico-xl")}<strong>Nenhuma nota ainda</strong><p>As NFA-e enviadas para o robô aparecem aqui, com o PDF quando ficarem prontas.</p></div>`; return; }
   p.innerHTML = `<div class="nf-hist">${NF.tarefas.map((t) => {
-    const [rot, tom] = ROTULO_ST[t.status] || [t.status, "neutro"];
+    let [rot, tom] = ROTULO_ST[t.status] || [t.status, "neutro"];
+    if (t.modo === "consultar" && t.status === "pendente") rot = "Na fila p/ consultar";
+    if (t.modo === "consultar" && t.status === "em_andamento") rot = "Consultando…";
     const r = t.resumo || {};
     const arqs = (t.arquivos || []).map((a) => {
       const ver = /pdf|image/.test(a.tipo);
@@ -249,11 +251,21 @@ function desenharHistorico() {
         </div>
         <span class="nf-acoes">
           ${["pendente", "em_andamento", "erro", "interrompida", "conferir"].includes(t.status) ? `<button type="button" class="btn-ghost btn-sm" data-cancelar="${t.id}">${icone("x")}Cancelar pedido</button>` : ""}
+          ${["interrompida", "conferir"].includes(t.status) ? `<button type="button" class="btn-primario btn-sm" data-consultar="${t.id}" title="O robô procura esta nota na Consulta do portal e baixa a DANFE e o XML. Não emite nada.">${icone("busca")}Consultar no portal</button>` : ""}
           ${["erro", "interrompida", "conferir", "cancelada"].includes(t.status) ? `<button type="button" class="btn-secundario btn-sm" data-refazer="${t.id}">${icone("atualizar")}Mandar de novo</button>` : ""}
         </span>
       </div>`;
   }).join("")}</div>`;
   p.onclick = async (e) => {
+    const q = e.target.closest("[data-consultar]");
+    if (q) {
+      try {
+        await api(`/api/nfae/tarefas/${q.dataset.consultar}/consultar`, { method: "POST" });
+        notificar("O robô vai procurar a nota na Consulta do portal (sem emitir nada).", "ok");
+        await carregarTarefas(); desenharHistorico(); agendarAtualizacao();
+      } catch (err) { notificar(err.message, "erro"); }
+      return;
+    }
     const c = e.target.closest("[data-cancelar]"), r = e.target.closest("[data-refazer]");
     if (!c && !r) return;
     const t = NF.tarefas.find((x) => x.id === (c || r).dataset[c ? "cancelar" : "refazer"]);
