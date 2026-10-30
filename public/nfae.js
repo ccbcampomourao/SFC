@@ -169,7 +169,7 @@ function desenharClienteEscolhido() {
   box.innerHTML = c ? `
     <div class="nf-escolhido">
       <div><b>${escaparHtml(c.nome || c.razao_social)}</b>
-        <small>${escaparHtml(c.razao_social && c.razao_social !== c.nome ? c.razao_social + " · " : "")}CNPJ <span class="mono">${escaparHtml(formatarDocumento(c.cnpj))}</span> · IE <span class="mono">${escaparHtml(c.ie || "—")}</span></small>
+        <small>${escaparHtml(c.razao_social && c.razao_social !== c.nome ? c.razao_social + " · " : "")}CNPJ <span class="mono">${escaparHtml(formatarDocumento(c.cnpj))}</span> · IE <span class="mono">${c.sem_ie && !c.ie ? "não contribuinte (sem IE)" : escaparHtml(c.ie || "—")}</span></small>
         <small>${escaparHtml([c.logradouro, c.numero, c.complemento, c.bairro].filter(Boolean).join(", "))} — ${escaparHtml(c.municipio || "")}/${escaparHtml(c.estado || "")} · CEP ${escaparHtml(c.cep || "")}</small></div>
       <span class="nf-esc-acoes"><button type="button" class="btn-ghost btn-sm" data-ed>${icone("documento")}Editar</button><button type="button" class="btn-ghost btn-sm" data-troca>${icone("x")}Trocar</button></span>
     </div>` : "";
@@ -437,6 +437,8 @@ function normalizarClientes(obj) {
     out[cnpj] = Object.fromEntries(["ie", "nome", "razao_social", "cep", "logradouro", "numero", "bairro", "municipio", "estado", "complemento"].map((k) => [k, String(c[k] ?? "").trim()]));
     out[cnpj].cnpj = cnpj;
     out[cnpj].estado = out[cnpj].estado || "PR";
+    if (/^isent/i.test(out[cnpj].ie)) out[cnpj].ie = "";
+    out[cnpj].sem_ie = !out[cnpj].ie.replace(/\D/g, "") && (c.sem_ie === true || /^isent/i.test(String(c.ie || "")));
   }
   return out;
 }
@@ -459,6 +461,7 @@ function editarCliente(c, aoSalvar) {
       ${campos.map(([k, r, cl]) => {
         const input = `<input data-k="${k}" value="${escaparHtml(v[k] || "")}" ${cl ? `class="${cl}"` : ""} ${k === "cnpj" && c ? "readonly" : ""} ${["cnpj", "ie", "cep", "logradouro", "numero", "bairro", "municipio"].includes(k) ? "required" : ""}>`;
         if (k === "cnpj") return `<div class="campo-form largo"><label>${r}</label><div class="nf-cnpj-busca">${input}<button type="button" class="btn-secundario btn-sm" id="fc-buscar" title="Busca razão social e endereço na base pública da Receita (grátis)">${icone("busca")}Buscar</button></div></div>`;
+        if (k === "ie") return `<div class="campo-form"><label>${r}</label>${input}<label class="nf-sem-ie"><input type="checkbox" id="fc-sem-ie"${v.sem_ie && !v.ie ? " checked" : ""}> Não tem IE (não contribuinte)</label></div>`;
         return `<div class="campo-form${k === "logradouro" || k === "razao_social" ? " largo" : ""}"><label>${r}</label>${input}</div>`;
       }).join("")}
       <p class="nf-cnpj-aviso" id="fc-aviso" hidden></p>
@@ -466,6 +469,9 @@ function editarCliente(c, aoSalvar) {
     </form>`);
   $("#fc-cancelar").onclick = fecharModal;
   const campoCnpj = $('#fc [data-k="cnpj"]');
+  const campoIe = $('#fc [data-k="ie"]'), semIe = $("#fc-sem-ie");
+  const ajustarIe = () => { campoIe.disabled = semIe.checked; campoIe.required = !semIe.checked; if (semIe.checked) campoIe.value = ""; campoIe.placeholder = semIe.checked ? "sem inscrição estadual" : ""; };
+  semIe.onchange = ajustarIe; ajustarIe();
   let ultimoBuscado = "";
   const buscar = (botao) => comCarregando(botao, async () => {
     const cnpj = campoCnpj.value.replace(/\D/g, "");
@@ -477,6 +483,7 @@ function editarCliente(c, aoSalvar) {
         const val = String(d[k] || "").trim();
         if (val) $(`#fc [data-k="${k}"]`).value = val;
       }
+      if (d.ie && semIe.checked) { semIe.checked = false; ajustarIe(); campoIe.value = d.ie; }
       if (!$('#fc [data-k="nome"]').value.trim()) $('#fc [data-k="nome"]').value = d.razao_social || "";
       const aviso = $("#fc-aviso");
       const inativa = d.situacao && !/ativa/i.test(d.situacao);
@@ -496,6 +503,8 @@ function editarCliente(c, aoSalvar) {
   $("#fc").onsubmit = (e) => { e.preventDefault(); comCarregando(e.submitter, async () => {
     const novo = {}; $$("#fc [data-k]").forEach((i) => (novo[i.dataset.k] = i.value.trim()));
     novo.cnpj = novo.cnpj.replace(/\D/g, "");
+    novo.sem_ie = semIe.checked;
+    if (novo.sem_ie) novo.ie = "";
     if (novo.cnpj.length !== 14) return notificar("CNPJ precisa ter 14 números.", "aviso");
     try { await salvarCadastros({ clientes: { ...NF.cad.clientes, [novo.cnpj]: novo } }); fecharModal(); notificar("Cliente salvo", "ok"); aoSalvar && aoSalvar(NF.cad.clientes[novo.cnpj]); } catch (err) { notificar(err.message, "erro"); }
   }); };

@@ -891,7 +891,8 @@ function validarPedidoNfae(d, cadastros) {
   const c = d.cliente || {};
   const cnpj = String(c.cnpj || "").replace(/\D/g, "");
   if (cnpj.length !== 14 || !cnpjValido(cnpj)) erros.push("CNPJ do destinatário inválido.");
-  if (!String(c.ie || "").replace(/\D/g, "")) erros.push("Falta a inscrição estadual do destinatário.");
+  // destinatário sem IE só se marcado como "não contribuinte" no cadastro
+  if (!String(c.ie || "").replace(/\D/g, "") && !c.sem_ie) erros.push("Falta a inscrição estadual do destinatário (ou marque no cadastro do cliente que ele não tem IE).");
   for (const campo of ["nome", "cep", "logradouro", "numero", "bairro", "municipio"]) if (!String(c[campo] || "").trim() && !(campo === "nome" && c.razao_social)) erros.push(`Falta “${campo}” do destinatário.`);
   const itens = Array.isArray(d.itens) ? d.itens : [];
   if (!itens.length) erros.push("Adicione pelo menos um produto.");
@@ -1996,7 +1997,8 @@ export default {
           id: crypto.randomUUID(), tipo: "nfae", status: "pendente", criadoEm: new Date().toISOString(), criadoPor: username, assinatura,
           dados: {
             emitenteId: emitente.id, emitenteNome: emitente.nome,
-            cliente: Object.fromEntries(["cnpj", "ie", "nome", "razao_social", "cep", "logradouro", "numero", "bairro", "municipio", "estado", "complemento"].map((k) => [k, String(d.cliente?.[k] ?? "").trim().slice(0, 120)])),
+            cliente: { ...Object.fromEntries(["cnpj", "ie", "nome", "razao_social", "cep", "logradouro", "numero", "bairro", "municipio", "estado", "complemento"].map((k) => [k, String(d.cliente?.[k] ?? "").trim().slice(0, 120)])),
+              sem_ie: !!d.cliente?.sem_ie && !String(d.cliente?.ie || "").replace(/\D/g, "") },
             itens: d.itens.map((i) => ({ codigo: String(i.codigo).trim().slice(0, 20), descricao: String(i.descricao).trim().slice(0, 120), ncm: String(i.ncm).replace(/\D/g, ""), qtd: Number(i.qtd), valor: String(i.valor).trim(), cfop: String(i.cfop || "5405").replace(/\D/g, "").slice(0, 4) || "5405", unidade: String(i.unidade || "UN").slice(0, 6) })),
             observacao: String(d.observacao || "").slice(0, 500),
           },

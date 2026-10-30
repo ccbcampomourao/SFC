@@ -1775,3 +1775,7 @@ body { background: var(--paper); color: var(--ink); }
 .nf-pro-alvo select { width: 100%; }
 .nf-mover { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--borda, #e5e7eb); font-size: 12.5px; }
 .nf-mover select { flex: 1; min-width: 140px; }
+
+/* NFA-e: cliente sem inscrição estadual */
+.nf-sem-ie { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12.5px; color: var(--texto-2, #4b5563); cursor: pointer; font-weight: 500; }
+.nf-sem-ie input { width: auto; margin: 0; }

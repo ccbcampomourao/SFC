@@ -30,3 +30,8 @@ O robô entra na Receita-PR, abre a Consulta (CNPJ do emitente -> Consultar), pr
 da tentativa para aquele cliente e baixa DANFE e XML. NÃO emite nada. Achou -> vira "Emitida". Não achou -> volta
 para "Conferir" (aí, se a nota realmente não saiu, use "Mandar de novo"). Robôs mais antigos que a 1.1.9 não recebem
 essa tarefa.
+
+DESTINATÁRIO SEM IE (desde a 1.2.0)
+Cliente marcado no Prumo como "Não tem IE (não contribuinte)": o robô deixa a IE em branco e, se a tela do
+destinatário tiver a lista/opção do indicador da IE, escolhe "Não Contribuinte". Se o portal não deixar avançar,
+o robô para ANTES de emitir e manda a imagem da tela.

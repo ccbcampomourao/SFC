@@ -28,7 +28,7 @@ import traceback
 import urllib.error
 import urllib.request
 
-VERSAO = "1.1.9"
+VERSAO = "1.2.0"
 NO_WINDOWS = platform.system() == "Windows"
 PASTA = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "PrumoRobo") if NO_WINDOWS else os.path.join(os.path.expanduser("~"), ".prumo-robo")
 os.makedirs(PASTA, exist_ok=True)
@@ -1074,7 +1074,11 @@ class RoboNfae:
             self.sel["destinatario"] = dict(self.sel["destinatario"], cnpj=self.sel["destinatario"].get("cpf", CPF_XPATH))
         valores = {"cnpj": doc, "ie": re.sub(r"\D", "", c["ie"]), "nome": c.get("razao_social") or c.get("nome"),
                    "cep": re.sub(r"\D", "", c["cep"]), "logradouro": c["logradouro"], "numero": c["numero"], "bairro": c["bairro"]}
-        for n, campo in enumerate(["cnpj", "ie", "nome", "cep", "logradouro", "numero", "bairro"]):
+        sem_ie = not valores["ie"]
+        if sem_ie:
+            log("Destinatário sem inscrição estadual (não contribuinte): deixo a IE em branco.")
+            self._marcar_nao_contribuinte()
+        for n, campo in enumerate([k for k in ["cnpj", "ie", "nome", "cep", "logradouro", "numero", "bairro"] if not (k == "ie" and sem_ie)]):
             self._preencher("destinatario", campo, valores[campo], {"cnpj": "CNPJ do destinatário", "ie": "Inscrição estadual", "cep": "CEP"}.get(campo, campo), tempo=25 if n == 0 else 15, tab=(campo == "cep"))
             if campo == "cep":
                 time.sleep(2.5)  # o portal completa UF/Município (e às vezes a rua) pelo CEP
@@ -1089,6 +1093,30 @@ class RoboNfae:
             for k in vazios:
                 self._preencher("destinatario", k, valores[k], nomes.get(k, k))
         self._avancar_para("identificacao")
+
+    def _marcar_nao_contribuinte(self):
+        """Se a tela do destinatário tiver o indicador da IE (lista ou opção), escolhe “Não Contribuinte”."""
+        from selenium.webdriver.support.ui import Select
+        try:
+            for el in self.driver.find_elements("css selector", "select"):
+                if not el.is_displayed():
+                    continue
+                sel = Select(el)
+                op = next((o for o in sel.options if re.search(r"n[ãa]o\s+contribuinte", o.text, re.I)), None)
+                if op:
+                    sel.select_by_visible_text(op.text)
+                    log(f"Indicador da IE: “{op.text.strip()}”.")
+                    time.sleep(0.8)
+                    return True
+            for texto in ("Não Contribuinte", "Não contribuinte", "Nao Contribuinte"):
+                if self.driver.execute_script(MARCAR_OPCAO_JS, texto):
+                    log("Indicador da IE: “Não Contribuinte”.")
+                    time.sleep(0.8)
+                    return True
+        except Exception:  # noqa: BLE001
+            pass
+        log("Não vi na tela uma opção “Não Contribuinte”; sigo só com a IE em branco.")
+        return False
 
     def _operacao(self):
         from selenium.webdriver.common.keys import Keys
