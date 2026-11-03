@@ -49,5 +49,9 @@ certificate_id = "d95cf831-ca9d-433d-a075-2db5dcf5d328"
 name = "CANAL_ROBO"
 class_name = "CanalRobo"
 
+[[migrations]]
+tag = "canal-robo-v1"
+new_sqlite_classes = ["CanalRobo"]
+
 [vars]
 APP_NOME = "Fiscal Mensal"
