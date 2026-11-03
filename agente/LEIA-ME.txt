@@ -32,6 +32,47 @@ para "Conferir" (aí, se a nota realmente não saiu, use "Mandar de novo"). Rob�
 essa tarefa.
 
 DESTINATÁRIO SEM IE (desde a 1.2.0)
-Cliente marcado no Prumo como "Não tem IE (não contribuinte)": o robô deixa a IE em branco e, se a tela do
+Cliente marcado no Prumo como "Não tem IE (não contribuinte)": o robô escolhe "9 - Não Contribuinte" no Indicador da IE
+(XPath //*[@id="app"]/div[1]/div/div[2]/div[1]/div[1]/div[2]/div[6]/div[1]/div/select) e deixa a IE em branco. Cliente com IE: "1". Antes (1.2.0), se a tela do
 destinatário tiver a lista/opção do indicador da IE, escolhe "Não Contribuinte". Se o portal não deixar avançar,
 o robô para ANTES de emitir e manda a imagem da tela.
+
+SÓ UMA CÓPIA DO AGENTE (desde a 1.2.2)
+Abrir o Agente quando já existe um aberto no mesmo computador faz o antigo fechar sozinho (ele termina a nota que
+estiver fazendo). Se uma cópia antiga ficar aberta em outro lugar com o mesmo vínculo, ela fica parada e o Prumo
+mostra o aviso "aberto em dois lugares" na aba Robô. Isso evita gastar o limite diário de gravações do Cloudflare.
+
+CONEXÃO DIRETA (desde a 1.3.0)
+O Agente fica conectado ao Prumo e é AVISADO quando alguém pede uma nota (não fica mais perguntando a cada
+20 segundos). Precisa do pacote websocket-client: rode de novo  pip install -r requirements.txt
+Na janela, o status aparece como "ONLINE · CONEXÃO DIRETA". Se a conexão cair, ele reconecta sozinho e, enquanto
+isso, volta a perguntar como antes.
+
+NFS-e NACIONAL - PORTAL NACIONAL (desde a 1.4.0)
+O robô baixa os XML das NFS-e EMITIDAS pelas empresas que usam o Portal Nacional (página "XML NFS-e" do Prumo),
+pela API oficial do governo (Ambiente de Dados Nacional), sem passar pelo site e sem "não sou robô".
+1. Rode de novo  pip install -r requirements.txt  (entrou o pacote cryptography).
+2. Aba "Certificados" -> "Adicionar certificado A1 (.pfx)" -> escolha o arquivo da empresa e digite a senha dele.
+   O arquivo e a senha ficam protegidos pelo Windows só neste computador. O Prumo só vê CNPJ, nome e validade.
+   O certificado da matriz serve para as filiais (mesmo CNPJ raiz). Certificado A3 (token/cartão) não serve.
+3. No Prumo, na empresa: "Município NFS-e" = Maringá / Itajaí / "Emissor Nacional (outra cidade / MEI)".
+   Na página XML NFS-e, clique em Buscar: o pedido vai para a fila do robô e o resultado aparece sozinho.
+A primeira busca de cada empresa baixa todo o histórico dela no Portal Nacional (pode levar alguns minutos);
+as próximas só pegam o que é novo. As notas baixadas ficam em %APPDATA%\PrumoRobo\nfse-nacional\<CNPJ>.
+Nota cancelada vai no ZIP com "_CANCELADA" no nome. O mês é o da data de emissão da nota.
+
+EMISSÃO DE NFS-e NACIONAL (desde a 1.5.0)
+O robô emite NFS-e pela API oficial da Sefin Nacional, com o certificado A1 da empresa (aba Certificados).
+1. Rode de novo  pip install -r requirements.txt  (entrou o pacote lxml).
+2. No Prumo: menu "Emitir NFS-e" -> escolha a empresa -> aba Configuração (regime MEI ou Simples, código IBGE
+   do município, % aproximado dos tributos do Simples, série) -> cadastre os serviços (código de tributação
+   nacional de 6 números, descrição, NBS e alíquota se tiver ISS retido).
+3. Toda empresa começa na PRODUÇÃO RESTRITA (notas de teste, sem valor fiscal). Teste lá e só depois troque
+   para Produção na Configuração.
+TUDO da emissão fica NESTE computador, no arquivo %APPDATA%\PrumoRobo\prumo.db: configuração, serviços,
+tomadores e as notas (com o XML). O Prumo só pede e mostra pelo canal direto; nada vai para o KV.
+Com este computador desligado, a tela de emissão e o histórico não abrem (as notas emitidas continuam valendo).
+Backup: a cada 4 horas, quando houver nota nova, o robô manda uma cópia ao Prumo (fica no R2, uns 40 dias)
+e guarda uma cópia do banco por dia em %APPDATA%\PrumoRobo\backups (últimos 7 dias).
+Se a resposta da Sefin se perder (internet caiu no meio), o robô confere na Sefin antes de mandar de novo:
+não emite a mesma nota duas vezes.

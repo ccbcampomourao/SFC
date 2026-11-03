@@ -679,7 +679,8 @@ function lerMinhaReceitaEndereco(d) {
   if (!d || !d.razao_social) return null;
   return { razao_social: _txt(d.razao_social), nome: _txt(d.nome_fantasia), cep: _so(d.cep),
     logradouro: [_txt(d.descricao_tipo_de_logradouro), _txt(d.logradouro)].filter(Boolean).join(" "), numero: _txt(d.numero),
-    complemento: _txt(d.complemento), bairro: _txt(d.bairro), municipio: _txt(d.municipio), estado: _txt(d.uf), situacao: _txt(d.descricao_situacao_cadastral) };
+    complemento: _txt(d.complemento), bairro: _txt(d.bairro), municipio: _txt(d.municipio), estado: _txt(d.uf), situacao: _txt(d.descricao_situacao_cadastral),
+    ibge: _so(d.codigo_municipio_ibge) };
 }
 function lerCnpjWs(d) {
   const e = d && d.estabelecimento;
@@ -690,7 +691,7 @@ function lerCnpjWs(d) {
   return { razao_social: _txt(d.razao_social), nome: _txt(e.nome_fantasia), cep: _so(e.cep),
     logradouro: [_txt(e.tipo_logradouro), _txt(e.logradouro)].filter(Boolean).join(" "), numero: _txt(e.numero),
     complemento: _txt(e.complemento), bairro: _txt(e.bairro), municipio: _txt(e.cidade && e.cidade.nome), estado: uf,
-    situacao: _txt(e.situacao_cadastral), ie: ie ? _so(ie.inscricao_estadual) : "" };
+    situacao: _txt(e.situacao_cadastral), ie: ie ? _so(ie.inscricao_estadual) : "", ibge: _so(e.cidade && e.cidade.ibge_id) };
 }
 async function buscarJsonCnpj(url) {
   const resp = await fetch(url, { headers: { Accept: "application/json", "User-Agent": "FZCONT/1.0 (cadastro de cliente)" }, signal: AbortSignal.timeout(7000) });
@@ -838,8 +839,21 @@ async function lerEstadoRobos(env) {
   return { ...e, robos: e.robos || [], tarefas: e.tarefas || [] };
 }
 async function gravarEstadoRobos(env, estado) {
+  // buscas da NFS-e Nacional são muitas (uma por empresa/mês): guarda só as mais recentes,
+  // para não empurrar o histórico das NFA-e para fora da lista
+  const nacionais = estado.tarefas.filter((t) => t.tipo === "nfse_nacional" && !["pendente", "em_andamento"].includes(t.status));
+  const sobra = estado.tarefas.filter((t) => t.tipo === "nfse_nacional").length - NFSE_NAC_MAX_TAREFAS;
+  const removidas = sobra > 0 ? nacionais.slice(0, sobra) : [];
+  if (removidas.length) {
+    const ids = new Set(removidas.map((t) => t.id));
+    estado.tarefas = estado.tarefas.filter((t) => !ids.has(t.id));
+  }
+  const cortadas = estado.tarefas.slice(0, Math.max(0, estado.tarefas.length - ROBO_MAX_TAREFAS));
   estado.tarefas = estado.tarefas.slice(-ROBO_MAX_TAREFAS);
   await env.SFC_KV.put("robo:estado", JSON.stringify(estado));
+  // arquivos das buscas que saíram da lista (o ZIP já foi copiado para os anexos da empresa)
+  const apagar = [...removidas, ...cortadas.filter((t) => t.tipo === "nfse_nacional")].flatMap((t) => (t.arquivos || []).map((a) => `robo/${t.id}/${a.nome}`));
+  if (apagar.length) await Promise.all(apagar.map((k) => env.ANEXOS_R2.delete(k).catch(() => {})));
 }
 async function sha256Hex(texto) {
   return bufParaHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(texto)));
@@ -850,15 +864,21 @@ function marcarTarefasPresas(estado) {
   let mudou = false;
   const agora = Date.now();
   for (const t of estado.tarefas) {
-    if (t.status === "em_andamento" && agora - Date.parse(t.iniciadoEm || 0) > ROBO_TAREFA_PRESA_MS) {
-      Object.assign(t, { status: "interrompida", mensagem: "O robô parou de responder no meio da tarefa. Confira no portal se a nota saiu antes de mandar de novo.", finalizadoEm: new Date().toISOString() });
+    const nacional = t.tipo === "nfse_nacional";
+    if (t.status === "em_andamento" && agora - Date.parse(t.iniciadoEm || 0) > (nacional ? NFSE_NAC_PRESA_MS : ROBO_TAREFA_PRESA_MS)) {
+      Object.assign(t, { status: "interrompida", finalizadoEm: new Date().toISOString(), mensagem: nacional
+        ? "O robô parou de responder no meio da busca no Portal Nacional. Clique em “Buscar de novo” (não há risco: só baixa notas)."
+        : "O robô parou de responder no meio da tarefa. Confira no portal se a nota saiu antes de mandar de novo." });
       mudou = true;
     }
   }
   return mudou;
 }
-function roboPublico(r) {
-  return { id: r.id, nome: r.nome, criadoEm: r.criadoEm, vistoEm: r.vistoEm || null, versao: r.versao || null, emitentesComSenha: r.emitentesComSenha || [], online: !!r.vistoEm && Date.now() - Date.parse(r.vistoEm) < ROBO_VISTO_GRAVA_MS + 5 * 60 * 1000 };
+function roboPublico(r, conexoes = null) {
+  const c = conexoes && conexoes.get(r.id);
+  if (c) return { ...roboPublico(r), online: true, conectado: true, vistoEm: new Date().toISOString(), versao: c.versao || r.versao || null };
+  return { id: r.id, nome: r.nome, criadoEm: r.criadoEm, vistoEm: r.vistoEm || null, versao: r.versao || null,
+    duasCopias: !!r.duasCopiasEm && Date.now() - Date.parse(r.duasCopiasEm) < 45 * 60 * 1000, emitentesComSenha: r.emitentesComSenha || [], online: !!r.vistoEm && Date.now() - Date.parse(r.vistoEm) < ROBO_VISTO_GRAVA_MS + 5 * 60 * 1000 };
 }
 function tarefaPublica(t) {
   const { dados, ...resto } = t;
@@ -871,6 +891,36 @@ function versaoAoMenos(v, minima) {
   return true;
 }
 const ROBO_VERSAO_CONSULTA = "1.1.9"; // robôs mais antigos não sabem só consultar (poderiam emitir): não recebem essa tarefa
+
+// ---------------------------------------------------------------------------
+// NFS-e NACIONAL (Portal Nacional / ADN): quem baixa é o robô do escritório, com o certificado A1
+// da empresa guardado SÓ no computador dele. O Prumo só recebe a lista de CNPJs que têm
+// certificado lá (sem senha, sem arquivo) e o ZIP com os XML.
+// ---------------------------------------------------------------------------
+const ROBO_VERSAO_NFSE_NACIONAL = "1.4.0";
+// EMISSÃO de NFS-e Nacional (1.5.0+): as notas ficam no banco do PC do robô; o Prumo só repassa os pedidos pelo canal.
+const ROBO_VERSAO_EMISSAO = "1.5.0";
+const EMISSAO_ESPERA_MS = 25000;
+const EMISSAO_ACOES = new Set(["inicio", "cadastros", "emitente.salvar", "servico.salvar", "servico.apagar", "tomador.buscar", "tomador.apagar",
+  "emitir", "notas", "situacao", "nota", "xml", "reenviar", "descartar"].map((a) => "emissao." + a));
+const ROBO_BACKUPS_GUARDADOS = 240; // até ~6 por dia (a cada 4 h com nota nova): uns 40 dias
+const NFSE_NAC_MAX_TAREFAS = 80;
+const NFSE_NAC_PRESA_MS = 40 * 60 * 1000; // a 1ª busca de uma empresa pode baixar anos de notas
+function certificadosLimpos(lista) {
+  if (!Array.isArray(lista)) return null;
+  return lista.slice(0, 300).map((c) => ({
+    cnpj: String(c && c.cnpj || "").replace(/\D/g, "").slice(0, 14),
+    nome: String(c && c.nome || "").slice(0, 80),
+    validade: /^\d{4}-\d{2}-\d{2}/.test(String(c && c.validade || "")) ? String(c.validade).slice(0, 10) : null,
+  })).filter((c) => c.cnpj.length === 14).sort((a, b) => a.cnpj.localeCompare(b.cnpj));
+}
+// o certificado serve para a matriz e as filiais (mesmo CNPJ raiz)
+const certificadoServe = (certs, cnpj) => (certs || []).some((c) => c.cnpj.slice(0, 8) === String(cnpj || "").slice(0, 8));
+function tarefaNacionalPublica(t) {
+  return { id: t.id, status: t.status, mensagem: t.mensagem || "", criadoEm: t.criadoEm, criadoPor: t.criadoPor, iniciadoEm: t.iniciadoEm || null,
+    finalizadoEm: t.finalizadoEm || null, roboNome: t.roboNome || null, arquivos: t.arquivos || [], resumo: t.resumo || null,
+    dados: { empresaId: t.dados.empresaId, cnpj: t.dados.cnpj, mes: t.dados.mes, empresaNome: t.dados.empresaNome } };
+}
 function valorBr(v) {
   const t = String(v ?? "").trim();
   if (!t) return 0;
@@ -1077,6 +1127,91 @@ h1{font-size:21px;margin:0 0 4px}.sub{color:#5B6285;margin:0 0 18px;font-size:14
 .val{color:#8A90AE;font-size:12.5px;margin:18px 0 0;text-align:center}
 @media(max-width:420px){.bt span{display:none}}
 </style></head><body><main class="c"><div class="topo"><img src="/img/logo-mark.png" alt="">FZ CONT</div>${corpo}</main></body></html>`;
+}
+
+// ---------------------------------------------------------------------------
+// CANAL DO ROBÔ (Durable Object): o Agente fica conectado por WebSocket e o Prumo AVISA quando há
+// pedido — sem o robô ficar perguntando. Conexão parada "hiberna" (não gasta tempo nem KV).
+// O "online" sai da própria conexão (nada é gravado). Se o canal não estiver ligado no
+// wrangler.toml, tudo continua funcionando como antes (o robô pergunta de tempos em tempos).
+// ---------------------------------------------------------------------------
+export class CanalRobo {
+  constructor(ctx, env) { this.ctx = ctx; this.env = env; this.pendentes = new Map(); }
+  async fetch(request) {
+    const { pathname } = new URL(request.url);
+    if (pathname === "/conectar") {
+      if (request.headers.get("Upgrade") !== "websocket") return new Response("Esperava WebSocket.", { status: 426 });
+      const roboId = request.headers.get("x-robo-id") || "";
+      const instancia = request.headers.get("x-instancia") || "";
+      const versao = request.headers.get("x-versao") || "";
+      // o mesmo robô aberto em outro lugar (outra instância): a conexão antiga é encerrada — vale a mais nova
+      for (const ws of this.ctx.getWebSockets(roboId)) {
+        const a = ws.deserializeAttachment() || {};
+        if (a.instancia !== instancia) { try { ws.send(JSON.stringify({ tipo: "outra_copia" })); ws.close(4001, "outra copia"); } catch {} }
+      }
+      const [cliente, servidor] = Object.values(new WebSocketPair());
+      this.ctx.acceptWebSocket(servidor, [roboId]);
+      servidor.serializeAttachment({ roboId, instancia, versao, desde: new Date().toISOString() });
+      servidor.send(JSON.stringify({ tipo: "ola" }));
+      return new Response(null, { status: 101, webSocket: cliente });
+    }
+    if (pathname === "/avisar" && request.method === "POST") {
+      const { tipo = "tarefa" } = await request.json().catch(() => ({}));
+      let avisados = 0;
+      for (const ws of this.ctx.getWebSockets()) { try { ws.send(JSON.stringify({ tipo })); avisados++; } catch {} }
+      return Response.json({ avisados });
+    }
+    // pedido da tela de emissão: vai ao robô pelo WebSocket e espera a resposta (as notas ficam no PC do robô)
+    if (pathname === "/pedido" && request.method === "POST") {
+      const corpo = await request.json().catch(() => ({}));
+      const candidatos = this.ctx.getWebSockets().map((ws) => ({ ws, a: (() => { try { return ws.deserializeAttachment() || {}; } catch { return {}; } })() }))
+        .filter((c) => versaoAoMenos(c.a.versao, ROBO_VERSAO_EMISSAO))
+        .sort((x, y) => String(y.a.desde).localeCompare(String(x.a.desde)));
+      if (!candidatos.length) return Response.json({ erro: "O robô do escritório está desligado (ou sem a versão " + ROBO_VERSAO_EMISSAO + " do Agente). Ligue o computador do robô e tente de novo.", semRobo: true }, { status: 503 });
+      const id = crypto.randomUUID();
+      const espera = new Promise((ok) => {
+        const timer = setTimeout(() => { this.pendentes.delete(id); ok({ ok: false, erro: "O robô não respondeu a tempo. Tente de novo.", tempo: true }); }, EMISSAO_ESPERA_MS);
+        this.pendentes.set(id, (r) => { clearTimeout(timer); ok(r); });
+      });
+      try { candidatos[0].ws.send(JSON.stringify({ tipo: "pedido", id, acao: corpo.acao, dados: corpo.dados || {}, usuario: corpo.usuario })); }
+      catch { this.pendentes.delete(id); return Response.json({ erro: "Não consegui falar com o robô agora. Tente de novo." }, { status: 503 }); }
+      const r = await espera;
+      return Response.json(r.ok ? { dados: r.dados } : { erro: r.erro || "O robô recusou o pedido." }, { status: r.ok ? 200 : r.tempo ? 504 : 400 });
+    }
+    if (pathname === "/status") {
+      const conexoes = this.ctx.getWebSockets().map((ws) => { try { return ws.deserializeAttachment(); } catch { return null; } }).filter(Boolean);
+      return Response.json({ conexoes });
+    }
+    return new Response("Não encontrado.", { status: 404 });
+  }
+  // o robô não precisa mandar nada; "ping" de aplicação é respondido (os pings do protocolo nem acordam o objeto)
+  async webSocketMessage(ws, msg) {
+    if (msg === "ping") return ws.send("pong");
+    let r = null;
+    try { r = JSON.parse(typeof msg === "string" ? msg : new TextDecoder().decode(msg)); } catch { return; }
+    if (r && r.tipo === "resposta" && this.pendentes.has(r.id)) { const fim = this.pendentes.get(r.id); this.pendentes.delete(r.id); fim(r); }
+  }
+  async webSocketClose(ws, code, reason) { try { ws.close(code === 1005 ? 1000 : code, reason); } catch {} }
+  async webSocketError() {}
+}
+const canalRobo = (env) => (env.CANAL_ROBO ? env.CANAL_ROBO.get(env.CANAL_ROBO.idFromName("escritorio")) : null);
+// avisa o(s) robô(s) conectado(s) que há algo para fazer — sem esperar a resposta
+function avisarRobos(env, ctx, tipo = "tarefa") {
+  const canal = canalRobo(env);
+  if (!canal) return;
+  const p = canal.fetch("https://canal/avisar", { method: "POST", body: JSON.stringify({ tipo }) }).catch(() => {});
+  if (ctx && ctx.waitUntil) ctx.waitUntil(p);
+}
+// quem está conectado agora (null = canal desligado ou indisponível: usa o "visto" antigo)
+async function conexoesDoCanal(env) {
+  const canal = canalRobo(env);
+  if (!canal) return null;
+  try {
+    const r = await canal.fetch("https://canal/status", { signal: AbortSignal.timeout(3000) });
+    if (!r.ok) return null;
+    const { conexoes } = await r.json();
+    return new Map((conexoes || []).map((c) => [c.roboId, c]));
+  } catch { return null; }
 }
 
 export default {
@@ -1316,6 +1451,22 @@ export default {
       }
 
       // Um pedido por ciclo: avisa que está vivo, conta quais senhas tem e recebe a próxima tarefa
+      // conexão direta do Agente (WebSocket) — 1 leitura do KV por conexão, depois só avisos
+      if (pathname === "/api/robo/conectar" && request.method === "GET") {
+        const canal = canalRobo(env);
+        if (!canal) return json({ erro: "Canal direto ainda não ligado no wrangler.toml (o robô continua perguntando)." }, 501);
+        if (request.headers.get("Upgrade") !== "websocket") return json({ erro: "Esperava WebSocket." }, 426);
+        const estado = await lerEstadoRobos(env);
+        const robo = await roboDaRequisicao(request, env, estado);
+        if (!robo) return json({ erro: "Este computador não está vinculado (ou foi desvinculado no Prumo).", desvinculado: true }, 401);
+        const repasse = new Request("https://canal/conectar", request);
+        repasse.headers.delete("Authorization"); // a chave do robô não vai para o canal
+        repasse.headers.set("x-robo-id", robo.id);
+        repasse.headers.set("x-instancia", String(url.searchParams.get("instancia") || "").slice(0, 40));
+        repasse.headers.set("x-versao", String(url.searchParams.get("versao") || "").slice(0, 20));
+        return canal.fetch(repasse);
+      }
+
       if (pathname === "/api/robo/ciclo" && request.method === "POST") {
         const estado = await lerEstadoRobos(env);
         const robo = await roboDaRequisicao(request, env, estado);
@@ -1324,15 +1475,36 @@ export default {
         let mudou = marcarTarefasPresas(estado);
         const agora = Date.now();
         const senhas = Array.isArray(corpo.emitentesComSenha) ? corpo.emitentesComSenha.filter((x) => typeof x === "string").slice(0, 50).sort() : robo.emitentesComSenha || [];
-        if (!robo.vistoEm || agora - Date.parse(robo.vistoEm) > ROBO_VISTO_GRAVA_MS || JSON.stringify(senhas) !== JSON.stringify(robo.emitentesComSenha || []) || corpo.versao !== robo.versao) {
-          Object.assign(robo, { vistoEm: new Date().toISOString(), emitentesComSenha: senhas, versao: String(corpo.versao || "").slice(0, 20) || null });
+        // Economia de gravações (o KV grátis grava só 1.000 vezes/dia): o "visto" é gravado no máximo a cada 10 min.
+        // Mudança de versão/senhas grava na hora, mas no máximo a cada 2 min — se o Agente estiver aberto DUAS vezes
+        // (ex.: uma cópia antiga que abriu com o Windows + a nova), as duas se alternariam e gravariam a cada pergunta.
+        const idadeVisto = robo.vistoEm ? agora - Date.parse(robo.vistoEm) : Infinity;
+        const instancia = String(corpo.instancia || "").slice(0, 40) || null;
+        // o Agente que acabou de abrir ("inicio") assume o vínculo; outra cópia ainda rodando (inclusive versão antiga,
+        // que não manda "instancia") fica sem tarefas e sem gravar enquanto a nova estiver ativa
+        const assume = !!(corpo.inicio && instancia);
+        const outraCopia = !assume && !!(robo.instancia && instancia !== robo.instancia && idadeVisto < ROBO_VISTO_GRAVA_MS + 5 * 60 * 1000);
+        // certificados A1 guardados no computador do robô (só CNPJ, nome e validade) — robô antigo não manda: mantém o que havia
+        const certs = certificadosLimpos(corpo.certificados) || robo.certificados || [];
+        const dadosMudaram = JSON.stringify(senhas) !== JSON.stringify(robo.emitentesComSenha || []) || (String(corpo.versao || "").slice(0, 20) || null) !== robo.versao ||
+          JSON.stringify(certs) !== JSON.stringify(robo.certificados || []);
+        if (outraCopia) {
+          // não mexe nos dados da cópia ativa; só registra o aviso (no máximo 1 gravação a cada 30 min)
+          if (!robo.duasCopiasEm || agora - Date.parse(robo.duasCopiasEm) > 30 * 60 * 1000) { robo.duasCopiasEm = new Date().toISOString(); mudou = true; }
+        } else if (assume || (idadeVisto > ROBO_VISTO_GRAVA_MS && !corpo.conectado) || (dadosMudaram && (corpo.mudou || idadeVisto > 2 * 60 * 1000))) {
+          // (conectado pelo canal direto: o "online" vem da conexão — o "visto" não precisa ser gravado)
+          Object.assign(robo, { vistoEm: new Date().toISOString(), emitentesComSenha: senhas, versao: String(corpo.versao || "").slice(0, 20) || null, instancia, certificados: certs });
           mudou = true;
         }
         let tarefa = null;
         const ocupado = estado.tarefas.some((t) => t.status === "em_andamento" && t.roboId === robo.id);
-        if (!ocupado && corpo.livre !== false) {
+        if (!ocupado && corpo.livre !== false && !outraCopia) {
           const sabeConsultar = versaoAoMenos(corpo.versao, ROBO_VERSAO_CONSULTA);
-          tarefa = estado.tarefas.find((t) => t.status === "pendente" && (t.modo !== "consultar" || sabeConsultar));
+          const sabeNacional = versaoAoMenos(corpo.versao, ROBO_VERSAO_NFSE_NACIONAL);
+          const pode = (t) => t.status === "pendente" && (t.modo !== "consultar" || sabeConsultar) &&
+            (t.tipo !== "nfse_nacional" || (sabeNacional && certificadoServe(certs, t.dados && t.dados.cnpj)));
+          // NFA-e primeiro: uma busca grande de NFS-e não pode atrasar a emissão de uma nota
+          tarefa = estado.tarefas.find((t) => t.tipo !== "nfse_nacional" && pode(t)) || estado.tarefas.find(pode);
           if (tarefa) { Object.assign(tarefa, { status: "em_andamento", roboId: robo.id, roboNome: robo.nome, iniciadoEm: new Date().toISOString() }); mudou = true; }
         }
         if (mudou) await gravarEstadoRobos(env, estado);
@@ -1341,6 +1513,7 @@ export default {
           const cad = (await env.KV_EMPRESAS.get("nfae_cadastros", "json")) || {};
           emitentes = (cad.emitentes || []).map(({ id, nome, usuario }) => ({ id, nome, usuario }));
         }
+        if (outraCopia) return json({ tarefa: null, duasCopias: true, emitentesVersao: estado.emitentesVersao || 0 });
         return json({ tarefa: tarefa ? { id: tarefa.id, tipo: tarefa.modo === "consultar" ? "nfae_consulta" : tarefa.tipo, dados: tarefa.dados, criadoEm: tarefa.criadoEm, tentativaEm: tarefa.tentativaEm || null } : null, emitentes, emitentesVersao: estado.emitentesVersao || 0, pendentes: estado.tarefas.filter((t) => t.status === "pendente").length });
       }
 
@@ -1360,6 +1533,11 @@ export default {
           arquivos.push({ nome, tipo: String(a.tipo || "") });
         }
         const ok = corpo.status === "concluida";
+        if (t.tipo === "nfse_nacional" && corpo.resumo && typeof corpo.resumo === "object") {
+          const n = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : 0);
+          const r = corpo.resumo;
+          t.resumo = { emitidas: n(r.emitidas), canceladas: n(r.canceladas), valor: n(r.valor), issRetido: n(r.issRetido), ultimoNsu: n(r.ultimoNsu), zip: r.zip ? String(r.zip).replace(/[^\w.\- ]+/g, "_").slice(0, 80) : null };
+        }
         // cancelada no Prumo enquanto o robô trabalhava: continua cancelada, a não ser que a nota tenha SAÍDO
         const jaCancelada = t.status === "cancelada";
         Object.assign(t, {
@@ -1373,6 +1551,23 @@ export default {
         });
         robo.vistoEm = new Date().toISOString();
         await gravarEstadoRobos(env, estado);
+        return json({ ok: true });
+      }
+
+      // backup do banco de emissão do robô (a cada 4 h com novidade; fica no R2, os mais recentes)
+      if (pathname === "/api/robo/backup" && request.method === "POST") {
+        const estado = await lerEstadoRobos(env);
+        const robo = await roboDaRequisicao(request, env, estado);
+        if (!robo) return json({ erro: "Não vinculado.", desvinculado: true }, 401);
+        const { nome, base64 } = await request.json().catch(() => ({}));
+        if (!/^emissao-\d{4}-\d{2}-\d{2}(-\d{4})?\.json\.gz$/.test(String(nome || "")) || !base64) return json({ erro: "Backup inválido." }, 400);
+        const prefixo = `backup-robo/${robo.id}/`;
+        await env.ANEXOS_R2.put(prefixo + nome, Buffer.from(base64, "base64"), { httpMetadata: { contentType: "application/gzip" }, customMetadata: { nome } });
+        if (env.ANEXOS_R2.list) {
+          const lista = await env.ANEXOS_R2.list({ prefix: prefixo }).catch(() => null);
+          const chaves = ((lista && lista.objects) || []).map((o) => o.key).sort();
+          await Promise.all(chaves.slice(0, Math.max(0, chaves.length - ROBO_BACKUPS_GUARDADOS)).map((k) => env.ANEXOS_R2.delete(k).catch(() => {})));
+        }
         return json({ ok: true });
       }
 
@@ -1929,7 +2124,8 @@ export default {
       if (pathname === "/api/robos" && request.method === "GET") {
         const estado = await lerEstadoRobos(env);
         if (marcarTarefasPresas(estado)) await gravarEstadoRobos(env, estado);
-        return json({ robos: estado.robos.map(roboPublico) });
+        const conexoes = await conexoesDoCanal(env);
+        return json({ robos: estado.robos.map((r) => roboPublico(r, conexoes)), canal: !!conexoes });
       }
       if (pathname === "/api/robos/codigo" && request.method === "POST") {
         const letras = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sem 0/O/1/I para não confundir
@@ -1946,6 +2142,70 @@ export default {
         if (estado.robos.length === antes) return json({ erro: "Computador não encontrado." }, 404);
         await gravarEstadoRobos(env, estado);
         return json({ ok: true });
+      }
+
+      // ---------- EMISSÃO de NFS-e Nacional: pedido repassado ao robô (nada aqui é gravado no KV) ----------
+      if (pathname === "/api/emissao" && request.method === "POST") {
+        const corpo = await request.json().catch(() => ({}));
+        if (!EMISSAO_ACOES.has(String(corpo.acao || ""))) return json({ erro: "Ação inválida." }, 400);
+        const canal = canalRobo(env);
+        if (!canal) return json({ erro: "O canal direto com o robô não está ligado no wrangler.toml." }, 501);
+        const texto = JSON.stringify({ acao: corpo.acao, dados: corpo.dados || {}, usuario: username });
+        if (texto.length > 900 * 1024) return json({ erro: "Pedido grande demais: mande no máximo 300 notas por vez." }, 413);
+        const r = await canal.fetch("https://canal/pedido", { method: "POST", body: texto });
+        return new Response(r.body, { status: r.status, headers: { "Content-Type": "application/json; charset=utf-8" } });
+      }
+
+      // ---------- NFS-e NACIONAL (Portal Nacional): o robô baixa com o certificado A1 guardado nele ----------
+      if (pathname === "/api/nfse-nacional/estado" && request.method === "GET") {
+        const estado = await lerEstadoRobos(env);
+        if (marcarTarefasPresas(estado)) await gravarEstadoRobos(env, estado);
+        const conexoes = await conexoesDoCanal(env);
+        const robos = estado.robos.map((r) => roboPublico(r, conexoes));
+        const certificados = [];
+        for (const r of estado.robos) {
+          const pub = robos.find((x) => x.id === r.id);
+          if (!versaoAoMenos(pub.versao, ROBO_VERSAO_NFSE_NACIONAL)) continue;
+          for (const c of r.certificados || []) if (!certificados.some((x) => x.cnpj === c.cnpj)) certificados.push({ ...c, roboNome: r.nome, roboOnline: !!pub.online });
+        }
+        return json({
+          certificados,
+          tarefas: estado.tarefas.filter((t) => t.tipo === "nfse_nacional").map(tarefaNacionalPublica),
+          robos: robos.map((r) => ({ id: r.id, nome: r.nome, online: r.online, versao: r.versao, sabeNacional: versaoAoMenos(r.versao, ROBO_VERSAO_NFSE_NACIONAL) })),
+          versaoMinima: ROBO_VERSAO_NFSE_NACIONAL,
+        });
+      }
+      if (pathname === "/api/nfse-nacional/buscar" && request.method === "POST") {
+        const corpo = await request.json().catch(() => ({}));
+        const mes = String(corpo.mes || "");
+        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return json({ erro: "Mês inválido." }, 400);
+        const lista = (Array.isArray(corpo.empresas) ? corpo.empresas : []).slice(0, 150);
+        if (!lista.length) return json({ erro: "Nenhuma empresa escolhida." }, 400);
+        const estado = await lerEstadoRobos(env);
+        let novas = 0;
+        for (const e of lista) {
+          const cnpj = String(e && e.cnpj || "").replace(/\D/g, "");
+          const empresaId = String(e && e.id || "").slice(0, 60);
+          if (cnpj.length !== 14 || !cnpjValido(cnpj) || !empresaId) continue;
+          // já está na fila (ou sendo feita): não pede de novo
+          if (estado.tarefas.some((t) => t.tipo === "nfse_nacional" && ["pendente", "em_andamento"].includes(t.status) && t.dados.empresaId === empresaId && t.dados.mes === mes)) continue;
+          estado.tarefas.push({ id: crypto.randomUUID(), tipo: "nfse_nacional", status: "pendente", criadoEm: new Date().toISOString(), criadoPor: username,
+            dados: { empresaId, cnpj, mes, empresaNome: String(e.nome || "").slice(0, 100) } });
+          novas++;
+        }
+        if (novas) { await gravarEstadoRobos(env, estado); avisarRobos(env, ctx); }
+        return json({ ok: true, novas, tarefas: estado.tarefas.filter((t) => t.tipo === "nfse_nacional").map(tarefaNacionalPublica) });
+      }
+      // copia o ZIP que o robô mandou para os anexos da empresa (sem passar pelo navegador)
+      if (pathname === "/api/nfse-nacional/anexar" && request.method === "POST") {
+        const { tarefaId, nome, novoNome } = await request.json().catch(() => ({}));
+        if (!/^[\w-]+$/.test(String(tarefaId || "")) || !nome || String(nome).includes("..") || String(nome).includes("/")) return json({ erro: "Arquivo inválido." }, 400);
+        const obj = await env.ANEXOS_R2.get(`robo/${tarefaId}/${nome}`);
+        if (!obj) return json({ erro: "O ZIP dessa busca não está mais guardado. Clique em “Buscar de novo”." }, 404);
+        const id = crypto.randomUUID();
+        const nomeFinal = String(novoNome || nome).replace(/[\\/:*?"<>|]+/g, "_").slice(0, 120);
+        await env.ANEXOS_R2.put(`anexos/${id}`, await obj.arrayBuffer(), { httpMetadata: { contentType: "application/zip" }, customMetadata: { nome: nomeFinal } });
+        return json({ id, nome: nomeFinal, tipo: "application/zip" });
       }
 
       // ---------- NFA-e: cadastros (emitentes, clientes, produtos) ----------
@@ -1974,6 +2234,7 @@ export default {
           const estado = await lerEstadoRobos(env);
           estado.emitentesVersao = Date.now();
           await gravarEstadoRobos(env, estado);
+          avisarRobos(env, ctx, "emitentes");
         }
         return json({ ok: true, ...novo });
       }
@@ -1982,7 +2243,8 @@ export default {
       if (pathname === "/api/nfae/tarefas" && request.method === "GET") {
         const estado = await lerEstadoRobos(env);
         if (marcarTarefasPresas(estado)) await gravarEstadoRobos(env, estado);
-        return json({ tarefas: estado.tarefas.filter((t) => t.tipo === "nfae").slice().reverse().map(tarefaPublica), robos: estado.robos.map(roboPublico) });
+        const conexoes = await conexoesDoCanal(env);
+        return json({ tarefas: estado.tarefas.filter((t) => t.tipo === "nfae").slice().reverse().map(tarefaPublica), robos: estado.robos.map((r) => roboPublico(r, conexoes)), canal: !!conexoes });
       }
       if (pathname === "/api/nfae/tarefas" && request.method === "POST") {
         const d = await request.json().catch(() => ({}));
@@ -2005,6 +2267,7 @@ export default {
         };
         estado.tarefas.push(tarefa);
         await gravarEstadoRobos(env, estado);
+        avisarRobos(env, ctx);
         return json({ ok: true, tarefa: tarefaPublica(tarefa) });
       }
       if (/^\/api\/nfae\/tarefas\/[\w-]+\/(cancelar|refazer|consultar)$/.test(pathname) && request.method === "POST") {
@@ -2027,6 +2290,7 @@ export default {
           Object.assign(t, { status: "pendente", modo: null, tentativaEm: null, mensagem: `Mandada de novo por ${username}.`, roboId: null, iniciadoEm: null, finalizadoEm: null });
         }
         await gravarEstadoRobos(env, estado);
+        if (acao !== "cancelar") avisarRobos(env, ctx);
         return json({ ok: true, tarefa: tarefaPublica(t) });
       }
       if (pathname.startsWith("/api/nfae/arquivo/") && request.method === "GET") {

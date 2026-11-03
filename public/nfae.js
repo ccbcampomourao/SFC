@@ -67,8 +67,18 @@ function agendarAtualizacao() {
       }
     }
     agendarAtualizacao();
-  }, andando ? 10000 : 60000);
+  }, andando ? 10000 : 300000); // nada andando: só a cada 5 min (economiza o limite diário da Cloudflare)
 }
+// voltou para esta aba do navegador: atualiza na hora (em vez de ficar consultando com a aba escondida)
+let _ultimaVolta = 0;
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState !== "visible" || Date.now() - _ultimaVolta < 15000) return;
+  _ultimaVolta = Date.now();
+  const antes = JSON.stringify(NF.tarefas.map((t) => [t.id, t.status]));
+  await carregarTarefas().catch(() => {});
+  if (JSON.stringify(NF.tarefas.map((t) => [t.id, t.status])) !== antes && NF.aba === "historico") desenharHistorico();
+  agendarAtualizacao();
+});
 
 // ---------------------------------------------------------------------------
 // Abas
@@ -541,7 +551,7 @@ function desenharRobo() {
         <div class="nf-lista">${NF.robos.map((r) => `
           <div class="nf-item robo-item">
             <span class="robo-luz ${r.online ? "on" : ""}"></span>
-            <span><b>${escaparHtml(r.nome)}</b><small>${r.online ? "online" : "offline"} · visto ${haQuanto(r.vistoEm)}${r.versao ? ` · agente ${escaparHtml(r.versao)}` : ""} · ${r.emitentesComSenha.length} senha(s) cadastrada(s)</small></span>
+            <span><b>${escaparHtml(r.nome)}</b><small>${r.conectado ? "online · conexão direta (as notas chegam na hora)" : r.online ? "online" : "offline"}${r.conectado ? "" : ` · visto ${haQuanto(r.vistoEm)}`}${r.versao ? ` · agente ${escaparHtml(r.versao)}` : ""} · ${r.emitentesComSenha.length} senha(s) cadastrada(s)</small>${r.duasCopias ? `<small class="nf-aviso-copia">${icone("alerta")}O Agente está aberto em dois lugares (outra janela ou outro computador com este vínculo). Feche a cópia antiga — só a mais nova emite.</small>` : ""}</span>
             <button type="button" class="btn-sm btn-perigo-outline" data-desvincular="${r.id}">${icone("x")}Desvincular</button>
           </div>`).join("") || `<div class="nf-vazio">Nenhum computador vinculado ainda.</div>`}</div>
         <button type="button" class="btn-primario" id="nf-gerar-codigo">${icone("link")}Vincular computador</button>

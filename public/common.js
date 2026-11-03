@@ -1072,7 +1072,8 @@ function abrirEnvioWhatsApp({ destino, telefone, anexos, tituloLink, montarMensa
 
 // ============================================================================
 // MUNICÍPIOS DA NFS-e — cada empresa escolhe o seu (campo "Município da NFS-e").
-// IPM (Atende.Net) já funciona; Elotech e Nacional ainda em preparação.
+// IPM (Atende.Net) pelo webservice da prefeitura; NFS-e Nacional pelo robô do escritório
+// (certificado A1 guardado no computador dele); Elotech ainda em preparação.
 // ============================================================================
 const MUNICIPIOS_NFSE = {
   campomourao: { nome: "Campo Mourão", sistema: "ipm" },
@@ -1082,6 +1083,7 @@ const MUNICIPIOS_NFSE = {
   fozdoiguacu: { nome: "Foz do Iguaçu", sistema: "elotech" },
   maringa: { nome: "Maringá", sistema: "nacional" },
   itajai: { nome: "Itajaí", sistema: "nacional" },
+  nacional: { nome: "Emissor Nacional (outra cidade / MEI)", sistema: "nacional" },
 };
 const SISTEMAS_NFSE = { ipm: "IPM / Atende.Net", elotech: "Elotech", nacional: "NFS-e Nacional" };
 const MUNICIPIO_NFSE_PADRAO = "campomourao";

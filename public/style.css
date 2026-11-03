@@ -713,6 +713,9 @@ a.btn-ghost, a.btn-secundario { text-decoration: none; }
 .xml-item .nf-erro { padding-left: 44px; border-bottom: 0; }
 .xml-detalhe { padding: 2px 14px 14px 44px; }
 .xml-aviso { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-soft); padding: 10px 12px; background: var(--paper); border-radius: var(--raio-sm); }
+#xml-nacional-info .xml-aviso { margin: 0 0 10px; line-height: 1.45; }
+#xml-nacional-info .xml-aviso .ico { flex-shrink: 0; }
+.xml-aviso-alerta { background: #FBF1E6; color: #7A3F12; }
 .xml-tabela-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--raio-sm); background: #fff; max-height: 460px; overflow-y: auto; scrollbar-width: thin; }
 .xml-tabela { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .xml-tabela th { position: sticky; top: 0; text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); background: var(--paper); padding: 8px 10px; font-weight: 700; white-space: nowrap; z-index: 1; }
@@ -1779,3 +1782,39 @@ body { background: var(--paper); color: var(--ink); }
 /* NFA-e: cliente sem inscrição estadual */
 .nf-sem-ie { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12.5px; color: var(--texto-2, #4b5563); cursor: pointer; font-weight: 500; }
 .nf-sem-ie input { width: auto; margin: 0; }
+
+.nf-aviso-copia { display: flex; gap: 6px; align-items: flex-start; margin-top: 4px; color: #9b1c1c !important; font-weight: 500; }
+.nf-aviso-copia svg { flex: none; width: 14px; height: 14px; margin-top: 1px; }
+
+/* ---------- Emitir NFS-e (nfse-emitir.html) ---------- */
+.emi-topo { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.emi-empresa { min-width: 320px; max-width: 560px; flex: 1; }
+.emi-empresa select { width: 100%; }
+.emi-ambiente { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; letter-spacing: .02em; padding: 7px 12px; border-radius: 99px; }
+.emi-ambiente:empty { display: none; }
+.emi-ambiente.teste { background: var(--amber-bg); color: var(--amber); }
+.emi-ambiente.producao { background: var(--verde-bg); color: var(--verde); }
+.emi-dois { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.emi-end summary, .cartao-nf details summary { cursor: pointer; font-size: 13px; color: var(--ink-soft); padding: 4px 0; }
+.emi-end[open] summary { margin-bottom: 8px; }
+.emi-valor { font-size: 18px; font-weight: 600; }
+.emi-enviada { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); align-items: center; }
+.emi-enviada:first-child { border-top: 0; }
+.emi-enviada b { display: block; font-size: 13.5px; }
+.emi-enviada small { color: var(--ink-soft); font-size: 12px; }
+.emi-acoes { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+.emi-erro { display: block; color: var(--vermelho); font-size: 12px; margin-top: 3px; max-width: 520px; }
+.emi-filtro { flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-bottom: 14px; }
+.emi-filtro .campo-form { min-width: 140px; }
+.emi-f-texto { flex: 1; min-width: 220px !important; }
+.emi-resumo { font-size: 13.5px; color: var(--ink-soft); margin: 2px 0 10px; }
+.emi-resumo b { color: var(--ink); }
+.emi-tabela td small.emi-teste { display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 700; color: var(--amber); background: var(--amber-bg); border-radius: 99px; padding: 0 6px; }
+.emi-paginas { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 12px; font-size: 13px; color: var(--ink-soft); }
+.emi-servicos { display: flex; flex-direction: column; }
+.emi-servico { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: center; }
+.emi-servico b { display: block; font-size: 13.5px; }
+.emi-servico small { font-size: 12px; color: var(--ink-soft); }
+.emi-serv-form { display: flex; flex-direction: column; gap: 10px; padding-top: 6px; }
+.emi-copia { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+@media (max-width: 900px) { .emi-dois { grid-template-columns: 1fr; } }

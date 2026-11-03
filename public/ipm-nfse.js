@@ -238,7 +238,26 @@ function _textoDoXml(bytes) {
   const inicio = new TextDecoder("latin1").decode(bytes.slice(0, 120));
   return new TextDecoder(/encoding=["']utf-?8/i.test(inicio) ? "utf-8" : "windows-1252").decode(bytes);
 }
+// NFS-e Nacional (leiaute do Portal Nacional): <NFSe><infNFSe>...<DPS><infDPS>...
+function lerNotaXmlNacional(xml) {
+  const dps = _tagX(xml, "infDPS");
+  const foraDps = String(xml || "").replace(/<DPS[\s>][\s\S]*<\/DPS>/i, ""); // valores calculados da nota (fora da DPS)
+  const toma = _tagX(dps, "toma");
+  const dh = _tagX(dps, "dhEmi") || _tagX(foraDps, "dhProc");
+  const ret = _tagX(dps, "tpRetISSQN");
+  return {
+    numero: _tagX(foraDps, "nNFSe"),
+    data: dh.length >= 10 ? `${dh.slice(8, 10)}/${dh.slice(5, 7)}/${dh.slice(0, 4)}` : "",
+    cancelada: false, // o cancelamento vem em evento separado: o ZIP marca no nome do arquivo
+    valorTotal: _valorX(_tagX(_tagX(dps, "vServPrest"), "vServ")),
+    issRetido: ret === "2" || ret === "3" ? _valorX(_tagX(_tagX(foraDps, "valores"), "vISSQN")) : 0,
+    tomadorNome: _tagX(toma, "xNome"),
+    tomadorCnpj: _tagX(toma, "CNPJ") || _tagX(toma, "CPF"),
+    link: "",
+  };
+}
 function lerNotaXml(xml) {
+  if (/<infNFSe[\s>]/i.test(xml || "")) return lerNotaXmlNacional(xml);
   const tomador = _tagX(xml, "tomador");
   const itens = _blocosX(xml, "item");
   return {
@@ -282,6 +301,14 @@ function empresasParaNfse() {
   const aptas = [], fora = [];
   ESTADO.grupos.forEach((g) => g.empresas.forEach((e) => {
     const mun = municipioNfse(e);
+    if (mun.sistema === "nacional") {
+      if (limparDigitos(e.cnpj).length !== 14) { fora.push({ e, motivo: "NFS-e Nacional · falta o CNPJ" }); return; }
+      const c = certificadoDe(e);
+      if (!c) { fora.push({ e, motivo: "NFS-e Nacional · falta o certificado A1 no robô (janela do Agente → Certificados)" }); return; }
+      if (c.validade && c.validade < _hojeIso()) { fora.push({ e, motivo: `NFS-e Nacional · certificado A1 vencido em ${_dataBr(c.validade)} (guarde o novo no Agente)` }); return; }
+      aptas.push(e);
+      return;
+    }
     if (mun.sistema !== "ipm") { fora.push({ e, motivo: `${mun.nome} · ${SISTEMAS_NFSE[mun.sistema]} — em preparação` }); return; }
     const falta = [];
     if (limparDigitos(e.cnpj).length < 11) falta.push("CNPJ");
@@ -294,7 +321,11 @@ function empresasParaNfse() {
   return { aptas: aptas.sort(porNome), fora: fora.sort(porNome) };
 }
 const _chave = (e, mes = XMLP.mes) => `${e.id}|${mes}`;
-const _hist = (e, mes = XMLP.mes) => e.nfseIpm && e.nfseIpm.meses && e.nfseIpm.meses[mes];
+const _ehNacional = (e) => municipioNfse(e).sistema === "nacional";
+const _campoNfse = (e) => (_ehNacional(e) ? "nfseNacional" : "nfseIpm"); // cada sistema guarda o seu resumo
+const _hist = (e, mes = XMLP.mes) => { const c = e[_campoNfse(e)]; return c && c.meses && c.meses[mes]; };
+const _hojeIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const _dataBr = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "");
 const _rotuloMes = (mes) => { const [a, m] = mes.split("-"); return `${m}/${a}`; };
 const _nomeMes = (mes) => { const [a, m] = mes.split("-").map(Number); return new Date(a, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" }); };
 function _quando(iso) {
@@ -303,18 +334,19 @@ function _quando(iso) {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-function registrarMes(e, mes, notas, anexo) {
+function registrarMes(e, mes, notas, anexo, extra = {}) {
   const r = resumirNotas(notas);
-  e.nfseIpm = e.nfseIpm || {};
-  const meses = { ...(e.nfseIpm.meses || {}) };
+  const campo = _campoNfse(e);
+  e[campo] = e[campo] || {};
+  const meses = { ...(e[campo].meses || {}) };
   meses[mes] = {
     emitidas: r.emitidas, canceladas: r.canceladas, valor: Math.round(r.valor * 100) / 100,
     issRetido: Math.round(r.issRetido * 100) / 100, primeira: r.primeira, ultima: r.ultimaDoMes,
-    anexoId: anexo ? anexo.id : null, anexoNome: anexo ? anexo.nome : null, buscadoEm: new Date().toISOString(),
+    anexoId: anexo ? anexo.id : null, anexoNome: anexo ? anexo.nome : null, buscadoEm: new Date().toISOString(), ...extra,
   };
   // guarda só os meses mais recentes (o cadastro da empresa não cresce para sempre)
   Object.keys(meses).sort().reverse().slice(MESES_GUARDADOS).forEach((k) => delete meses[k]);
-  e.nfseIpm.meses = meses;
+  e[campo].meses = meses;
 }
 
 // Notas do mês: as desta sessão ou, se houver, as do ZIP que ficou anexado.
@@ -322,8 +354,9 @@ async function carregarNotas(e, mes = XMLP.mes) {
   const k = _chave(e, mes);
   if (XMLP.notas.has(k)) return XMLP.notas.get(k);
   const h = _hist(e, mes);
-  if (!h || !h.anexoId) return null;
-  const resp = await fetch(`/api/anexos/${h.anexoId}`);
+  const doRobo = h && !h.anexoId && h.tarefaId && h.zipNome;
+  if (!h || (!h.anexoId && !doRobo)) return null;
+  const resp = await fetch(doRobo ? `/api/nfae/arquivo/${h.tarefaId}/${encodeURIComponent(h.zipNome)}` : `/api/anexos/${h.anexoId}`);
   if (!resp.ok) throw new Error("O ZIP anexado não foi encontrado (pode ter sido apagado). Clique em “Buscar” para baixar de novo.");
   const JSZip = await carregarJSZip();
   const zip = await JSZip.loadAsync(await resp.arrayBuffer());
@@ -332,6 +365,7 @@ async function carregarNotas(e, mes = XMLP.mes) {
     if (arq.dir || !/\.xml$/i.test(arq.name)) continue;
     const bytes = await arq.async("uint8array");
     const dados = lerNotaXml(_textoDoXml(bytes));
+    if (/_CANCELADA/i.test(arq.name)) dados.cancelada = true;
     notas.push({ numero: Number(dados.numero) || Number((/(\d+)/.exec(arq.name) || [])[1]), existe: true, dados, bytes });
   }
   notas.sort((a, b) => a.numero - b.numero);
@@ -339,8 +373,140 @@ async function carregarNotas(e, mes = XMLP.mes) {
   return notas;
 }
 
+// ---------------------------------------------------------------------------
+// NFS-e NACIONAL (Portal Nacional): quem baixa é o robô do escritório, com o certificado A1
+// da empresa guardado só no computador dele. Aqui a página só pede a busca, acompanha a
+// fila e, quando o robô termina, guarda o resumo do mês e o ZIP na empresa (igual à IPM).
+// ---------------------------------------------------------------------------
+const NAC = { carregado: false, certificados: [], tarefas: [], robos: [], erro: null, timer: null, aplicando: false };
+const NAC_INTERVALO_MS = 6000;
+async function carregarNacional() {
+  try {
+    const r = await api("/api/nfse-nacional/estado");
+    Object.assign(NAC, { certificados: r.certificados || [], tarefas: r.tarefas || [], robos: r.robos || [], versaoMinima: r.versaoMinima, erro: null });
+  } catch (err) { NAC.erro = err.message; }
+  NAC.carregado = true;
+}
+const _nacionalPronto = carregarNacional();
+function certificadoDe(e) {
+  const d = limparDigitos(e.cnpj);
+  return NAC.certificados.find((c) => c.cnpj === d) || NAC.certificados.find((c) => c.cnpj.slice(0, 8) === d.slice(0, 8)) || null;
+}
+const roboNacionalOnline = () => NAC.robos.some((r) => r.online && r.sabeNacional);
+const _tarefasDe = (e, mes = XMLP.mes) => NAC.tarefas.filter((t) => t.dados.empresaId === e.id && t.dados.mes === mes);
+const tarefaAbertaNacional = (e, mes = XMLP.mes) => _tarefasDe(e, mes).find((t) => ["pendente", "em_andamento"].includes(t.status)) || null;
+const _haTarefasAbertas = () => NAC.tarefas.some((t) => ["pendente", "em_andamento"].includes(t.status));
+
+async function pedirBuscaNacional(lista, mes) {
+  lista.forEach((e) => XMLP.erros.delete(_chave(e, mes)));
+  try {
+    const r = await api("/api/nfse-nacional/buscar", { method: "POST", body: JSON.stringify({ mes, empresas: lista.map((e) => ({ id: e.id, cnpj: limparDigitos(e.cnpj), nome: e.nome })) }) });
+    NAC.tarefas = r.tarefas || NAC.tarefas;
+    notificar(roboNacionalOnline()
+      ? `${lista.length} empresa(s) do Portal Nacional na fila do robô — o resultado aparece aqui sozinho`
+      : `${lista.length} empresa(s) do Portal Nacional na fila. O robô está desligado: a busca começa quando ele ligar`, roboNacionalOnline() ? "info" : "aviso");
+  } catch (err) {
+    lista.forEach((e) => XMLP.erros.set(_chave(e, mes), err));
+  }
+  acompanharNacional();
+}
+
+// enquanto houver busca na fila, confere a cada poucos segundos (só leituras: não gasta o limite de gravações)
+function acompanharNacional() {
+  clearTimeout(NAC.timer);
+  if (!_haTarefasAbertas()) return;
+  NAC.timer = setTimeout(async () => {
+    await carregarNacional();
+    await aplicarResultadosNacional();
+    renderizarLista(); renderizarKpis(); renderizarFora();
+    acompanharNacional();
+  }, NAC_INTERVALO_MS);
+}
+
+// Resultado do robô → resumo do mês na empresa, ZIP nos anexos, anotação nos comentários (as mesmas opções da IPM)
+async function aplicarResultadosNacional() {
+  if (NAC.aplicando) return;
+  NAC.aplicando = true;
+  let aplicadas = 0, comNotas = 0;
+  try {
+    const empresas = new Map();
+    ESTADO.grupos.forEach((g) => g.empresas.forEach((e) => empresas.set(e.id, e)));
+    // só a busca mais recente de cada empresa/mês conta
+    const ultimas = new Map();
+    for (const t of NAC.tarefas) {
+      const k = `${t.dados.empresaId}|${t.dados.mes}`;
+      if (!ultimas.has(k) || String(t.criadoEm) > String(ultimas.get(k).criadoEm)) ultimas.set(k, t);
+    }
+    const opcoes = { anexar: $("#xml-anexar").checked, comentar: $("#xml-comentar").checked, marcar: $("#xml-marcar").checked };
+    for (const t of ultimas.values()) {
+      const e = empresas.get(t.dados.empresaId);
+      if (!e || !_ehNacional(e)) continue;
+      const mes = t.dados.mes, h = _hist(e, mes);
+      // já aplicada (compara com o horário do servidor, não o do computador)
+      if (h && (h.tarefaId === t.id || (h.tarefaCriadaEm && String(h.tarefaCriadaEm) >= String(t.criadoEm)))) continue;
+      if (["erro", "interrompida", "conferir", "cancelada"].includes(t.status)) {
+        XMLP.erros.set(_chave(e, mes), Object.assign(new Error(t.mensagem || "O robô não conseguiu buscar."), { dica: _dicaNacional(t.mensagem) }));
+        continue;
+      }
+      if (t.status !== "concluida") continue;
+      try {
+        let notas = [];
+        if ((t.arquivos || []).some((a) => a.nome === "notas.json")) {
+          const resp = await fetch(`/api/nfae/arquivo/${t.id}/notas.json`);
+          if (!resp.ok) throw new Error("O resultado dessa busca não está mais guardado. Clique em “Buscar de novo”.");
+          notas = await resp.json();
+        }
+        const zipNome = t.resumo && t.resumo.zip;
+        const rotulo = _rotuloMes(mes);
+        let anexo = null;
+        if (notas.length) {
+          const resumo = resumirNotas(notas);
+          if (opcoes.comentar) {
+            const prefixo = `NFS-e ${rotulo} (Portal Nacional):`;
+            e.comentarios = (e.comentarios || []).filter((c) => !String(c).startsWith(prefixo)); // uma anotação por mês
+            e.comentarios.push(`${prefixo} ${resumo.emitidas} emitida(s)` + (resumo.canceladas ? `, ${resumo.canceladas} cancelada(s)` : "") +
+              ` · nº ${resumo.primeira} a ${resumo.ultimaDoMes} · total ${_brl(resumo.valor)}` + (resumo.issRetido ? ` · ISS retido ${_brl(resumo.issRetido)}` : "") + `\n${agora()}`);
+          }
+          if (opcoes.marcar) e.nfs = true;
+          if (opcoes.anexar && zipNome) {
+            const nomeFinal = `NFSe_${_nomeArquivoSeguro(e.nome)}_${mes.slice(5)}-${mes.slice(0, 4)}.zip`;
+            e.anexos = e.anexos || [];
+            // a nova busca do mesmo mês substitui o ZIP anterior (e apaga o antigo do armazenamento)
+            const antigos = e.anexos.filter((a) => a.nome === nomeFinal);
+            e.anexos = e.anexos.filter((a) => a.nome !== nomeFinal);
+            for (const id of new Set([...antigos.map((a) => a.id), h && h.anexoId].filter(Boolean))) api(`/api/anexos/${id}`, { method: "DELETE" }).catch(() => {});
+            anexo = await api("/api/nfse-nacional/anexar", { method: "POST", body: JSON.stringify({ tarefaId: t.id, nome: zipNome, novoNome: nomeFinal }) });
+            e.anexos.push({ id: anexo.id, nome: anexo.nome, tipo: anexo.tipo });
+          }
+          comNotas++;
+        }
+        XMLP.notas.delete(_chave(e, mes)); // a lista de notas passa a vir do ZIP (com o XML de cada uma)
+        XMLP.erros.delete(_chave(e, mes));
+        registrarMes(e, mes, notas, anexo, { tarefaId: t.id, tarefaCriadaEm: t.criadoEm, zipNome: zipNome || null, ultimoNsu: t.resumo ? t.resumo.ultimoNsu : null });
+        aplicadas++;
+      } catch (err) {
+        XMLP.erros.set(_chave(e, mes), err);
+      }
+    }
+  } finally { NAC.aplicando = false; }
+  if (aplicadas) {
+    marcarAlterado();
+    await salvar();
+    notificar(`Portal Nacional: resultado de ${aplicadas} empresa(s) guardado${comNotas < aplicadas ? ` (${aplicadas - comNotas} sem notas no mês)` : ""}`, "ok");
+  }
+}
+function _dicaNacional(msg) {
+  const m = String(msg || "");
+  if (/certificado/i.test(m) && /guardado|Certificados/i.test(m)) return "No computador do robô: janela do Agente Prumo → aba Certificados → Adicionar certificado A1 (.pfx) da empresa.";
+  if (/não aceitou o certificado|recusou a conexão/i.test(m)) return "O certificado precisa ser o e-CNPJ A1 da própria empresa (ou da matriz). Confira a validade na aba Certificados do Agente.";
+  if (/não sabe fazer|Atualize o agente/i.test(m)) return "Atualize o Agente Prumo no computador do robô para a versão 1.4.0 ou mais nova.";
+  if (/limitando|429/i.test(m)) return "O Portal Nacional limita a quantidade de pedidos. Espere alguns minutos e clique em “Buscar de novo”: o que já veio ficou guardado no robô.";
+  return null;
+}
+
 // ---------- render ----------
 function renderizarPagina() {
+  if (!NAC.carregado) { _nacionalPronto.then(() => renderizarPagina()); return; } // espera saber quais empresas têm certificado
   if (!XMLP.mes) {
     const mesAnt = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
     XMLP.mes = `${mesAnt.getFullYear()}-${String(mesAnt.getMonth() + 1).padStart(2, "0")}`;
@@ -353,6 +519,11 @@ function renderizarPagina() {
   renderizarKpis();
   renderizarLista();
   renderizarFora();
+  if (!XMLP.nacionalIniciado) {
+    XMLP.nacionalIniciado = true;
+    aplicarResultadosNacional().then(() => { renderizarLista(); renderizarKpis(); }); // buscas que terminaram com a página fechada
+    acompanharNacional();
+  }
 }
 
 function renderizarKpis() {
@@ -382,6 +553,8 @@ function renderizarKpis() {
 function _htmlEstado(e) {
   const k = _chave(e), h = _hist(e);
   if (XMLP.progresso.has(e.id)) return `<span class="etiqueta etiqueta-info">${icone("carregando", "girando")}${escaparHtml(XMLP.progresso.get(e.id))}</span>`;
+  const t = _ehNacional(e) && tarefaAbertaNacional(e);
+  if (t) return `<span class="etiqueta etiqueta-info">${icone("carregando", "girando")}${t.status === "pendente" ? "Na fila do robô" : "Robô buscando no Portal Nacional..."}</span><small>${t.status === "pendente" ? (roboNacionalOnline() ? "o robô pega em instantes" : "o robô está desligado: busca assim que ligar") : `desde ${_quando(t.iniciadoEm)}`}</small>`;
   if (XMLP.erros.has(k)) return `<span class="etiqueta etiqueta-erro">${icone("erro")}Erro na busca</span>${h ? `<small>antes: ${h.emitidas} nota(s)</small>` : ""}`;
   if (!h) return `<span class="etiqueta etiqueta-neutra">${icone("relogio")}Ainda não buscado</span>`;
   if (!(h.emitidas + h.canceladas)) return `<span class="etiqueta etiqueta-neutra">${icone("info")}Nenhuma nota no mês</span><small>buscado ${_quando(h.buscadoEm)}</small>`;
@@ -398,12 +571,14 @@ function _htmlItem(e) {
     <div class="xml-item${aberta ? " aberta" : ""}" data-id="${e.id}">
       <div class="xml-linha">
         <label class="xml-check" title="Incluir na busca"><input type="checkbox" data-sel="${e.id}"${XMLP.selecionadas.has(e.id) ? " checked" : ""}${XMLP.ocupado ? " disabled" : ""}></label>
-        <div class="xml-nome"><b title="${escaparHtml(e.nome)}">${escaparHtml(e.nome)}</b><small>${escaparHtml(municipioNfse(e).nome)} · ${_fmtDoc(e.cnpj)} · cadastro ${escaparHtml(e.cadastroMunicipal)} · série ${escaparHtml(e.nfseSerie || "1")}</small></div>
+        <div class="xml-nome"><b title="${escaparHtml(e.nome)}">${escaparHtml(e.nome)}</b><small>${_ehNacional(e)
+          ? `${escaparHtml(municipioNfse(e).nome)} · NFS-e Nacional · ${_fmtDoc(e.cnpj)} · certificado até ${_dataBr((certificadoDe(e) || {}).validade)}`
+          : `${escaparHtml(municipioNfse(e).nome)} · ${_fmtDoc(e.cnpj)} · cadastro ${escaparHtml(e.cadastroMunicipal)} · série ${escaparHtml(e.nfseSerie || "1")}`}</small></div>
         <div class="xml-estado">${_htmlEstado(e)}</div>
         <div class="xml-acoes">
           ${temNotas ? `<button type="button" class="btn-ghost btn-sm" data-acao="ver">${icone(aberta ? "setaBaixo" : "seta")}${aberta ? "Fechar" : "Ver notas"}</button>
           <button type="button" class="btn-ghost btn-sm" data-acao="zip" title="Baixar o ZIP com os XML deste mês">${icone("baixar")}ZIP</button>` : ""}
-          <button type="button" class="btn-secundario btn-sm" data-acao="buscar"${XMLP.ocupado || ocupada ? " disabled" : ""} title="Buscar só esta empresa">${icone("atualizar")}${h ? "Buscar de novo" : "Buscar"}</button>
+          <button type="button" class="btn-secundario btn-sm" data-acao="buscar"${XMLP.ocupado || ocupada || (_ehNacional(e) && tarefaAbertaNacional(e)) ? " disabled" : ""} title="Buscar só esta empresa">${icone("atualizar")}${h ? "Buscar de novo" : "Buscar"}</button>
         </div>
       </div>
       ${err ? `<div class="nf-erro"><b>${escaparHtml(err.message)}</b>${err.dica ? `<span>${icone("lampada", "ico-sm")}${escaparHtml(err.dica)}</span>` : ""}${err.pedirNumero ? `
@@ -416,7 +591,7 @@ function _htmlDetalhe(e) {
   const k = _chave(e);
   if (!XMLP.notas.has(k)) {
     const h = _hist(e);
-    if (h && !h.anexoId) return `<div class="xml-aviso">${icone("info", "ico-sm")}Nessa busca o ZIP não foi anexado, então a lista de notas não ficou guardada. Clique em “Buscar de novo” para ver as notas.</div>`;
+    if (h && !h.anexoId && !h.zipNome) return `<div class="xml-aviso">${icone("info", "ico-sm")}Nessa busca o ZIP não foi anexado, então a lista de notas não ficou guardada. Clique em “Buscar de novo” para ver as notas.</div>`;
     return `<div class="xml-aviso">${icone("carregando", "ico-sm girando")}Abrindo o ZIP anexado...</div>`;
   }
   const notas = XMLP.notas.get(k);
@@ -465,7 +640,17 @@ function atualizarItem(e) {
 }
 
 function renderizarFora() {
-  const { fora } = empresasParaNfse();
+  const { aptas, fora } = empresasParaNfse();
+  const nacionais = aptas.filter(_ehNacional).length + fora.filter((f) => _ehNacional(f.e)).length;
+  const info = $("#xml-nacional-info");
+  if (info) {
+    const online = roboNacionalOnline();
+    const algumRobo = NAC.robos.some((r) => r.sabeNacional);
+    info.innerHTML = !nacionais ? "" : `<div class="xml-aviso${online ? "" : " xml-aviso-alerta"}">${icone(online ? "info" : "alerta", "ico-sm")}<span>
+      <b>Portal Nacional:</b> ${NAC.erro ? `não consegui ver o robô (${escaparHtml(NAC.erro)}).` : !algumRobo
+        ? `o robô ainda não sabe buscar no Portal Nacional — atualize o Agente Prumo para a versão ${escaparHtml(NAC.versaoMinima || "1.4.0")} e guarde os certificados A1 na aba Certificados.`
+        : `${NAC.certificados.length} certificado(s) A1 no robô · ${online ? "robô ligado" : "robô desligado (as buscas ficam na fila até ele ligar)"}. As notas do Portal Nacional são baixadas pelo robô do escritório.`}</span></div>`;
+  }
   $("#xml-fora").innerHTML = fora.length ? `
     <details class="wl-fora"><summary>${fora.length} empresa(s) fora da busca — <a href="/empresas.html">ver na página Empresas</a></summary>
       ${fora.map(({ e, motivo }) => `<div class="wl-fora-item"><span>${escaparHtml(e.nome)}</span><small>${motivo}</small></div>`).join("")}
@@ -563,7 +748,7 @@ $("#xml-zip-todas")?.addEventListener("click", (ev) => comCarregando(ev.currentT
   let qtd = 0, falhas = 0;
   for (const e of empresasParaNfse().aptas) {
     const h = _hist(e);
-    if (!XMLP.notas.has(_chave(e)) && !(h && h.anexoId && h.emitidas + h.canceladas)) continue;
+    if (!XMLP.notas.has(_chave(e)) && !(h && (h.anexoId || h.zipNome) && h.emitidas + h.canceladas)) continue;
     try {
       const notas = await carregarNotas(e);
       if (!notas || !notas.length) continue;
@@ -582,9 +767,13 @@ $("#xml-buscar")?.addEventListener("click", () => {
   if (sel.length) buscarEmpresas(sel);
 });
 
-async function buscarEmpresas(lista) {
+async function buscarEmpresas(todas) {
   if (XMLP.ocupado) return;
   const mes = XMLP.mes;
+  const nacionais = todas.filter(_ehNacional);
+  if (nacionais.length) await pedirBuscaNacional(nacionais, mes); // vai para a fila do robô (o resultado chega sozinho)
+  const lista = todas.filter((e) => !_ehNacional(e));
+  if (!lista.length) { renderizarLista(); renderizarKpis(); return; }
   const rotulo = _rotuloMes(mes);
   const opcoes = { anexar: $("#xml-anexar").checked, comentar: $("#xml-comentar").checked, marcar: $("#xml-marcar").checked };
   XMLP.ocupado = true;
