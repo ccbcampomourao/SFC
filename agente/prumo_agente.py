@@ -267,7 +267,7 @@ def _pkcs12():
         from cryptography.hazmat.primitives.serialization import pkcs12
         return pkcs12
     except ImportError:
-        raise RuntimeError("Falta o pacote cryptography. Rode: pip install -r requirements.txt")
+        raise RuntimeError("Falta a peça cryptography. Feche e abra o Agente com a internet ligada: ele instala sozinho.")
 
 
 def _cnpj_do_certificado(cert):
@@ -799,7 +799,7 @@ def limpar_tomador(d):
     if any(str(e.get(k) or "").strip() for k in ("cep", "xLgr", "xBairro")):
         end = {"cMun": _digitos(e.get("cMun")), "cep": _digitos(e.get("cep")), "xLgr": str(e.get("xLgr") or "").strip()[:255],
                "nro": (str(e.get("nro") or "").strip() or "S/N")[:60], "xCpl": str(e.get("xCpl") or "").strip()[:156],
-               "xBairro": str(e.get("xBairro") or "").strip()[:60]}
+               "xBairro": str(e.get("xBairro") or "").strip()[:60], "xMun": str(e.get("xMun") or "").strip()[:80]}  # xMun: só para mostrar
         faltam = [n for n, ok in (("CEP", len(end["cep"]) == 8), ("código IBGE da cidade", len(end["cMun"]) == 7),
                                   ("logradouro", end["xLgr"]), ("bairro", end["xBairro"])) if not ok]
         if faltam:
@@ -2895,7 +2895,7 @@ class CanalPrumo(threading.Thread):
         try:
             import websocket  # pacote websocket-client
         except ImportError:
-            log("Conexão direta desligada: falta o pacote websocket-client (rode: pip install -r requirements.txt). "
+            log("Conexão direta desligada: falta a peça websocket-client (feche e abra o Agente com a internet ligada: ele instala sozinho). "
                 "O robô continua funcionando, perguntando ao Prumo de tempos em tempos.")
             return
         ag = self.agente
@@ -2974,7 +2974,7 @@ class CanalPrumo(threading.Thread):
         emissao = self.agente.emissao
         try:
             if emissao is None:
-                raise ErroNota("A emissão não está ligada neste robô: rode  pip install -r requirements.txt  e abra o Agente de novo.")
+                raise ErroNota("A emissão não está ligada neste robô: falta uma peça. Feche e abra o Agente com a internet ligada (ele instala sozinho).")
             resposta.update(ok=True, dados=emissao.atender(str(pedido.get("acao") or ""), pedido.get("dados") or {}, pedido.get("usuario") or "?"))
         except ErroNota as e:
             resposta.update(ok=False, erro=str(e))
@@ -3024,7 +3024,7 @@ class Agente:
             self.emissao = EmissaoNacional(self.parar)
             self.emissao.prumo = self.prumo
         except ImportError:
-            log("Emissão de NFS-e desligada: faltam pacotes (rode: pip install -r requirements.txt).")
+            log("Emissão de NFS-e desligada: faltam peças (feche e abra o Agente com a internet ligada: ele instala sozinho).")
 
     def intervalo(self):
         if self.conectado:
@@ -3517,8 +3517,92 @@ def sem_janela():
     agente.rodar()
 
 
+# ---------------------------------------------------------------------------
+# Peças (bibliotecas) que o robô usa: confere ao abrir e instala sozinho o que faltar.
+# Assim, trocar só o prumo_agente.py já basta — ninguém precisa rodar "pip install".
+# ---------------------------------------------------------------------------
+PACOTES = [  # (nome para importar, pacote do pip)
+    ("selenium", "selenium>=4.20"),
+    ("certifi", "certifi>=2024.2.2"),
+    ("websocket", "websocket-client>=1.6"),   # conexão direta com o Prumo
+    ("cryptography", "cryptography>=42"),     # certificado A1
+    ("lxml", "lxml>=5"),                      # XML da NFS-e (emissão)
+]
+
+
+def pacotes_faltando():
+    import importlib.util
+    return [pip for nome, pip in PACOTES if importlib.util.find_spec(nome) is None]
+
+
+def instalar_pacotes(faltam):
+    """Instala com o próprio Python do robô (sem abrir janela preta). Devolve (ok, mensagem)."""
+    import subprocess
+    import site
+    em_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)  # num ambiente virtual não existe "--user"
+    cmd = [sys.executable, "-m", "pip", "install", *([] if em_venv else ["--user"]), "--disable-pip-version-check", "--no-input", *faltam]
+    if os.path.basename(sys.executable).lower() == "pythonw.exe":
+        cmd[0] = os.path.join(os.path.dirname(sys.executable), "python.exe")  # o pip precisa do python.exe
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900,
+                           creationflags=0x08000000 if NO_WINDOWS else 0)  # CREATE_NO_WINDOW
+        if r.returncode != 0 and "externally-managed" in (r.stderr or "") + (r.stdout or ""):  # Python "protegido" (Linux)
+            r = subprocess.run(cmd + ["--break-system-packages"], capture_output=True, text=True, timeout=900)
+    except Exception as e:  # noqa: BLE001
+        return False, str(e)
+    try:  # a pasta de bibliotecas do usuário pode ter acabado de ser criada
+        site.addsitedir(site.getusersitepackages())
+        import importlib
+        importlib.invalidate_caches()
+    except Exception:  # noqa: BLE001
+        pass
+    if r.returncode != 0:
+        return False, (r.stderr or r.stdout or "").strip()[-600:]
+    return True, ""
+
+
+def garantir_pacotes(com_janela):
+    faltam = pacotes_faltando()
+    if not faltam:
+        return
+    log("Instalando peças que faltam no robô: " + ", ".join(f.split(">")[0] for f in faltam) + " (só desta vez)…")
+    if not com_janela:
+        ok, msg = instalar_pacotes(faltam)
+    else:
+        import tkinter as tk
+        aviso = tk.Tk()
+        aviso.title("Agente Prumo")
+        aviso.geometry("500x130")
+        aviso.configure(bg="#16202E")
+        aviso.resizable(False, False)
+        tk.Label(aviso, text="Atualizando o robô…", fg="#EFE7D8", bg="#16202E", font=("Segoe UI Semibold", 13)).pack(pady=(22, 6))
+        tk.Label(aviso, text="Instalando as peças novas (só desta vez, leva 1 ou 2 minutos).\nNão precisa fazer nada.",
+                 fg="#AAB4C4", bg="#16202E", font=("Segoe UI", 10), justify="center").pack()
+        res = {}
+        threading.Thread(target=lambda: res.update(r=instalar_pacotes(faltam)), daemon=True).start()
+
+        def conferir():
+            if "r" in res:
+                aviso.destroy()
+            else:
+                aviso.after(400, conferir)
+
+        aviso.after(400, conferir)
+        aviso.mainloop()
+        ok, msg = res.get("r", (False, "interrompido"))
+    ainda = pacotes_faltando()
+    if ok and not ainda:
+        log("Peças instaladas.")
+    else:
+        log("Não consegui instalar todas as peças (" + ", ".join(ainda) + "). O robô abre mesmo assim; "
+            "o que depende delas fica desligado. Confira a internet deste computador. Detalhe: " + (msg or "?"))
+
+
 if __name__ == "__main__":
     if "--sem-janela" in sys.argv:
+        if "--sem-instalar" not in sys.argv:
+            garantir_pacotes(com_janela=False)
         sem_janela()
     else:
+        garantir_pacotes(com_janela=True)
         janela(minimizado="--minimizado" in sys.argv)

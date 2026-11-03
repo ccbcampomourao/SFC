@@ -1818,3 +1818,72 @@ body { background: var(--paper); color: var(--ink); }
 .emi-serv-form { display: flex; flex-direction: column; gap: 10px; padding-top: 6px; }
 .emi-copia { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 @media (max-width: 900px) { .emi-dois { grid-template-columns: 1fr; } }
+/* layout da emissão: formulário à esquerda, resumo fixo à direita */
+.emi-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
+.emi-principal { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.emi-lateral { position: sticky; top: 124px; max-height: calc(100vh - 140px); overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: 16px; padding-bottom: 2px; } /* abaixo do cabeçalho fixo da página */
+.emi-etapa { gap: 14px; padding: 20px 22px; }
+.emi-etapa-cab { display: flex; align-items: center; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 2px; }
+.emi-etapa-cab h3 { margin: 0; font-size: 15.5px; }
+.emi-etapa-cab small { display: block; font-size: 12px; color: var(--ink-soft); margin-top: 1px; }
+.emi-num { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 99px; background: var(--blue); color: #fff; font-size: 13.5px; font-weight: 700; }
+.emi-linha { display: grid; gap: 12px; }
+.emi-linha-2 { grid-template-columns: 1fr 1fr; }
+.emi-linha .campo-form, .emi-etapa .campo-form { margin-bottom: 0; }
+.emi-grupo { border-top: 1px dashed var(--line); padding-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+.emi-grupo-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.emi-grupo-cab > span { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+#emi-tomador-campos { display: flex; flex-direction: column; gap: 12px; }
+#emi-tomador-campos[hidden] { display: none; }
+.campo-form label i { color: var(--vermelho); font-style: normal; }
+.emi-doc-campo label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.emi-doc { font-size: 17px !important; letter-spacing: .02em; padding: 11px 13px !important; }
+.emi-origem { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none; border-radius: 99px; padding: 2px 9px; }
+.emi-origem:empty { display: none; }
+.emi-origem.ok { background: var(--verde-bg); color: var(--verde); }
+.emi-origem.erro { background: var(--vermelho-bg); color: var(--vermelho); }
+.emi-origem.aviso, .emi-origem.carregando { background: var(--amber-bg); color: var(--amber); }
+.emi-sugestoes:empty { display: none; }
+.emi-fixo { min-height: 40px; display: flex; flex-direction: column; justify-content: center; padding: 6px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 9px; font-size: 13px; color: var(--ink); }
+.emi-fixo b { font-weight: 600; }
+.emi-fixo small { color: var(--ink-soft); font-size: 11.5px; }
+/* endereço recolhido com resumo de uma linha */
+.emi-end { border: 1px solid var(--line); border-radius: 11px; background: #fff; }
+.cartao-nf .emi-end summary { list-style: none; display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; font-size: 13px; }
+.emi-end summary::-webkit-details-marker { display: none; }
+.emi-end-titulo { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); flex-shrink: 0; }
+.emi-end-resumo { flex: 1; min-width: 0; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.emi-end-resumo.sem-dados { color: var(--ink-3); }
+.emi-end-acao { font-size: 12px; font-weight: 600; color: var(--blue); }
+.emi-end[open] .emi-end-acao { visibility: hidden; }
+.cartao-nf .emi-end[open] summary { border-bottom: 1px solid var(--line); margin-bottom: 0; }
+.emi-end-grade { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 14px; }
+.emi-end-grade .emi-largo { grid-column: span 2; }
+.emi-end-grade .campo-form { margin-bottom: 0; }
+.emi-codigo { font-size: 12.5px; color: var(--ink-soft); margin: -6px 0 0; padding-left: 2px; }
+.emi-valor { font-size: 20px !important; font-weight: 600; padding: 10px 13px !important; }
+.emi-retido { align-self: flex-start; }
+/* painel lateral */
+.emi-final { gap: 14px; padding: 20px 22px; border-color: var(--line-strong); box-shadow: 0 6px 22px rgba(22, 32, 46, .06); }
+.emi-resumo-nota { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 9px 10px; margin: 0; font-size: 13px; }
+.emi-resumo-nota dt { color: var(--ink-soft); font-size: 12px; padding-top: 1px; }
+.emi-resumo-nota dd { margin: 0; min-width: 0; }
+.emi-resumo-nota dd b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.emi-resumo-nota dd small { display: block; font-size: 11.5px; color: var(--ink-soft); }
+.emi-total-bloco { background: var(--paper); border-radius: 12px; padding: 12px 14px; display: flex; align-items: baseline; justify-content: space-between; }
+.emi-total-bloco small { font-size: 12px; color: var(--ink-soft); }
+.emi-total-bloco b { font-family: Fraunces, Georgia, serif; font-size: 26px; font-weight: 600; }
+.emi-btn-emitir { width: 100%; justify-content: center; padding: 13px 16px; font-size: 15px; }
+.emi-final .nf-dica { margin: 0; }
+.emi-enviadas-cab { display: flex; align-items: center; justify-content: space-between; }
+.emi-enviadas-cab h3 { display: flex; align-items: center; gap: 8px; font-size: 14.5px; margin: 0; }
+.emi-enviadas { margin: 0 -6px; padding: 0 6px; }
+.emi-enviada { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); align-items: center; }
+.emi-enviada:first-child { border-top: 0; padding-top: 2px; }
+.emi-enviada.com-erro { align-items: flex-start; }
+.emi-enviada-info { min-width: 0; }
+.emi-enviada-info b { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.emi-enviada-info small { color: var(--ink-soft); font-size: 11.5px; }
+.emi-icone { padding: 5px 7px !important; }
+@media (max-width: 1150px) { .emi-layout { grid-template-columns: 1fr; } .emi-lateral { position: static; } }
+@media (max-width: 700px) { .emi-linha-2, .emi-end-grade { grid-template-columns: 1fr; } .emi-end-grade .emi-largo { grid-column: auto; } }

@@ -1,8 +1,11 @@
 AGENTE PRUMO - robô do escritório
 =================================
 
-1. Instale o Python 3.12+ (python.org) marcando "Add python.exe to PATH" e o Google Chrome.
-2. Extraia esta pasta num lugar fixo (ex.: C:\PrumoRobo) e dê dois cliques em instalar.bat.
+1. Extraia esta pasta num lugar fixo (ex.: C:\PrumoRobo) e dê dois cliques em instalar.bat.
+   Ele instala sozinho o que faltar: Python, Google Chrome e todas as peças do robô.
+2. ATUALIZAR: troque o prumo_agente.py (e o requirements.txt) e abra o Agente. Ele confere as peças ao abrir e
+   instala sozinho as que faltarem (aparece "Atualizando o robô…" por 1 ou 2 minutos, só da primeira vez).
+   Ninguém precisa rodar "pip install".
 3. Na janela do agente: aba "Vincular" -> endereço do Prumo + código gerado no Prumo
    (NFA-e -> Robô -> Vincular computador).
 4. Aba "Senhas": digite a senha da Receita-PR de cada emitente. Ela fica protegida
@@ -44,14 +47,14 @@ mostra o aviso "aberto em dois lugares" na aba Robô. Isso evita gastar o limite
 
 CONEXÃO DIRETA (desde a 1.3.0)
 O Agente fica conectado ao Prumo e é AVISADO quando alguém pede uma nota (não fica mais perguntando a cada
-20 segundos). Precisa do pacote websocket-client: rode de novo  pip install -r requirements.txt
+20 segundos). Precisa do pacote websocket-client (desde a 1.5.0 o Agente instala sozinho ao abrir).
 Na janela, o status aparece como "ONLINE · CONEXÃO DIRETA". Se a conexão cair, ele reconecta sozinho e, enquanto
 isso, volta a perguntar como antes.
 
 NFS-e NACIONAL - PORTAL NACIONAL (desde a 1.4.0)
 O robô baixa os XML das NFS-e EMITIDAS pelas empresas que usam o Portal Nacional (página "XML NFS-e" do Prumo),
 pela API oficial do governo (Ambiente de Dados Nacional), sem passar pelo site e sem "não sou robô".
-1. Rode de novo  pip install -r requirements.txt  (entrou o pacote cryptography).
+1. (o Agente instala sozinho o pacote cryptography ao abrir)
 2. Aba "Certificados" -> "Adicionar certificado A1 (.pfx)" -> escolha o arquivo da empresa e digite a senha dele.
    O arquivo e a senha ficam protegidos pelo Windows só neste computador. O Prumo só vê CNPJ, nome e validade.
    O certificado da matriz serve para as filiais (mesmo CNPJ raiz). Certificado A3 (token/cartão) não serve.
@@ -63,7 +66,7 @@ Nota cancelada vai no ZIP com "_CANCELADA" no nome. O mês é o da data de emiss
 
 EMISSÃO DE NFS-e NACIONAL (desde a 1.5.0)
 O robô emite NFS-e pela API oficial da Sefin Nacional, com o certificado A1 da empresa (aba Certificados).
-1. Rode de novo  pip install -r requirements.txt  (entrou o pacote lxml).
+1. (o Agente instala sozinho o pacote lxml ao abrir)
 2. No Prumo: menu "Emitir NFS-e" -> escolha a empresa -> aba Configuração (regime MEI ou Simples, código IBGE
    do município, % aproximado dos tributos do Simples, série) -> cadastre os serviços (código de tributação
    nacional de 6 números, descrição, NBS e alíquota se tiver ISS retido).

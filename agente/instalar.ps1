@@ -4,20 +4,42 @@ $pasta = Split-Path -Parent $MyInvocation.MyCommand.Path
 Write-Host ""
 Write-Host "=== Agente Prumo - instalacao ===" -ForegroundColor Cyan
 
-# 1) Python
-$py = $null; $pyw = $null; $extra = ""; $pyArgs = @()
-if (Get-Command py -ErrorAction SilentlyContinue) { $py = "py"; $extra = "-3"; $pyArgs = @("-3"); $pyw = (Get-Command pyw -ErrorAction SilentlyContinue).Source }
-elseif (Get-Command python -ErrorAction SilentlyContinue) { $py = "python"; $pyw = (Get-Command pythonw -ErrorAction SilentlyContinue).Source }
-if (-not $py) { Write-Host "Python nao encontrado. Instale em https://www.python.org (marque 'Add python.exe to PATH') e rode de novo." -ForegroundColor Red; exit 1 }
+function Achar-Python {
+  $script:py = $null; $script:pyw = $null; $script:extra = ""; $script:pyArgs = @()
+  if (Get-Command py -ErrorAction SilentlyContinue) { $script:py = "py"; $script:extra = "-3"; $script:pyArgs = @("-3"); $script:pyw = (Get-Command pyw -ErrorAction SilentlyContinue).Source }
+  elseif (Get-Command python -ErrorAction SilentlyContinue) {
+    $src = (Get-Command python).Source
+    if ($src -notlike "*WindowsApps*") { $script:py = "python"; $script:pyw = (Get-Command pythonw -ErrorAction SilentlyContinue).Source }  # o "python" da Microsoft Store e so um atalho
+  }
+}
+
+# 1) Python (se nao tiver, instala sozinho pelo winget do Windows)
+Achar-Python
+if (-not $py) {
+  if (Get-Command winget -ErrorAction SilentlyContinue) {
+    Write-Host "Python nao encontrado: instalando o Python 3.12 (pode levar alguns minutos)..." -ForegroundColor Yellow
+    winget install -e --id Python.Python.3.12 --scope user --silent --accept-package-agreements --accept-source-agreements
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine")
+    Achar-Python
+  }
+}
+if (-not $py) { Write-Host "Nao consegui instalar o Python sozinho. Instale em https://www.python.org (marque 'Add python.exe to PATH') e rode este instalador de novo." -ForegroundColor Red; exit 1 }
 & $py @pyArgs --version
 
-# 2) Bibliotecas (Selenium)
-Write-Host "Instalando bibliotecas..."
-& $py @pyArgs -m pip install --user --upgrade -r (Join-Path $pasta "requirements.txt")
+# 2) Pecas do robo (todas as do requirements.txt; o proprio Agente tambem confere ao abrir)
+Write-Host "Instalando as pecas do robo..."
+& $py @pyArgs -m pip install --user --upgrade --disable-pip-version-check -r (Join-Path $pasta "requirements.txt")
+if ($LASTEXITCODE -ne 0) { Write-Host "ATENCAO: alguma peca nao instalou (confira a internet). O Agente tenta de novo sozinho quando abrir." -ForegroundColor Yellow }
 
-# 3) Firefox
-$ff = @("$env:ProgramFiles\Mozilla Firefox\firefox.exe", "${env:ProgramFiles(x86)}\Mozilla Firefox\firefox.exe") | Where-Object { Test-Path $_ }
-if (-not $ff) { Write-Host "ATENCAO: Firefox nao encontrado. Instale o Firefox antes de usar o robo." -ForegroundColor Yellow }
+# 3) Google Chrome (o robo da NFA-e usa o Chrome)
+$chrome = @("$env:ProgramFiles\Google\Chrome\Application\chrome.exe", "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe", "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe") | Where-Object { Test-Path $_ }
+if (-not $chrome -and (Get-Command winget -ErrorAction SilentlyContinue)) {
+  Write-Host "Google Chrome nao encontrado: instalando..." -ForegroundColor Yellow
+  winget install -e --id Google.Chrome --silent --accept-package-agreements --accept-source-agreements
+}
+
+# 3b) fecha o Agente antigo, se estiver aberto (o novo abre no fim)
+Get-CimInstance Win32_Process -Filter "Name like 'python%.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*prumo_agente.py*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
 # 4) Atalhos: iniciar com o Windows (minimizado) e na area de trabalho
 if (-not $pyw) { $pyw = (Get-Command $py).Source }
