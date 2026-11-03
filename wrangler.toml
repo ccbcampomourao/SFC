@@ -45,5 +45,9 @@ certificate_id = "d95cf831-ca9d-433d-a075-2db5dcf5d328"
 # (Sem isso o /api/email vai falhar com erro de conexão.)
 # [[tcp_sockets]]  # habilitado automaticamente ao usar cloudflare:sockets no código
 
+[[durable_objects.bindings]]
+name = "CANAL_ROBO"
+class_name = "CanalRobo"
+
 [vars]
 APP_NOME = "Fiscal Mensal"
