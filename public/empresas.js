@@ -448,6 +448,7 @@ function criarEmpresaCard(empresa) {
       { ic: "email", rotulo: empresa.email ? "Enviar documentos por e-mail" : "Enviar e-mail (cadastre o e-mail)", acao: () => enviarEmailEmpresaOriginal(empresa, mais) },
       { ic: "conversa", rotulo: "Enviar pelo WhatsApp", acao: () => enviarWhatsAppEmpresa(empresa) },
       { ic: "comentario", rotulo: "Comentar", acao: () => abrirEComentar(empresa) },
+      { ic: "imprimir", rotulo: "Ficha da empresa (PDF)", acao: () => abrirOpcoesFicha(empresa) },
       { ic: "lixeira", rotulo: "Excluir empresa", perigo: true, acao: () => excluirEmpresa(empresa) },
     ]);
     alternarEmpresa(empresa);
@@ -633,6 +634,7 @@ function criarCorpoEmpresa(empresa) {
     <button type="button" class="btn-secundario btn-sm btn-consultar-simples">${icone("busca")}Consultar Simples</button>
     <button type="button" class="btn-secundario btn-sm btn-consultar-exclusao">${icone("proibido")}Consultar exclusão</button>
     <button type="button" class="btn-secundario btn-sm btn-importar-resumo" title="Gera o Relatório Fiscal a partir do Resumo do PGDAS">${icone("enviar")}Importar PGDAS</button>
+    <button type="button" class="btn-secundario btn-sm btn-ficha-empresa" title="Página com todos os dados da empresa, para imprimir ou salvar em PDF">${icone("imprimir")}Ficha da empresa (PDF)</button>
     <input type="file" accept="application/pdf" class="input-resumo oculto">
     <span class="resultado-simples"></span>
     <span class="info-das">${htmlInfoDas(empresa)}</span>`;
@@ -644,6 +646,7 @@ function criarCorpoEmpresa(empresa) {
   const btnExclusao = acoesExtra.querySelector(".btn-consultar-exclusao");
   btnExclusao.addEventListener("click", () =>
     comCarregando(btnExclusao, () => consultarSimplesNacional(empresa, acoesExtra.querySelector(".resultado-simples"), colComentarios, "exclusao")));
+  acoesExtra.querySelector(".btn-ficha-empresa").addEventListener("click", () => abrirOpcoesFicha(empresa));
   const btnResumo = acoesExtra.querySelector(".btn-importar-resumo");
   const inputResumo = acoesExtra.querySelector(".input-resumo");
   btnResumo.addEventListener("click", () => inputResumo.click());
