@@ -918,10 +918,12 @@ function certificadosLimpos(lista) {
     cnpj: String(c && c.cnpj || "").replace(/\D/g, "").slice(0, 14),
     nome: String(c && c.nome || "").slice(0, 80),
     validade: /^\d{4}-\d{2}-\d{2}/.test(String(c && c.validade || "")) ? String(c.validade).slice(0, 10) : null,
+    ...(c && c.escritorio === true ? { escritorio: true } : {}),
   })).filter((c) => c.cnpj.length === 14).sort((a, b) => a.cnpj.localeCompare(b.cnpj));
 }
 // o certificado serve para a matriz e as filiais (mesmo CNPJ raiz)
-const certificadoServe = (certs, cnpj) => (certs || []).some((c) => c.cnpj.slice(0, 8) === String(cnpj || "").slice(0, 8));
+// ...ou o do escritório, que baixa as notas de quem deu procuração eletrônica (robô 1.6.0+)
+const certificadoServe = (certs, cnpj) => (certs || []).some((c) => c.escritorio || c.cnpj.slice(0, 8) === String(cnpj || "").slice(0, 8));
 function tarefaNacionalPublica(t) {
   return { id: t.id, status: t.status, mensagem: t.mensagem || "", criadoEm: t.criadoEm, criadoPor: t.criadoPor, iniciadoEm: t.iniciadoEm || null,
     finalizadoEm: t.finalizadoEm || null, roboNome: t.roboNome || null, arquivos: t.arquivos || [], resumo: t.resumo || null,

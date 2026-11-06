@@ -28,7 +28,7 @@ import traceback
 import urllib.error
 import urllib.request
 
-VERSAO = "1.5.0"
+VERSAO = "1.6.0"
 NO_WINDOWS = platform.system() == "Windows"
 PASTA = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "PrumoRobo") if NO_WINDOWS else os.path.join(os.path.expanduser("~"), ".prumo-robo")
 os.makedirs(PASTA, exist_ok=True)
@@ -255,6 +255,7 @@ ADN_CA_TESTE = os.environ.get("PRUMO_ADN_CA")  # só nos testes (portal falso)
 ADN_MAX_LOTES = 400          # até 20 mil documentos por busca; se passar, a próxima busca continua
 ADN_PAUSA = float(os.environ.get("PRUMO_ADN_PAUSA", "1.2"))   # segundos entre pedidos (o portal limita: HTTP 429)
 ADN_ESPERAS_429 = [5, 10, 20, 30, 45, 60, 90]
+ADN_ESPERA_FIM_MIN = int(os.environ.get("PRUMO_ADN_ESPERA_MIN", "60"))  # minutos de espera depois de chegar ao fim (regra do ADN)
 EVENTOS_CANCELAMENTO = {"e101101", "e105102", "e305101"}  # cancelamento, cancelamento por substituição, cancelamento deferido
 
 
@@ -320,8 +321,9 @@ def ler_certificado(conteudo: bytes, senha: str):
 def guardar_certificado(conteudo: bytes, senha: str):
     info = ler_certificado(conteudo, senha)[0]
     todos = certificados_guardados()
+    era_escritorio = bool((todos.get(info["cnpj"]) or {}).get("escritorio"))  # certificado renovado continua sendo o do escritório
     todos[info["cnpj"]] = {**info, "pfx": proteger(base64.b64encode(conteudo).decode()), "senha": proteger(senha or ""),
-                           "guardadoEm": dt.datetime.now().isoformat(timespec="seconds")}
+                           "guardadoEm": dt.datetime.now().isoformat(timespec="seconds"), **({"escritorio": True} if era_escritorio else {})}
     gravar_json(ARQ_CERTIFICADOS, todos)
     return info
 
@@ -333,18 +335,40 @@ def apagar_certificado(cnpj):
 
 
 def lista_certificados():
-    """O que vai para o Prumo: só CNPJ, nome e validade (nunca o arquivo nem a senha)."""
-    return [{"cnpj": c, "nome": d.get("nome", ""), "validade": d.get("validade")} for c, d in sorted(certificados_guardados().items())]
+    """O que vai para o Prumo: só CNPJ, nome, validade e se é o do escritório (nunca o arquivo nem a senha)."""
+    return [{"cnpj": c, "nome": d.get("nome", ""), "validade": d.get("validade"), **({"escritorio": True} if d.get("escritorio") else {})}
+            for c, d in sorted(certificados_guardados().items())]
 
 
-def certificado_para(cnpj):
-    """Certificado da empresa ou, se não houver, um da matriz/filial (mesmo CNPJ raiz) — o portal aceita."""
+def marcar_escritorio(cnpj, marcar=True):
+    """Só um certificado pode ser o do escritório (o que as empresas deram procuração)."""
+    todos = certificados_guardados()
+    for c, d in todos.items():
+        d.pop("escritorio", None)
+        if marcar and c == cnpj:
+            d["escritorio"] = True
+    gravar_json(ARQ_CERTIFICADOS, todos)
+
+
+def certificado_do_escritorio():
+    for c, d in sorted(certificados_guardados().items()):
+        if d.get("escritorio"):
+            return c, d
+    return None, None
+
+
+def certificado_para(cnpj, procuracao=False):
+    """Certificado da empresa ou, se não houver, um da matriz/filial (mesmo CNPJ raiz) — o portal aceita.
+    Com procuracao=True (só para BAIXAR notas no Portal Nacional), na falta dos dois usa o do escritório:
+    desde 01/11/2026 o ADN aceita o certificado de quem tem procuração eletrônica da empresa (serviço NFS-e)."""
     todos = certificados_guardados()
     if cnpj in todos:
         return cnpj, todos[cnpj]
     for c, d in sorted(todos.items()):
         if c[:8] == cnpj[:8]:
             return c, d
+    if procuracao:
+        return certificado_do_escritorio()
     return None, None
 
 
@@ -450,10 +474,18 @@ def ler_evento_nacional(xml: bytes):
 class PortalNacional:
     """Distribuição de documentos do ADN: GET /DFe/{NSU} devolve até 50 documentos depois do NSU informado."""
 
-    def __init__(self, cnpj, ctx, parar=None):
+    def __init__(self, cnpj, ctx, parar=None, procuracao=None):
         self.cnpj = cnpj
         self.ctx = ctx
         self.parar = parar
+        self.procuracao = procuracao  # CNPJ do escritório quando a consulta vai pela procuração
+
+    def aviso_procuracao(self):
+        if not self.procuracao:
+            return ""
+        p = self.procuracao
+        return (f" A busca foi feita com o certificado do escritório ({p[:2]}.{p[2:5]}.{p[5:8]}/{p[8:12]}-{p[12:]}): confira se esta empresa deu "
+                "procuração eletrônica a ele no Portal de Serviços da Receita, com o serviço “NFS-e”, e se a procuração não venceu.")
 
     def lote(self, nsu):
         url = f"{ADN_URL}/DFe/{int(nsu)}?cnpjConsulta={self.cnpj}&lote=true"
@@ -486,7 +518,11 @@ class PortalNacional:
                         time.sleep(espera)
                     continue
                 if e.code in (401, 403, 495, 496):
+                    if self.procuracao:
+                        raise RuntimeError("O Portal Nacional não aceitou a consulta desta empresa." + self.aviso_procuracao())
                     raise RuntimeError("O Portal Nacional não aceitou o certificado dessa empresa. Confira se é o e-CNPJ A1 dela (ou da matriz) e se não está vencido.")
+                if isinstance(corpo, dict) and str(corpo.get("StatusProcessamento", "")).upper() == "REJEICAO":
+                    raise RuntimeError(f"Portal Nacional recusou a consulta (HTTP {e.code}): {_erros_adn(corpo) or 'sem detalhe'}." + self.aviso_procuracao())
                 raise RuntimeError(f"Portal Nacional respondeu HTTP {e.code}: {_erros_adn(corpo) or bruto[:200].decode('utf-8', 'replace')}")
             except urllib.error.URLError as e:
                 motivo = getattr(e, "reason", e)
@@ -521,22 +557,34 @@ def _gunzip_b64(texto):
     return gzip.decompress(dados) if dados[:2] == b"\x1f\x8b" else dados
 
 
-def sincronizar_nacional(cnpj, ctx, parar=None, progresso=lambda m: None):
+def sincronizar_nacional(cnpj, ctx, parar=None, progresso=lambda m: None, procuracao=None):
     """Baixa do Portal Nacional tudo o que chegou depois da última busca e guarda aqui.
     Fica só com as notas EMITIDAS por este CNPJ (as recebidas são ignoradas)."""
     pasta = os.path.join(PASTA_NFSE, cnpj)
     os.makedirs(os.path.join(pasta, "xml"), exist_ok=True)
     arq_estado = os.path.join(pasta, "estado.json")
     estado = ler_json(arq_estado, {"ultNSU": 0, "notas": {}, "canceladas": {}})
-    portal = PortalNacional(cnpj, ctx, parar)
+    portal = PortalNacional(cnpj, ctx, parar, procuracao)
     nsu = int(estado.get("ultNSU") or 0)
     novos = 0
+    # O manual do ADN pede 1 hora de espera depois de uma consulta que chegou ao fim (sem documentos novos).
+    # Com um certificado só (o do escritório) para todas as empresas, desrespeitar isso pode bloquear todas.
+    try:
+        fim = dt.datetime.fromisoformat(estado.get("fimEm") or "")
+    except ValueError:
+        fim = None
+    if fim and (dt.datetime.now() - fim).total_seconds() < ADN_ESPERA_FIM_MIN * 60:
+        minutos = int((dt.datetime.now() - fim).total_seconds() // 60)
+        progresso(f"Portal Nacional consultado há {minutos} min sem novidade: usei as notas já guardadas (o portal pede {ADN_ESPERA_FIM_MIN} min entre consultas).")
+        estado["_doCache"] = minutos
+        return estado, pasta, 0
     for n_lote in range(ADN_MAX_LOTES):
         r = portal.lote(nsu)
         docs = r.get("LoteDFe") or []
         if not docs:
             if str(r.get("StatusProcessamento", "")).upper() == "REJEICAO":
-                raise RuntimeError("Portal Nacional recusou a consulta: " + (_erros_adn(r) or "sem detalhe"))
+                raise RuntimeError("Portal Nacional recusou a consulta: " + (_erros_adn(r) or "sem detalhe") + "." + portal.aviso_procuracao())
+            estado["fimEm"] = dt.datetime.now().isoformat(timespec="seconds")
             break
         maior = nsu
         for d in docs:
@@ -600,14 +648,17 @@ def buscar_nfse_nacional(tarefa, parar=None):
     mes = str(d.get("mes") or "")
     if len(cnpj) != 14 or not re.fullmatch(r"\d{4}-\d{2}", mes):
         return {"status": "erro", "mensagem": "Pedido inválido (CNPJ ou mês)."}
-    usado, guardado = certificado_para(cnpj)
+    usado, guardado = certificado_para(cnpj, procuracao=True)
     if not guardado:
-        return {"status": "erro", "mensagem": "O certificado A1 dessa empresa não está guardado neste robô (janela do Agente → Certificados)."}
+        return {"status": "erro", "mensagem": "Não há certificado para essa empresa neste robô: guarde o A1 dela ou marque o certificado do escritório (janela do Agente → Certificados)."}
+    via_procuracao = usado if (usado[:8] != cnpj[:8] and guardado.get("escritorio")) else None
     if guardado.get("validade") and guardado["validade"] < dt.date.today().isoformat():
-        return {"status": "erro", "mensagem": f"O certificado A1 dessa empresa venceu em {guardado['validade'][8:10]}/{guardado['validade'][5:7]}/{guardado['validade'][:4]}. Guarde o novo no Agente (aba Certificados)."}
-    log(f"NFS-e Nacional: {d.get('empresaNome') or cnpj} — {mes[5:]}/{mes[:4]}" + (f" (certificado da matriz/filial {usado})" if usado != cnpj else ""))
+        qual = "do escritório" if via_procuracao else "dessa empresa"
+        return {"status": "erro", "mensagem": f"O certificado A1 {qual} venceu em {guardado['validade'][8:10]}/{guardado['validade'][5:7]}/{guardado['validade'][:4]}. Guarde o novo no Agente (aba Certificados)."}
+    log(f"NFS-e Nacional: {d.get('empresaNome') or cnpj} — {mes[5:]}/{mes[:4]}" +
+        (" (pela procuração, com o certificado do escritório)" if via_procuracao else f" (certificado da matriz/filial {usado})" if usado != cnpj else ""))
     ctx = contexto_com_certificado(guardado)
-    estado, pasta, novos = sincronizar_nacional(cnpj, ctx, parar, progresso=log)
+    estado, pasta, novos = sincronizar_nacional(cnpj, ctx, parar, progresso=log, procuracao=via_procuracao)
     notas = notas_do_mes(estado, mes)
     saida = os.path.join(PASTA, "saida", tarefa["id"][:12])
     os.makedirs(saida, exist_ok=True)
@@ -637,6 +688,10 @@ def buscar_nfse_nacional(tarefa, parar=None):
     reais = f"{resumo['valor']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     texto = (f"{resumo['emitidas']} nota(s) emitida(s)" + (f" + {resumo['canceladas']} cancelada(s)" if resumo["canceladas"] else "") +
              f" em {mes[5:]}/{mes[:4]} · R$ {reais}") if notas else f"Nenhuma nota emitida em {mes[5:]}/{mes[:4]} no Portal Nacional."
+    if estado.get("_doCache") is not None:
+        texto += f" (portal consultado há {estado['_doCache']} min; notas mais novas aparecem na próxima busca, depois de 1 hora)"
+    if via_procuracao:
+        resumo["procuracao"] = True
     return {"status": "concluida", "mensagem": texto, "arquivos": arquivos, "resumo": resumo}
 
 
@@ -3138,6 +3193,13 @@ class Agente:
                 else:
                     resultado = RoboNfae(tarefa, emitente, senha, self.aprender_pergunta,
                                          foi_cancelada=lambda: self.prumo.situacao(tarefa["id"]) == "cancelada").executar()
+        except RuntimeError as e:
+            if tarefa.get("tipo") != "nfse_nacional":
+                log(traceback.format_exc())
+                resultado = {"status": "erro", "mensagem": f"Erro inesperado no robô: {e}. Confira no portal se a nota saiu."}
+            else:  # recusa do portal, sem procuração, limite de pedidos...: mensagem pronta, sem relatório técnico
+                log(f"NFS-e Nacional: {e}")
+                resultado = {"status": "erro", "mensagem": str(e)}
         except Exception as e:  # noqa: BLE001
             log(traceback.format_exc())
             resultado = {"status": "erro", "mensagem": f"Erro no robô: {e}" if tarefa.get("tipo") == "nfse_nacional" else f"Erro inesperado no robô: {e}. Confira no portal se a nota saiu."}
@@ -3366,15 +3428,18 @@ def janela(minimizado=False):
     # ----- Aba Certificados (NFS-e Nacional) -----
     f_cert = ttk.Frame(abas, padding=16)
     abas.add(f_cert, text="Certificados")
-    ttk.Label(f_cert, text="Certificados A1 das empresas (NFS-e Nacional)", style="Titulo.TLabel").pack(anchor="w")
+    ttk.Label(f_cert, text="Certificados A1 (NFS-e Nacional)", style="Titulo.TLabel").pack(anchor="w")
     ttk.Label(f_cert, text="O arquivo e a senha ficam protegidos pelo Windows só neste computador; o Prumo só vê o CNPJ, o nome e a validade. "
-                           "Serve para baixar no Portal Nacional as notas emitidas (página XML NFS-e do Prumo).",
+                           "Serve para baixar no Portal Nacional as notas emitidas (página XML NFS-e do Prumo).\n"
+                           "Procuração: guarde o certificado A1 do ESCRITÓRIO e marque “Certificado do escritório”. As empresas que deram procuração "
+                           "eletrônica ao escritório (serviço NFS-e, no Portal de Serviços da Receita) passam a ser baixadas com ele — sem o certificado de cada uma. "
+                           "Se a empresa tiver o próprio certificado aqui, o dela continua sendo usado. Para EMITIR notas, continua valendo o certificado da empresa.",
               style="Suave.TLabel", justify="left", wraplength=580).pack(anchor="w", fill="x", pady=(2, 6))
     lista_cert = ttk.Frame(f_cert)
 
     def adicionar_certificado():
         from tkinter import filedialog, simpledialog
-        caminho = filedialog.askopenfilename(parent=raiz, title="Escolha o certificado A1 da empresa",
+        caminho = filedialog.askopenfilename(parent=raiz, title="Escolha o certificado A1 (da empresa ou do escritório)",
                                              filetypes=[("Certificado A1", "*.pfx *.p12"), ("Todos os arquivos", "*.*")])
         if not caminho:
             return
@@ -3415,7 +3480,21 @@ def janela(minimizado=False):
             venc = f"{v[8:10]}/{v[5:7]}/{v[:4]}" if v else "?"
             situacao, cor = ("VENCIDO em " + venc, "#B23B29") if v and v < hoje else (("vence em " + venc, "#B4532A") if v and v < daqui30 else ("válido até " + venc, "#3E6B37"))
             doc = f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}"
-            ttk.Label(nomes, text=f"{doc}  ·  {situacao}", style="Suave.TLabel", foreground=cor).pack(anchor="w")
+            ttk.Label(nomes, text=f"{doc}  ·  {situacao}" + ("  ·  CERTIFICADO DO ESCRITÓRIO (procuração)" if c.get("escritorio") else ""),
+                      style="Suave.TLabel", foreground=cor).pack(anchor="w")
+
+            def trocar_escritorio(x=cnpj, era=bool(c.get("escritorio")), nome=c.get("nome") or cnpj):
+                if not era and not messagebox.askyesno("Agente Prumo", f"Usar o certificado de “{nome}” como certificado do ESCRITÓRIO?\n\n"
+                                                       "As empresas sem certificado próprio aqui passam a ser buscadas no Portal Nacional com ele, "
+                                                       "pela procuração eletrônica que deram ao escritório."):
+                    return
+                marcar_escritorio(x, not era)
+                log("Certificado do escritório: " + (f"{nome}." if not era else "desmarcado."))
+                desenhar_certificados()
+                agente.acordar.set()
+
+            ttk.Button(linha, text="Deixar de ser do escritório" if c.get("escritorio") else "Certificado do escritório",
+                       command=trocar_escritorio).pack(side="left", padx=(6, 0))
 
             def apagar(x=cnpj, nome=c.get("nome") or cnpj):
                 if messagebox.askyesno("Agente Prumo", f"Apagar o certificado de “{nome}” deste computador?"):

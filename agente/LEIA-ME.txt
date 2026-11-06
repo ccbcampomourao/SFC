@@ -64,6 +64,21 @@ A primeira busca de cada empresa baixa todo o histórico dela no Portal Nacional
 as próximas só pegam o que é novo. As notas baixadas ficam em %APPDATA%\PrumoRobo\nfse-nacional\<CNPJ>.
 Nota cancelada vai no ZIP com "_CANCELADA" no nome. O mês é o da data de emissão da nota.
 
+PROCURAÇÃO - CERTIFICADO DO ESCRITÓRIO (desde a 1.6.0)
+Desde 01/11/2026 o Portal Nacional aceita o certificado de quem tem procuração eletrônica da empresa.
+Assim o robô baixa as notas de TODAS as empresas com um certificado só: o do escritório.
+1. Aba "Certificados" -> "Adicionar certificado A1 (.pfx)" -> escolha o A1 do ESCRITÓRIO (e-CNPJ) e digite a senha.
+2. Na linha dele, clique em "Certificado do escritório" e confirme.
+3. Cada empresa precisa ter dado procuração ao escritório no Portal de Serviços da Receita
+   (servicos.receitafederal.gov.br -> Autorizações -> Nova autorização -> CNPJ do escritório -> serviço "NFS-e").
+   Procuração de outros serviços (e-CAC genérico) ou da prefeitura NÃO vale.
+- Se a empresa tiver o próprio certificado guardado aqui, o robô usa o dela.
+- Empresa sem procuração: a busca mostra o aviso para conferir a procuração.
+- EMITIR nota continua precisando do certificado da própria empresa.
+- Regra do portal: depois de uma busca que chegou ao fim, o robô espera 1 hora para consultar a mesma
+  empresa de novo (nesse meio tempo usa as notas já guardadas). Com um certificado só para todas as empresas,
+  isso evita que o portal bloqueie o escritório por excesso de consultas.
+
 EMISSÃO DE NFS-e NACIONAL (desde a 1.5.0)
 O robô emite NFS-e pela API oficial da Sefin Nacional, com o certificado A1 da empresa (aba Certificados).
 1. (o Agente instala sozinho o pacote lxml ao abrir)

@@ -305,7 +305,7 @@ function empresasParaNfse() {
       if (limparDigitos(e.cnpj).length !== 14) { fora.push({ e, motivo: "NFS-e Nacional · falta o CNPJ" }); return; }
       const c = certificadoDe(e);
       if (!c) { fora.push({ e, motivo: "NFS-e Nacional · falta o certificado A1 no robô (janela do Agente → Certificados)" }); return; }
-      if (c.validade && c.validade < _hojeIso()) { fora.push({ e, motivo: `NFS-e Nacional · certificado A1 vencido em ${_dataBr(c.validade)} (guarde o novo no Agente)` }); return; }
+      if (c.validade && c.validade < _hojeIso()) { fora.push({ e, motivo: `NFS-e Nacional · certificado A1${c.escritorio && c.cnpj.slice(0, 8) !== limparDigitos(e.cnpj).slice(0, 8) ? " do escritório" : ""} vencido em ${_dataBr(c.validade)} (guarde o novo no Agente)` }); return; }
       aptas.push(e);
       return;
     }
@@ -390,7 +390,13 @@ async function carregarNacional() {
 const _nacionalPronto = carregarNacional();
 function certificadoDe(e) {
   const d = limparDigitos(e.cnpj);
-  return NAC.certificados.find((c) => c.cnpj === d) || NAC.certificados.find((c) => c.cnpj.slice(0, 8) === d.slice(0, 8)) || null;
+  return NAC.certificados.find((c) => c.cnpj === d) || NAC.certificados.find((c) => c.cnpj.slice(0, 8) === d.slice(0, 8))
+    || NAC.certificados.find((c) => c.escritorio) || null; // procuração: o certificado do escritório
+}
+function _textoCertificado(e) {
+  const c = certificadoDe(e) || {};
+  return c.escritorio && c.cnpj.slice(0, 8) !== limparDigitos(e.cnpj).slice(0, 8)
+    ? `pela procuração (certificado do escritório até ${_dataBr(c.validade)})` : `certificado até ${_dataBr(c.validade)}`;
 }
 const roboNacionalOnline = () => NAC.robos.some((r) => r.online && r.sabeNacional);
 const _tarefasDe = (e, mes = XMLP.mes) => NAC.tarefas.filter((t) => t.dados.empresaId === e.id && t.dados.mes === mes);
@@ -572,7 +578,7 @@ function _htmlItem(e) {
       <div class="xml-linha">
         <label class="xml-check" title="Incluir na busca"><input type="checkbox" data-sel="${e.id}"${XMLP.selecionadas.has(e.id) ? " checked" : ""}${XMLP.ocupado ? " disabled" : ""}></label>
         <div class="xml-nome"><b title="${escaparHtml(e.nome)}">${escaparHtml(e.nome)}</b><small>${_ehNacional(e)
-          ? `${escaparHtml(municipioNfse(e).nome)} · NFS-e Nacional · ${_fmtDoc(e.cnpj)} · certificado até ${_dataBr((certificadoDe(e) || {}).validade)}`
+          ? `${escaparHtml(municipioNfse(e).nome)} · NFS-e Nacional · ${_fmtDoc(e.cnpj)} · ${_textoCertificado(e)}`
           : `${escaparHtml(municipioNfse(e).nome)} · ${_fmtDoc(e.cnpj)} · cadastro ${escaparHtml(e.cadastroMunicipal)} · série ${escaparHtml(e.nfseSerie || "1")}`}</small></div>
         <div class="xml-estado">${_htmlEstado(e)}</div>
         <div class="xml-acoes">
@@ -649,7 +655,7 @@ function renderizarFora() {
     info.innerHTML = !nacionais ? "" : `<div class="xml-aviso${online ? "" : " xml-aviso-alerta"}">${icone(online ? "info" : "alerta", "ico-sm")}<span>
       <b>Portal Nacional:</b> ${NAC.erro ? `não consegui ver o robô (${escaparHtml(NAC.erro)}).` : !algumRobo
         ? `o robô ainda não sabe buscar no Portal Nacional — atualize o Agente Prumo para a versão ${escaparHtml(NAC.versaoMinima || "1.4.0")} e guarde os certificados A1 na aba Certificados.`
-        : `${NAC.certificados.length} certificado(s) A1 no robô · ${online ? "robô ligado" : "robô desligado (as buscas ficam na fila até ele ligar)"}. As notas do Portal Nacional são baixadas pelo robô do escritório.`}</span></div>`;
+        : `${NAC.certificados.length} certificado(s) A1 no robô${NAC.certificados.some((c) => c.escritorio) ? " (com o do escritório: quem deu procuração é baixado por ele)" : ""} · ${online ? "robô ligado" : "robô desligado (as buscas ficam na fila até ele ligar)"}. As notas do Portal Nacional são baixadas pelo robô do escritório.`}</span></div>`;
   }
   $("#xml-fora").innerHTML = fora.length ? `
     <details class="wl-fora"><summary>${fora.length} empresa(s) fora da busca — <a href="/empresas.html">ver na página Empresas</a></summary>
