@@ -134,7 +134,7 @@ async function montarLinhasExportacao(comReceita, progresso, cancelado) {
       regime,
       r.naturezaJuridica || "",
       "",
-      r.inicioAtividade ? new Date(r.inicioAtividade + "T12:00:00") : "",
+      r.inicioAtividade ? r.inicioAtividade.split("-").reverse().join("/") : "", // texto dd/mm/aaaa: o sistema que importa lê o número interno de data do Excel
       "",
       "",
     ]);
@@ -144,12 +144,12 @@ async function montarLinhasExportacao(comReceita, progresso, cancelado) {
 }
 
 function gerarXlsxClientes(XLSX, dados, nomeArquivo) {
-  const ws = XLSX.utils.aoa_to_sheet([COLUNAS_EXPORTACAO, ...dados], { cellDates: true, dateNF: "dd/mm/yyyy" });
-  // CNPJ e inscrições como TEXTO (o Excel não come zeros à esquerda); datas no formato brasileiro
+  const ws = XLSX.utils.aoa_to_sheet([COLUNAS_EXPORTACAO, ...dados]);
+  // CNPJ, inscrições e DATAS como TEXTO: o Excel não come zeros à esquerda e o sistema que importa
+  // a planilha lia a data como número (43558,5); como texto ela vai exatamente "03/04/2019"
   const ref = XLSX.utils.decode_range(ws["!ref"]);
   for (let R = 1; R <= ref.e.r; R++) {
-    for (const C of [3, 4, 7, 8]) { const cel = ws[XLSX.utils.encode_cell({ r: R, c: C })]; if (cel && cel.v !== "") { cel.t = "s"; cel.v = String(cel.v); } }
-    for (const C of [12, 13]) { const cel = ws[XLSX.utils.encode_cell({ r: R, c: C })]; if (cel && cel.t === "d") cel.z = "dd/mm/yyyy"; }
+    for (const C of [3, 4, 7, 8, 12, 13]) { const cel = ws[XLSX.utils.encode_cell({ r: R, c: C })]; if (cel && cel.v !== "") { cel.t = "s"; cel.v = String(cel.v); } }
   }
   ws["!cols"] = [44, 30, 30, 21, 14, 14, 10, 16, 16, 18, 18, 42, 14, 16, 30, 30].map((wch) => ({ wch }));
   ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: ref.e.r, c: ref.e.c } }) };
