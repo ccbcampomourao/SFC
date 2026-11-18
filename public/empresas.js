@@ -802,6 +802,7 @@ function irParaEmpresa(empresa) {
 const ORDEM_SITUACAO = { agendada: 0, excluida: 1, mei: 2, voltou: 3, erro: 4, nao_optante: 5, sem_registro: 6, sem_exclusao: 7 };
 const ETIQUETA_SITUACAO = { agendada: "erro", excluida: "erro", mei: "aviso", voltou: "aviso", erro: "neutra", nao_optante: "neutra", sem_registro: "neutra", sem_exclusao: "ok" };
 
+$("#btn-exportar-clientes")?.addEventListener("click", () => abrirExportarClientes());
 $("#btn-verificar-exclusoes")?.addEventListener("click", () => {
   const empresas = [];
   ESTADO.grupos.forEach((g) => g.empresas.forEach((e) => { if (limparDigitos(e.cnpj).length === 14) empresas.push(e); }));

@@ -674,15 +674,24 @@ const ENDERECO_CNPJ = [
       razao_social: _txt(d.nome), nome: _txt(d.fantasia), cep: _so(d.cep), logradouro: _txt(d.logradouro), numero: _txt(d.numero),
       complemento: _txt(d.complemento), bairro: _txt(d.bairro), municipio: _txt(d.municipio), estado: _txt(d.uf), situacao: _txt(d.situacao),
       fone: _so(String(d.telefone || "").split("/")[0]), email: _txt(d.email).toLowerCase(),
+      naturezaJuridica: _natureza("", d.natureza_juridica), inicioAtividade: _dataIso(d.abertura),
       optanteSimples: d.simples ? d.simples.optante === true : null, optanteMei: d.simei ? d.simei.optante === true : null } : null },
   { fonte: "CNPJ.ws", url: (c) => `https://publica.cnpj.ws/cnpj/${c}`, ler: lerCnpjWs },
 ];
+// "2062" + "Sociedade Empresária Limitada" -> "206-2 - Sociedade Empresária Limitada"
+function _natureza(cod, desc) {
+  const c = _so(cod), t = _txt(desc);
+  if (/^\d{3}-\d\s*-/.test(t)) return t;
+  return c.length === 4 ? `${c.slice(0, 3)}-${c[3]}${t ? " - " + t : ""}` : t;
+}
+const _dataIso = (v) => { const t = _txt(v); const br = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t); return br ? `${br[3]}-${br[2]}-${br[1]}` : /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 10) : ""; };
 function lerMinhaReceitaEndereco(d) {
   if (!d || !d.razao_social) return null;
   return { razao_social: _txt(d.razao_social), nome: _txt(d.nome_fantasia), cep: _so(d.cep),
     logradouro: [_txt(d.descricao_tipo_de_logradouro), _txt(d.logradouro)].filter(Boolean).join(" "), numero: _txt(d.numero),
     complemento: _txt(d.complemento), bairro: _txt(d.bairro), municipio: _txt(d.municipio), estado: _txt(d.uf), situacao: _txt(d.descricao_situacao_cadastral),
     ibge: _so(d.codigo_municipio_ibge), fone: _so(d.ddd_telefone_1), email: _txt(d.email).toLowerCase(),
+    naturezaJuridica: _natureza(d.codigo_natureza_juridica, d.natureza_juridica), inicioAtividade: _dataIso(d.data_inicio_atividade),
     optanteSimples: d.opcao_pelo_simples === true || d.opcao_pelo_simples === false ? d.opcao_pelo_simples : null,
     optanteMei: d.opcao_pelo_mei === true || d.opcao_pelo_mei === false ? d.opcao_pelo_mei : null };
 }
@@ -697,6 +706,8 @@ function lerCnpjWs(d) {
     complemento: _txt(e.complemento), bairro: _txt(e.bairro), municipio: _txt(e.cidade && e.cidade.nome), estado: uf,
     situacao: _txt(e.situacao_cadastral), ie: ie ? _so(ie.inscricao_estadual) : "", ibge: _so(e.cidade && e.cidade.ibge_id),
     fone: _so(`${e.ddd1 || ""}${e.telefone1 || ""}`), email: _txt(e.email).toLowerCase(),
+    naturezaJuridica: _natureza(d.natureza_juridica && d.natureza_juridica.id, d.natureza_juridica && d.natureza_juridica.descricao),
+    inicioAtividade: _dataIso(e.data_inicio_atividade),
     optanteSimples: d.simples ? d.simples.simples === "Sim" : null, optanteMei: d.simples ? d.simples.mei === "Sim" : null };
 }
 async function buscarJsonCnpj(url) {
@@ -706,7 +717,7 @@ async function buscarJsonCnpj(url) {
 }
 async function consultarCnpjCadastro(cnpj) {
   const cache = typeof caches !== "undefined" ? caches.default : null;
-  const chave = new Request(`https://cache.fzcont.interno/cnpj-cadastro/v2/${cnpj}`);
+  const chave = new Request(`https://cache.fzcont.interno/cnpj-cadastro/v3/${cnpj}`);
   try { const c = cache && (await cache.match(chave)); if (c) return { ok: true, ...(await c.json()) }; } catch {}
   let achado = null, todos404 = true, viu429 = false;
   for (const p of ENDERECO_CNPJ) {
